@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { Effect } from "effect"
 import * as Three from "three"
 
 import {
@@ -120,6 +121,14 @@ import {
   defaultTrackballControlsOptions,
   pmndrsExtraControlsPrimitiveSourceRefs,
   pmndrsHelperPrimitiveSourceRefs,
+  createImprovedNoise,
+  createLut,
+  createSimplexNoise,
+  createSurfaceSampler,
+  fbmNoise3d,
+  lutColorArray,
+  lutColorAt,
+  pmndrsMathPrimitiveSourceRefs,
 } from "./index"
 
 import { FirstPersonControls } from "three/examples/jsm/controls/FirstPersonControls.js"
@@ -1168,5 +1177,72 @@ describe("helper primitives", () => {
     const normals = createVertexNormalsHelper(mesh, 0.5)
     expect(normals.helper.type).toBe("VertexNormalsHelper")
     normals.dispose()
+  })
+})
+
+describe("math primitives", () => {
+  test("cites the sampler/noise sources", () => {
+    expect(pmndrsMathPrimitiveSourceRefs).toContain(
+      "projects/repos/drei/src/core/Sampler.tsx",
+    )
+  })
+
+  test("produces deterministic, bounded Perlin and simplex noise", () => {
+    const perlin = createImprovedNoise()
+    const a = perlin.noise(1.5, 2.5, 3.5)
+    const b = perlin.noise(1.5, 2.5, 3.5)
+    expect(a).toBe(b)
+    expect(a).toBeGreaterThanOrEqual(-1)
+    expect(a).toBeLessThanOrEqual(1)
+
+    const simplex = createSimplexNoise()
+    const s2 = simplex.noise(0.25, 0.75)
+    expect(s2).toBeGreaterThanOrEqual(-1)
+    expect(s2).toBeLessThanOrEqual(1)
+  })
+
+  test("fbm stays normalized and clamps octaves to at least one", () => {
+    const perlin = createImprovedNoise()
+    const value = fbmNoise3d(perlin, 0.3, 0.6, 0.9, {
+      octaves: 5,
+      frequency: 1.5,
+    })
+    expect(value).toBeGreaterThanOrEqual(-1)
+    expect(value).toBeLessThanOrEqual(1)
+
+    // octaves: 0 is clamped up to 1 rather than dividing by zero.
+    const single = fbmNoise3d(perlin, 0.3, 0.6, 0.9, { octaves: 0 })
+    expect(Number.isFinite(single)).toBe(true)
+  })
+
+  test("samples positions off a built mesh surface", () => {
+    const mesh = new Three.Mesh(
+      new Three.PlaneGeometry(4, 4, 2, 2),
+      new Three.MeshBasicMaterial(),
+    )
+    const handle = Effect.runSync(createSurfaceSampler(mesh))
+    const single = handle.sample()
+    expect(single.position).toBeInstanceOf(Three.Vector3)
+    expect(Number.isFinite(single.position.x)).toBe(true)
+
+    const positions = handle.samplePositions(8)
+    expect(positions.length).toBe(24)
+    // every sampled coordinate is finite
+    expect([...positions].every(Number.isFinite)).toBe(true)
+  })
+
+  test("maps scalars to Lut colors and packs a color array", () => {
+    const lut = createLut("cooltowarm", 16)
+    const low = lutColorAt(lut, 0, 0, 1)
+    const high = lutColorAt(lut, 1, 0, 1)
+    expect(low).toBeInstanceOf(Three.Color)
+    // cool-to-warm: the endpoints differ
+    expect(low.getHex()).not.toBe(high.getHex())
+
+    const colors = lutColorArray(lut, [0, 0.5, 1], 0, 1)
+    expect(colors.length).toBe(9)
+    expect([...colors].every(channel => channel >= 0 && channel <= 1)).toBe(
+      true,
+    )
   })
 })

@@ -133,6 +133,12 @@ This pass pulled the reusable, React-free layer into `@openagentsinc/three-effec
   - image cover scaling and shader-backed image planes.
 - `maskPrimitives`
   - plain material stencil props for Drei `Mask` / `useMask` semantics.
+- `mathPrimitives`
+  - React-free wrappers for the `three/examples/jsm/math` utilities procedural
+    and data-viz demos lean on: `ImprovedNoise` / `SimplexNoise` instances plus
+    a normalized fBm sampler, a `MeshSurfaceSampler` Effect handle that yields
+    weighted surface samples and packed position buffers, and `Lut` color-map
+    helpers (`createLut`, `lutColorAt`, `lutColorArray`) for heatmap coloring.
 - `stagingPrimitives`
   - scene environment application, RoomEnvironment PMREM textures, preload
     compilation, shadow baking, Sky, Lightformer, randomized lights,

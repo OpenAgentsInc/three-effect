@@ -517,3 +517,24 @@ Reference: `projects/repos/react-three-fiber` intrinsic helper elements and
   consumer needs interactive scene editing.
 - Wire `update(delta)` controllers into a shared frame-loop helper so callers
   do not each re-implement clock deltas.
+
+## Follow-up pass: math primitives (2026-06-14)
+
+`mathPrimitives.ts` wraps the `three/examples/jsm/math` utilities that
+procedural-geometry, particle-scatter, and data-viz demos repeatedly use, kept
+as pure/deterministic helpers (no GPU/DOM handles to dispose):
+
+- `createImprovedNoise` / `createSimplexNoise` plus `fbmNoise3d`, a normalized
+  fractal-Brownian-motion sampler that clamps octaves to >= 1 so the
+  accumulator divide is always safe.
+- `createSurfaceSampler` -- an Effect handle around `MeshSurfaceSampler`
+  (`build()` runs eagerly) exposing `sample()` and `samplePositions(count)`
+  that returns a packed `Float32Array` ready for a BufferAttribute.
+- `createLut` / `lutColorAt` / `lutColorArray` for mapping scalars to colors
+  across the named Lut color maps (rainbow, cooltowarm, blackbody, grayscale).
+
+Reference: `projects/repos/drei/src/core/Sampler.tsx` and the local pmndrs
+sampler/points demos.
+
+Verification: `bun run verify` (typecheck + 63 tests) passes; the new module is
+clean under the temporary `noUncheckedIndexedAccess` typecheck.
