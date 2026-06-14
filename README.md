@@ -20,7 +20,9 @@ scope for now.
       occlusion, instance matrix/color helpers, Float and CameraShake motion,
       shader-material uniform accessors, orbit controls, animation mixers,
       rounded/text/image geometry, masks, staging/environment/shadow helpers,
-      and performance sampling.
+      performance sampling, advanced material factories, render targets,
+      postprocessing composer resources, scene graph cloning/LOD/edges/lines,
+      and deterministic particle/media helpers.
     - a React-free port of the pmndrs Bezier curves and nodes example, including
       draggable nodes, labels, endpoint markers, and animated dashed quadratic
       Bezier connections.
@@ -76,7 +78,11 @@ the frequent `@react-three/drei` / `@react-three/fiber` primitives against what
 `RandomizedLight`, `useTexture`, `ScrollControls` / `useScroll`, `Text`,
 `Float`, camera helpers, `Html`, `Bounds`, `Center`, `Lightformer`,
 `CameraControls`, `Sky`, `useAnimations`, `useCursor`, `Image`, `Mask`,
-`useMask`, `useAspect`, `RoundedBox`, `Stats`, and `shaderMaterial`.
+`useMask`, `useAspect`, `RoundedBox`, `Stats`, `MeshTransmissionMaterial`,
+`MeshReflectorMaterial`, `MeshDistortMaterial`, `MeshRefractionMaterial`,
+`MeshWobbleMaterial`, `RenderTexture`, `useFBO`, `Effects`, `Edges`,
+`Outlines`, `Line`, `Merged`, `Clone`, `Detailed`, `Billboard`, `Decal`,
+`Stars`, `Sparkles`, `VideoTexture`, `PositionalAudio`, and `shaderMaterial`.
 
 This pass pulled the reusable, React-free layer into `@openagentsinc/three-effect/core`:
 
@@ -119,10 +125,22 @@ This pass pulled the reusable, React-free layer into `@openagentsinc/three-effec
     contact-shadow resources, and cube-camera resources.
 - `performancePrimitives`
   - Drei-inspired performance factor sampling and a small DOM stats overlay.
+- `advancedMaterialPrimitives`
+  - transmission/refraction material factories, animated distort/wobble
+    material classes, reflector planes, and time setters.
+- `renderPrimitives`
+  - FBO creation/resizing, render-texture resources, scene-to-target rendering,
+    and EffectComposer resources with render/output/bloom passes.
+- `sceneGraphPrimitives`
+  - deep object cloning, LOD setup, merged buffer geometries, edges, outline
+    meshes, wide line helpers, billboarding, and decal geometry.
+- `mediaParticlePrimitives`
+  - loading progress tracking, video textures, positional audio, deterministic
+    star/sparkle attributes, and Points construction.
 
 Full CameraControls parity, Troika text layout, HDR preset catalogs, and
-postprocessing composer policy remain out of core. The new modules provide the
-React-free substrate that Foldkit scenes can compose explicitly.
+opinionated postprocessing chains remain out of core. The new modules provide
+the React-free substrate that Foldkit scenes can compose explicitly.
 
 ## Moksha Demo
 

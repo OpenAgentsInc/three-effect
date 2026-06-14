@@ -6,27 +6,43 @@ import {
   applyInstanceTransforms,
   animationProgressFromScroll,
   applyMaskMaterial,
+  applyBillboard,
   cubicBezierPoints,
   aspectScale,
   calculateSkySunPosition,
   cameraShakeRotationAtTime,
+  cloneObject3D,
   collectGltfObjectMap,
   computeCenterOffset,
   createAnimationController,
   createBezierNodeConnections,
   createContactShadowResources,
+  createDetailedLod,
+  createDistortMaterial,
+  createEdges,
+  createFbo,
   createImagePlane,
   createImagePlaneMaterial,
   createInstanceColorArray,
   createInstanceMatrix,
+  createLine2,
+  createLoadingTracker,
   createLightformer,
+  createOutlines,
   createPerformanceMonitorState,
   createPerspectiveCamera,
+  createPointsFromAttributes,
   createRandomizedLightRig,
+  createReflector,
+  createRefractionMaterial,
   createRoundedBoxGeometry,
   createShaderMaterial,
   createSky,
+  createSparkleAttributes,
+  createStarfieldAttributes,
+  createTransmissionMaterial,
   createTrainingRunEdges,
+  createWobbleMaterial,
   defaultBezierNodesGraph,
   defaultCameraShakeOptions,
   defaultOrbitControlsOptions,
@@ -47,7 +63,9 @@ import {
   imageCoverScale,
   isWorldPointOccluded,
   maskMaterialProps,
+  mergeBufferGeometries,
   pmndrsMokshaSourceRefs,
+  pmndrsAdvancedMaterialPrimitiveSourceRefs,
   pmndrsBezierNodesSourceRefs,
   pmndrsAnimationPrimitiveSourceRefs,
   pmndrsCommonPrimitiveCounts,
@@ -57,8 +75,11 @@ import {
   pmndrsImagePrimitiveSourceRefs,
   pmndrsInteractionPrimitiveSourceRefs,
   pmndrsMaskPrimitiveSourceRefs,
+  pmndrsMediaParticlePrimitiveSourceRefs,
   pmndrsMotionPathCurvePresets,
   pmndrsPerformancePrimitiveSourceRefs,
+  pmndrsRenderPrimitiveSourceRefs,
+  pmndrsSceneGraphPrimitiveSourceRefs,
   pmndrsStagingPrimitiveSourceRefs,
   pmndrsTrainingDatavizSourceRefs,
   pointerNdcFromClientPoint,
@@ -73,6 +94,7 @@ import {
   scrollVisible,
   resolveSpinningCubeOptions,
   samplePerformanceFrame,
+  setAnimatedMaterialTime,
   summarizeTrainingRunVisualization,
   trainingRunVisualizationOptionsFromSnapshot,
   updateScrollMetrics,
@@ -137,6 +159,18 @@ describe("common pmndrs primitive audit", () => {
     )
     expect(pmndrsPerformancePrimitiveSourceRefs).toContain(
       "projects/repos/drei/src/core/PerformanceMonitor.tsx",
+    )
+    expect(pmndrsAdvancedMaterialPrimitiveSourceRefs).toContain(
+      "projects/repos/drei/src/core/MeshTransmissionMaterial.tsx",
+    )
+    expect(pmndrsRenderPrimitiveSourceRefs).toContain(
+      "projects/repos/drei/src/core/RenderTexture.tsx",
+    )
+    expect(pmndrsSceneGraphPrimitiveSourceRefs).toContain(
+      "projects/repos/drei/src/core/Edges.tsx",
+    )
+    expect(pmndrsMediaParticlePrimitiveSourceRefs).toContain(
+      "projects/repos/drei/src/core/Sparkles.tsx",
     )
     expect(defaultOrbitControlsOptions.enableDamping).toBe(true)
   })
@@ -471,6 +505,141 @@ describe("staging and performance primitives", () => {
     expect(result.changed).toBe(true)
     expect(result.direction).toBe("incline")
     expect(state.factor).toBe(0.75)
+  })
+})
+
+describe("advanced material primitives", () => {
+  test("creates common Drei-inspired material variants", () => {
+    const transmission = createTransmissionMaterial({
+      color: "white",
+      transmission: 0.9,
+      thickness: 0.2,
+      ior: 1.4,
+    })
+    expect(transmission.transmission).toBe(0.9)
+    expect(transmission.thickness).toBe(0.2)
+    expect(transmission.ior).toBe(1.4)
+
+    const refraction = createRefractionMaterial({ ior: 2.2 })
+    expect(refraction.transmission).toBe(1)
+    expect(refraction.ior).toBe(2.2)
+
+    const distort = createDistortMaterial({ distort: 0.25, radius: 1.2 })
+    setAnimatedMaterialTime(distort, 3)
+    expect(distort.time).toBe(3)
+    expect(distort.distort).toBe(0.25)
+    expect(distort.radius).toBe(1.2)
+
+    const wobble = createWobbleMaterial({ factor: 0.75 })
+    setAnimatedMaterialTime(wobble, 4)
+    expect(wobble.time).toBe(4)
+    expect(wobble.factor).toBe(0.75)
+  })
+
+  test("creates reflector resources for mirror-style planes", () => {
+    const reflector = createReflector({
+      width: 2,
+      height: 3,
+      textureWidth: 64,
+      textureHeight: 64,
+    })
+    expect(reflector.geometry).toBeInstanceOf(Three.PlaneGeometry)
+    expect((reflector.geometry as Three.PlaneGeometry).parameters.width).toBe(2)
+    expect((reflector.geometry as Three.PlaneGeometry).parameters.height).toBe(3)
+  })
+})
+
+describe("render and scene graph primitives", () => {
+  test("creates render targets with depth textures", () => {
+    const fbo = createFbo({ width: 32, height: 16, depth: true, samples: 2 })
+    expect(fbo.width).toBe(32)
+    expect(fbo.height).toBe(16)
+    expect(fbo.depthTexture).toBeInstanceOf(Three.DepthTexture)
+    expect(fbo.samples).toBe(2)
+    fbo.dispose()
+  })
+
+  test("clones, merges, outlines, and builds line helpers", () => {
+    const source = new Three.Mesh(
+      new Three.BoxGeometry(1, 1, 1),
+      new Three.MeshBasicMaterial({ color: "red" }),
+    )
+    const clone = cloneObject3D(source, { deep: true, castShadow: true })
+    expect(clone).not.toBe(source)
+    expect(clone.geometry).not.toBe(source.geometry)
+    expect(clone.material).not.toBe(source.material)
+    expect(clone.castShadow).toBe(true)
+
+    const merged = mergeBufferGeometries([
+      new Three.BoxGeometry(1, 1, 1),
+      new Three.BoxGeometry(1, 1, 1),
+    ])
+    expect(merged.getAttribute("position").count).toBeGreaterThan(0)
+
+    const edges = createEdges(source.geometry, { color: "white" })
+    expect(edges.geometry).toBeInstanceOf(Three.EdgesGeometry)
+
+    const outline = createOutlines(source, { thickness: 0.1 })
+    expect(outline.scale.x).toBeCloseTo(1.1)
+
+    const line = createLine2(
+      [new Three.Vector3(0, 0, 0), new Three.Vector3(1, 0, 0)],
+      { linewidth: 2, resolution: [100, 100] },
+    )
+    expect(line.geometry).toBeDefined()
+  })
+
+  test("creates LOD levels and applies billboard rotation", () => {
+    const near = new Three.Object3D()
+    const far = new Three.Object3D()
+    const lod = createDetailedLod([
+      { object: near, distance: 0 },
+      { object: far, distance: 10 },
+    ])
+    expect(lod.levels).toHaveLength(2)
+
+    const camera = createPerspectiveCamera({ position: [0, 0, 5], target: [0, 0, 0] })
+    const object = new Three.Object3D()
+    applyBillboard(object, camera)
+    expect(object.quaternion.equals(camera.quaternion)).toBe(true)
+  })
+})
+
+describe("media and particle primitives", () => {
+  test("tracks loading manager progress snapshots", () => {
+    const tracker = createLoadingTracker()
+    tracker.manager.onStart?.("a", 0, 2)
+    expect(tracker.snapshot()).toEqual({
+      active: true,
+      item: "a",
+      loaded: 0,
+      total: 2,
+      progress: 0,
+    })
+    tracker.manager.onProgress?.("a", 1, 2)
+    expect(tracker.snapshot().progress).toBe(0.5)
+    tracker.manager.onLoad?.()
+    expect(tracker.snapshot().active).toBe(false)
+  })
+
+  test("creates deterministic star and sparkle point attributes", () => {
+    const stars = createStarfieldAttributes({ count: 4, seed: 7 })
+    const starsAgain = createStarfieldAttributes({ count: 4, seed: 7 })
+    expect(stars.positions).toEqual(starsAgain.positions)
+    expect(stars.colors).toHaveLength(12)
+    expect(stars.sizes).toHaveLength(4)
+
+    const sparkles = createSparkleAttributes({
+      count: 3,
+      seed: 2,
+      color: "cyan",
+      scale: [2, 3, 4],
+    })
+    expect(sparkles.positions).toHaveLength(9)
+    expect(sparkles.speeds).toHaveLength(3)
+
+    const points = createPointsFromAttributes(stars)
+    expect(points.geometry.getAttribute("position").count).toBe(4)
   })
 })
 
