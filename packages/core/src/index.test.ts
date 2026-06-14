@@ -772,6 +772,21 @@ describe("moksha experience", () => {
     expect(material.mokshaUniforms.opacity.value).toBe(0.2)
     material.dispose()
   })
+
+  test("allows the Moksha startup fade plane to reveal scene content", () => {
+    const material = new MokshaPlaneMaterial({
+      color: 0x0e0e0f,
+      depthWrite: false,
+      opacity: 1,
+      transparent: true,
+    })
+
+    expect(material.transparent).toBe(true)
+    expect(material.depthWrite).toBe(false)
+    material.opacity = 0.12
+    expect(material.mokshaUniforms.opacity.value).toBe(0.12)
+    material.dispose()
+  })
 })
 
 describe("training run visualization", () => {

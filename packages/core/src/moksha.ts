@@ -238,10 +238,15 @@ type MokshaOpacityBootState = {
 export class MokshaPlaneMaterial extends Three.ShaderMaterial {
   constructor(input: {
     color?: Three.ColorRepresentation | undefined
+    depthWrite?: boolean | undefined
     map?: Three.Texture | null | undefined
     opacity?: number | undefined
+    transparent?: boolean | undefined
   } = {}) {
+    const transparent =
+      input.transparent ?? ((input.opacity ?? 1) < 1 || input.map !== undefined)
     super({
+      depthWrite: input.depthWrite ?? !transparent,
       fragmentShader: `
         uniform sampler2D tex;
         uniform float hasTexture;
@@ -264,7 +269,7 @@ export class MokshaPlaneMaterial extends Three.ShaderMaterial {
           }
         }
       `,
-      transparent: (input.opacity ?? 1) < 1 || input.map !== undefined,
+      transparent,
       uniforms: {
         color: { value: new Three.Color(input.color ?? 0xffffff) },
         hasTexture: { value: input.map === undefined || input.map === null ? 0 : 1 },
@@ -502,17 +507,21 @@ const layoutFor = (
 
 const makePlane = (input: {
   color?: Three.ColorRepresentation | undefined
+  depthWrite?: boolean | undefined
   height: number
   opacity?: number | undefined
   texture?: Three.Texture | undefined
+  transparent?: boolean | undefined
   width: number
 }): Three.Mesh<Three.PlaneGeometry, MokshaPlaneMaterial> =>
   new Three.Mesh(
     new Three.PlaneGeometry(input.width, input.height, 32, 32),
     new MokshaPlaneMaterial({
       color: input.color,
+      depthWrite: input.depthWrite,
       map: input.texture,
       opacity: input.opacity,
+      transparent: input.transparent,
     }),
   )
 
@@ -929,8 +938,10 @@ export const mountMokshaExperience = (
       const createStartupFade = (): void => {
         const plane = makePlane({
           color: 0x0e0e0f,
+          depthWrite: false,
           height: 100,
           opacity: 1,
+          transparent: true,
           width: 100,
         })
         plane.position.set(0, 0, 200)
