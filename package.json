@@ -33,6 +33,7 @@
     "packages/*"
   ],
   "scripts": {
+    "build:demo:training": "bun build examples/training-run/src/main.ts --outdir examples/training-run/dist --target browser",
     "test": "bun test",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "verify": "bun run typecheck && bun test"
@@ -45,6 +46,7 @@
     "webgl"
   ],
   "files": [
+    "examples",
     "packages",
     "README.md",
     "LICENSE"

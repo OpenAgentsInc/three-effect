@@ -49,9 +49,21 @@ The Foldkit helpers register `oa-spinning-cube`, `oa-bezier-nodes`, and
 available. Each element owns a scoped Three renderer and releases it on
 disconnect.
 
+## Training Run Demo
+
+The tracked visual smoke for the Training scene lives at
+`examples/training-run/`. It exercises the lifecycle graph, live run snapshot,
+promise-registry signals, and operator-command signals in one dark canvas.
+
+```sh
+bun run build:demo:training
+open examples/training-run/index.html
+```
+
 ## Commands
 
 ```sh
 bun install
 bun run verify
+bun run build:demo:training
 ```
