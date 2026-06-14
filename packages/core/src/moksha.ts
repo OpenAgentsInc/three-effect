@@ -230,9 +230,9 @@ type MokshaShaderUniforms = {
 
 class MokshaPlaneMaterial extends Three.ShaderMaterial {
   constructor(input: {
-    color?: Three.ColorRepresentation
-    map?: Three.Texture | null
-    opacity?: number
+    color?: Three.ColorRepresentation | undefined
+    map?: Three.Texture | null | undefined
+    opacity?: number | undefined
   } = {}) {
     super({
       fragmentShader: `
@@ -283,11 +283,11 @@ class MokshaPlaneMaterial extends Three.ShaderMaterial {
     return this.uniforms as unknown as MokshaShaderUniforms
   }
 
-  get opacity(): number {
+  override get opacity(): number {
     return this.mokshaUniforms.opacity.value
   }
 
-  set opacity(value: number) {
+  override set opacity(value: number) {
     this.mokshaUniforms.opacity.value = value
   }
 
@@ -477,10 +477,10 @@ const layoutFor = (
 }
 
 const makePlane = (input: {
-  color?: Three.ColorRepresentation
+  color?: Three.ColorRepresentation | undefined
   height: number
-  opacity?: number
-  texture?: Three.Texture
+  opacity?: number | undefined
+  texture?: Three.Texture | undefined
   width: number
 }): Three.Mesh<Three.PlaneGeometry, MokshaPlaneMaterial> =>
   new Three.Mesh(
@@ -493,9 +493,9 @@ const makePlane = (input: {
   )
 
 const makeCanvasTextTexture = (input: {
-  align?: CanvasTextAlign
-  color?: string
-  font?: string
+  align?: CanvasTextAlign | undefined
+  color?: string | undefined
+  font?: string | undefined
   maxWidth: number
   text: string
 }): { aspect: number; texture: Three.CanvasTexture } => {
@@ -568,8 +568,8 @@ const makeCanvasTextTexture = (input: {
 }
 
 const makeCanvasTextPlane = (input: {
-  align?: CanvasTextAlign
-  color?: string
+  align?: CanvasTextAlign | undefined
+  color?: string | undefined
   maxPixelWidth?: number
   text: string
   width: number
@@ -595,7 +595,7 @@ const makeFontText = (input: {
   alignY: "center" | "top"
   color: Three.ColorRepresentation
   font: Font | null
-  opacity?: number
+  opacity?: number | undefined
   size: number
   text: string
 }): Three.Object3D => {
@@ -709,7 +709,6 @@ export const mountMokshaExperience = (
       let layout = layoutFor(size, resolved)
       let disposed = false
       let frame = 0
-      let lastTime = 0
       let scrollTop = scrollArea.scrollTop
       let loadedFont: Font | null = null
       let startupMaterial: MokshaPlaneMaterial | null = null
@@ -1045,7 +1044,6 @@ export const mountMokshaExperience = (
 
       const renderScene = (time: number): void => {
         if (disposed) return
-        lastTime = time
         scrollTop = scrollArea.scrollTop
         updateScrollGroups()
         updatePlaneMaterials()
