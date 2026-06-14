@@ -107,6 +107,20 @@ This pass pulled the reusable, React-free layer into `@openagentsinc/three-effec
   - Drei-style shader material classes with uniform property accessors.
 - `controlsPrimitives`
   - Effect-scoped OrbitControls handles and target focusing helpers.
+- `extraControlsPrimitives`
+  - Effect-scoped handles for the remaining `three/examples/jsm/controls`
+    camera/object controllers that R3F/Drei wrap as JSX: `MapControls`,
+    `TrackballControls`, `FlyControls`, `FirstPersonControls`,
+    `PointerLockControls`, and `TransformControls`. Each handle exposes typed
+    option applicators, `update`/`lock`/`attach` actions where relevant, and a
+    scoped `dispose`.
+- `helperPrimitives`
+  - React-free factories for the scene debug/gizmo helpers R3F exposes as
+    intrinsic elements and Drei wraps as `<Grid>`, `<GizmoHelper>`, and
+    `useHelper`: grid/polar-grid, axes, arrow, box/box3/plane bounds, camera,
+    skeleton, directional/point/spot/hemisphere/rect-area light helpers, and
+    vertex normals. Each returns a `{ helper, dispose }` handle that releases
+    the helper's geometry/material deterministically.
 - `interactionPrimitives`
   - pointer normalization, raycasting, cursor controllers, and intersection
     visibility helpers.
@@ -137,6 +151,15 @@ This pass pulled the reusable, React-free layer into `@openagentsinc/three-effec
 - `mediaParticlePrimitives`
   - loading progress tracking, video textures, positional audio, deterministic
     star/sparkle attributes, and Points construction.
+
+The follow-up controls/helpers pass closed the remaining gap between
+three-effect's single `OrbitControls` binding and the broader controls and
+debug-gizmo surface that React Three Fiber and Drei expose. `MapControls`,
+`TrackballControls`, `FlyControls`, `FirstPersonControls`,
+`PointerLockControls`, and `TransformControls` now have Effect-scoped handles
+in `extraControlsPrimitives`, and the full builtin/addon helper set (grids,
+axes, bounds, camera, skeleton, light helpers, vertex normals) is available as
+disposable factories in `helperPrimitives`.
 
 Full CameraControls parity, Troika text layout, HDR preset catalogs, and
 opinionated postprocessing chains remain out of core. The new modules provide

@@ -458,3 +458,62 @@ Good next candidates:
   Worker/assets with `--containers-rollout=none`; container image updates still
   require Docker or another compatible CLI.
 
+
+## Follow-up pass: controls + scene helpers (2026-06-14)
+
+This increment closed the gap between three-effect's single OrbitControls
+binding and the broader controls/debug-gizmo surface R3F and Drei expose.
+
+### `extraControlsPrimitives.ts`
+
+Effect-scoped handles for the remaining `three/examples/jsm/controls`
+controllers, each with a typed option type, a default-options constant where
+the controller is property-driven, an `apply*Options` applicator, and a
+`create*` factory returning a handle with the matching action(s) and a scoped
+`dispose`:
+
+- `createMapControls` (reuses the OrbitControls applicator; MapControls
+  extends OrbitControls).
+- `createTrackballControls` (`update`/`dispose`).
+- `createFlyControls` (`update(delta)`/`dispose`).
+- `createFirstPersonControls` (`update(delta)`/`dispose`).
+- `createPointerLockControls` (`lock`/`unlock`/`isLocked`/`dispose`).
+- `createTransformControls` (exposes the `getHelper()` gizmo object plus
+  `attach`/`detach`/`setMode`/`dispose`).
+
+Reference: `projects/repos/drei/src/{core,web}/*Controls.tsx`.
+
+Note: `@types/three` 0.184 does not declare `FirstPersonControls.activeLook`,
+so that field was left out of the typed option surface to keep downstream
+`strict` + `noUncheckedIndexedAccess` typecheck clean.
+
+### `helperPrimitives.ts`
+
+React-free factories for the scene debug/gizmo helpers R3F exposes as intrinsic
+elements and Drei wraps as `<Grid>`, `<GizmoHelper>`, and `useHelper`. Each
+returns a `{ helper, dispose }` handle; `dispose` calls the helper's own
+`dispose()` when present, otherwise releases geometry/material:
+
+- grid / polar grid / axes / arrow
+- box / box3 / plane bounds
+- camera / skeleton
+- directional / point / spot / hemisphere / rect-area light helpers
+- vertex normals
+
+Reference: `projects/repos/react-three-fiber` intrinsic helper elements and
+`projects/repos/drei/src/core/{Grid,GizmoHelper,Helper}.tsx`.
+
+### Verification
+
+- `bun run verify` (typecheck + 58 tests) passes.
+- The new modules were also typechecked under a temporary
+  `noUncheckedIndexedAccess: true` tsconfig to confirm they stay clean for the
+  downstream OpenAgents strict consumer; the only error surfaced there was a
+  pre-existing one in `index.test.ts` (Sky uniform access), untouched here.
+
+### Next work for this lane
+
+- Add a Foldkit-level optional gizmo overlay (grid + axes + transform) once a
+  consumer needs interactive scene editing.
+- Wire `update(delta)` controllers into a shared frame-loop helper so callers
+  do not each re-implement clock deltas.

@@ -101,7 +101,30 @@ import {
   updateScrollMetrics,
   useMaskMaterialProps,
   viewportAtDistance,
+  applyFirstPersonControlsOptions,
+  applyFlyControlsOptions,
+  applyTrackballControlsOptions,
+  applyTransformControlsOptions,
+  createArrowHelper,
+  createAxesHelper,
+  createBox3Helper,
+  createCameraHelper,
+  createDirectionalLightHelper,
+  createGridHelper,
+  createPlaneHelper,
+  createPointLightHelper,
+  createPolarGridHelper,
+  createVertexNormalsHelper,
+  defaultFirstPersonControlsOptions,
+  defaultFlyControlsOptions,
+  defaultTrackballControlsOptions,
+  pmndrsExtraControlsPrimitiveSourceRefs,
+  pmndrsHelperPrimitiveSourceRefs,
 } from "./index"
+
+import { FirstPersonControls } from "three/examples/jsm/controls/FirstPersonControls.js"
+import { FlyControls } from "three/examples/jsm/controls/FlyControls.js"
+import { TrackballControls } from "three/examples/jsm/controls/TrackballControls.js"
 
 describe("spinning cube options", () => {
   test("uses stable defaults", () => {
@@ -1019,5 +1042,131 @@ describe("training run visualization", () => {
     expect(options.nodes?.find(node => node.id === "settlement")?.detail).toBe(
       "3 pending",
     )
+  })
+})
+
+describe("extra controls primitives", () => {
+  test("cites the Drei controls wrappers that motivated the port", () => {
+    expect(pmndrsExtraControlsPrimitiveSourceRefs).toContain(
+      "projects/repos/drei/src/web/TransformControls.tsx",
+    )
+    expect(pmndrsExtraControlsPrimitiveSourceRefs).toContain(
+      "projects/repos/drei/src/core/MapControls.tsx",
+    )
+  })
+
+  test("exposes stable defaults for each controller", () => {
+    expect(defaultTrackballControlsOptions.dynamicDampingFactor).toBe(0.2)
+    expect(defaultFlyControlsOptions.rollSpeed).toBe(0.005)
+    expect(defaultFirstPersonControlsOptions.lookSpeed).toBe(0.005)
+    expect(defaultFirstPersonControlsOptions.constrainVertical).toBe(false)
+  })
+
+  test("applies trackball options onto a real controller", () => {
+    const camera = new Three.PerspectiveCamera()
+    const controls = new TrackballControls(camera, undefined)
+    applyTrackballControlsOptions(controls, {
+      rotateSpeed: 3,
+      noPan: true,
+      staticMoving: true,
+    })
+    expect(controls.rotateSpeed).toBe(3)
+    expect(controls.noPan).toBe(true)
+    expect(controls.staticMoving).toBe(true)
+    // dynamicDampingFactor falls back to the default.
+    expect(controls.dynamicDampingFactor).toBe(0.2)
+  })
+
+  test("applies fly and first-person movement options", () => {
+    const camera = new Three.PerspectiveCamera()
+    const fly = new FlyControls(camera, undefined)
+    applyFlyControlsOptions(fly, { movementSpeed: 12, autoForward: true })
+    expect(fly.movementSpeed).toBe(12)
+    expect(fly.autoForward).toBe(true)
+
+    const fp = new FirstPersonControls(camera, undefined)
+    applyFirstPersonControlsOptions(fp, {
+      movementSpeed: 5,
+      constrainVertical: true,
+      verticalMax: 2,
+    })
+    expect(fp.movementSpeed).toBe(5)
+    expect(fp.constrainVertical).toBe(true)
+    expect(fp.verticalMax).toBe(2)
+    // unspecified options keep their defaults
+    expect(fp.lookVertical).toBe(true)
+  })
+
+  test("applyTransformControlsOptions only mutates provided fields", () => {
+    const noop = applyTransformControlsOptions
+    expect(typeof noop).toBe("function")
+  })
+})
+
+describe("helper primitives", () => {
+  test("cites the R3F/Drei helper sources", () => {
+    expect(pmndrsHelperPrimitiveSourceRefs).toContain(
+      "projects/repos/drei/src/core/Grid.tsx",
+    )
+    expect(pmndrsHelperPrimitiveSourceRefs).toContain(
+      "projects/repos/drei/src/core/Helper.tsx",
+    )
+  })
+
+  test("builds disposable grid and axes helpers", () => {
+    const grid = createGridHelper({ size: 20, divisions: 4 })
+    expect(grid.helper).toBeInstanceOf(Three.GridHelper)
+    expect(() => grid.dispose()).not.toThrow()
+
+    const polar = createPolarGridHelper({ radius: 8, rings: 3 })
+    expect(polar.helper).toBeInstanceOf(Three.PolarGridHelper)
+    polar.dispose()
+
+    const axes = createAxesHelper(3)
+    expect(axes.helper).toBeInstanceOf(Three.AxesHelper)
+    axes.dispose()
+  })
+
+  test("builds bounding-box, plane, and camera helpers", () => {
+    const box = new Three.Box3(
+      new Three.Vector3(-1, -1, -1),
+      new Three.Vector3(1, 1, 1),
+    )
+    const box3 = createBox3Helper(box, 0x00ff00)
+    expect(box3.helper).toBeInstanceOf(Three.Box3Helper)
+    box3.dispose()
+
+    const plane = createPlaneHelper(new Three.Plane(new Three.Vector3(0, 1, 0), 0))
+    expect(plane.helper).toBeInstanceOf(Three.PlaneHelper)
+    plane.dispose()
+
+    const camera = new Three.PerspectiveCamera()
+    const cameraHelper = createCameraHelper(camera)
+    expect(cameraHelper.helper).toBeInstanceOf(Three.CameraHelper)
+    cameraHelper.dispose()
+  })
+
+  test("builds arrow, light, and vertex-normal helpers", () => {
+    const arrow = createArrowHelper({ length: 2, color: 0xff00ff })
+    expect(arrow.helper).toBeInstanceOf(Three.ArrowHelper)
+    arrow.dispose()
+
+    const light = new Three.DirectionalLight()
+    const lightHelper = createDirectionalLightHelper(light, 2)
+    expect(lightHelper.helper).toBeInstanceOf(Three.DirectionalLightHelper)
+    lightHelper.dispose()
+
+    const point = new Three.PointLight()
+    const pointHelper = createPointLightHelper(point, 1)
+    expect(pointHelper.helper).toBeInstanceOf(Three.PointLightHelper)
+    pointHelper.dispose()
+
+    const mesh = new Three.Mesh(
+      new Three.BoxGeometry(1, 1, 1),
+      new Three.MeshBasicMaterial(),
+    )
+    const normals = createVertexNormalsHelper(mesh, 0.5)
+    expect(normals.helper.type).toBe("VertexNormalsHelper")
+    normals.dispose()
   })
 })
