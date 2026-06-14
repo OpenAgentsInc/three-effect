@@ -1,0 +1,65 @@
+{
+  "name": "@openagentsinc/three-effect",
+  "version": "0.0.1",
+  "description": "Effect and Foldkit bindings for resource-scoped Three.js scenes",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "packages/core/src/index.ts",
+  "module": "packages/core/src/index.ts",
+  "types": "packages/core/src/index.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OpenAgentsInc/three-effect.git"
+  },
+  "homepage": "https://github.com/OpenAgentsInc/three-effect#readme",
+  "bugs": {
+    "url": "https://github.com/OpenAgentsInc/three-effect/issues"
+  },
+  "exports": {
+    ".": {
+      "types": "./packages/core/src/index.ts",
+      "default": "./packages/core/src/index.ts"
+    },
+    "./core": {
+      "types": "./packages/core/src/index.ts",
+      "default": "./packages/core/src/index.ts"
+    },
+    "./foldkit": {
+      "types": "./packages/foldkit/src/index.ts",
+      "default": "./packages/foldkit/src/index.ts"
+    }
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "verify": "bun run typecheck && bun test"
+  },
+  "keywords": [
+    "three",
+    "three.js",
+    "effect",
+    "foldkit",
+    "webgl"
+  ],
+  "files": [
+    "packages",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "effect": "4.0.0-beta.70",
+    "foldkit": "0.102.1",
+    "three": "0.184.0"
+  },
+  "devDependencies": {
+    "@types/bun": "1.1.14",
+    "@types/three": "0.184.0",
+    "typescript": "6.0.3"
+  }
+}

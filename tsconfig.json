@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "ignoreDeprecations": "6.0",
+    "types": ["bun"],
+    "baseUrl": ".",
+    "paths": {
+      "@openagentsinc/three-effect/core": ["packages/core/src/index.ts"],
+      "@openagentsinc/three-effect/foldkit": ["packages/foldkit/src/index.ts"]
+    }
+  },
+  "include": ["packages/**/*.ts"]
+}
