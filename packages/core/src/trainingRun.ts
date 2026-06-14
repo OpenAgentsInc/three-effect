@@ -35,6 +35,11 @@ export type TrainingRunNodeDefinition = Readonly<{
   connectedTo?: readonly string[]
 }>
 
+export type TrainingRunNodeSelection = Pick<
+  TrainingRunNodeDefinition,
+  "detail" | "id" | "label" | "role" | "status"
+>
+
 export type TrainingRunEdgeDefinition = Readonly<{
   sourceId: string
   targetId: string
@@ -101,6 +106,7 @@ export type TrainingRunVisualizationOptions = Readonly<{
   lossCurve?: readonly TrainingRunLossPoint[]
   operatorSignals?: readonly TrainingRunOperatorSignalDefinition[]
   promiseSignals?: readonly TrainingRunPromiseSignalDefinition[]
+  onNodeClick?: (node: TrainingRunNodeSelection) => void
   pulseSpeed?: number
 }>
 
@@ -153,6 +159,7 @@ export type ResolvedTrainingRunVisualizationOptions = Readonly<{
   lossCurve: readonly TrainingRunLossPoint[]
   operatorSignals: readonly TrainingRunOperatorSignalDefinition[]
   promiseSignals: readonly TrainingRunPromiseSignalDefinition[]
+  onNodeClick?: (node: TrainingRunNodeSelection) => void
   pulseSpeed: number
 }>
 
@@ -370,6 +377,7 @@ export const resolveTrainingRunVisualizationOptions = (
   promiseSignals:
     options.promiseSignals ??
     defaultTrainingRunVisualizationOptions.promiseSignals,
+  onNodeClick: options.onNodeClick,
 })
 
 const finiteNonNegative = (value: number | undefined): number =>
@@ -773,6 +781,16 @@ const hostSize = (element: HTMLElement): { width: number; height: number } => {
 const vector = (point: TrainingRunVector): Three.Vector3 =>
   new Three.Vector3(point[0], point[1], point[2])
 
+const nodeSelection = (
+  node: TrainingRunNodeDefinition,
+): TrainingRunNodeSelection => ({
+  detail: node.detail,
+  id: node.id,
+  label: node.label,
+  role: node.role,
+  status: node.status,
+})
+
 const colorForStatus = (status: TrainingRunNodeStatus): number =>
   status === "blocked"
     ? 0xff6b6b
@@ -1170,6 +1188,12 @@ export const mountTrainingRunVisualization = (
 
       const root = new Three.Group()
       scene.add(root)
+      const raycaster = new Three.Raycaster()
+      const pointer = new Three.Vector2()
+      const clickTargets: Array<{
+        mesh: Three.Mesh<Three.CircleGeometry, Three.MeshBasicMaterial>
+        node: TrainingRunNodeDefinition
+      }> = []
 
       const grid = new Three.Group()
       for (let x = -4; x <= 4; x += 1) {
@@ -1278,6 +1302,10 @@ export const mountTrainingRunVisualization = (
         const radius =
           node.role === "run" ? 0.56 : node.role === "rung" ? 0.34 : 0.27
         group.add(makeRing(radius, statusColor, node.role === "run" ? 0.58 : 0.38))
+        const hitTarget = makeCircle(radius * 0.92, statusColor, 0.001)
+        hitTarget.position.z = 0.62
+        group.add(hitTarget)
+        clickTargets.push({ mesh: hitTarget, node })
         group.add(makeCircle(radius * 0.32, statusColor, 0.95))
 
         const label = makeTextSprite(node.label, {
@@ -1548,6 +1576,40 @@ export const mountTrainingRunVisualization = (
         root.add(signalGroup)
       }
 
+      const nodeAtEvent = (
+        event: PointerEvent,
+      ): TrainingRunNodeDefinition | undefined => {
+        const rect = canvas.getBoundingClientRect()
+        if (rect.width <= 0 || rect.height <= 0) return undefined
+        pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1
+        pointer.y = -(((event.clientY - rect.top) / rect.height) * 2 - 1)
+        raycaster.setFromCamera(pointer, camera)
+        const intersections = raycaster.intersectObjects(
+          clickTargets.map(target => target.mesh),
+          false,
+        )
+        const hit = intersections[0]?.object
+        return clickTargets.find(target => target.mesh === hit)?.node
+      }
+
+      const handlePointerMove = (event: PointerEvent) => {
+        canvas.style.cursor = nodeAtEvent(event) === undefined ? "default" : "pointer"
+      }
+
+      const handlePointerLeave = () => {
+        canvas.style.cursor = "default"
+      }
+
+      const handlePointerDown = (event: PointerEvent) => {
+        const node = nodeAtEvent(event)
+        if (node === undefined) return
+        resolved.onNodeClick?.(nodeSelection(node))
+      }
+
+      canvas.addEventListener("pointermove", handlePointerMove)
+      canvas.addEventListener("pointerleave", handlePointerLeave)
+      canvas.addEventListener("pointerdown", handlePointerDown)
+
       let disposed = false
       let frame = 0
       let lastTime = 0
@@ -1598,6 +1660,9 @@ export const mountTrainingRunVisualization = (
         disposed = true
         cancelAnimationFrame(frame)
         observer?.disconnect()
+        canvas.removeEventListener("pointermove", handlePointerMove)
+        canvas.removeEventListener("pointerleave", handlePointerLeave)
+        canvas.removeEventListener("pointerdown", handlePointerDown)
         disposeObject(scene)
         renderer.dispose()
         canvas.remove()

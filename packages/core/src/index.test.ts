@@ -134,6 +134,14 @@ describe("training run visualization", () => {
     expect(resolveTrainingRunVisualizationOptions().maxAllowedStaleSteps).toBe(5)
   })
 
+  test("preserves node click callbacks in resolved scene options", () => {
+    const onNodeClick = () => {}
+
+    expect(resolveTrainingRunVisualizationOptions({ onNodeClick }).onNodeClick).toBe(
+      onNodeClick,
+    )
+  })
+
   test("connects the lifecycle through active and sync reentry", () => {
     const edges = createTrainingRunEdges(defaultTrainingRunNodes)
     expect(

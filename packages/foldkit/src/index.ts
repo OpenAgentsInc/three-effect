@@ -6,6 +6,7 @@ import {
   mountBezierNodes,
   mountSpinningCube,
   mountTrainingRunVisualization,
+  type TrainingRunNodeSelection,
   type TrainingRunVisualizationOptions,
 } from "@openagentsinc/three-effect/core"
 
@@ -30,7 +31,23 @@ const trainingRunElement = defineCustomElement({
   properties: {
     visualization: S.Unknown,
   },
-  events: {},
+  events: {
+    "node-selected": S.Struct({
+      detail: S.String,
+      id: S.String,
+      label: S.String,
+      role: S.Literals(["lifecycle", "run", "proof", "receipt", "rung"]),
+      status: S.Literals([
+        "planned",
+        "queued",
+        "sync",
+        "active",
+        "sealed",
+        "verified",
+        "blocked",
+      ]),
+    }),
+  },
 })
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -49,6 +66,19 @@ const trainingOptionsSignature = (
   } catch {
     return `${Date.now()}`
   }
+}
+
+const dispatchTrainingNodeSelected = (
+  element: HTMLElement,
+  node: TrainingRunNodeSelection,
+): void => {
+  element.dispatchEvent(
+    new CustomEvent("node-selected", {
+      bubbles: true,
+      composed: true,
+      detail: node,
+    }),
+  )
 }
 
 const makeSpinningCubeElement = (): CustomElementConstructor => {
@@ -202,7 +232,10 @@ const makeTrainingRunElement = (): CustomElementConstructor => {
       if (this.#mount === null) return
       this.#unmount()
       const handle = Effect.runSync(
-        mountTrainingRunVisualization(this.#mount, this.#visualization),
+        mountTrainingRunVisualization(this.#mount, {
+          ...this.#visualization,
+          onNodeClick: node => dispatchTrainingNodeSelected(this, node),
+        }),
       )
       this.#dispose = handle.dispose
     }
@@ -249,13 +282,18 @@ export const spinningCubeView = <Message>(
 export const trainingRunView = <Message>(
   attributes: ReadonlyArray<Attribute<Message>> = [],
   visualization?: TrainingRunVisualizationOptions,
+  onNodeSelected?: (node: TrainingRunNodeSelection) => Message,
 ): Html => {
   registerTrainingRunElement()
   const element = trainingRunElement.withMessage<Message>()
+  const resolvedAttributes =
+    onNodeSelected === undefined
+      ? attributes
+      : [...attributes, element.OnNodeSelected(onNodeSelected)]
   return element(
     visualization === undefined
-      ? attributes
-      : [...attributes, element.Visualization(visualization)],
+      ? resolvedAttributes
+      : [...resolvedAttributes, element.Visualization(visualization)],
     [],
   )
 }
