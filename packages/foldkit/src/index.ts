@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Effect, Schema as S } from "effect"
 import { define as defineCustomElement } from "foldkit/customElement"
 import type { Attribute, Html } from "foldkit/html"
 
@@ -6,6 +6,7 @@ import {
   mountBezierNodes,
   mountSpinningCube,
   mountTrainingRunVisualization,
+  type TrainingRunVisualizationOptions,
 } from "@openagentsinc/three-effect/core"
 
 export const bezierNodesTagName = "oa-bezier-nodes"
@@ -26,9 +27,19 @@ const spinningCubeElement = defineCustomElement({
 
 const trainingRunElement = defineCustomElement({
   tag: trainingRunTagName,
-  properties: {},
+  properties: {
+    visualization: S.Unknown,
+  },
   events: {},
 })
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null
+
+const trainingOptionsFromUnknown = (
+  value: unknown,
+): TrainingRunVisualizationOptions =>
+  isRecord(value) ? (value as TrainingRunVisualizationOptions) : {}
 
 const makeSpinningCubeElement = (): CustomElementConstructor => {
   return class SpinningCubeElement extends HTMLElement {
@@ -117,9 +128,22 @@ const makeBezierNodesElement = (): CustomElementConstructor => {
 const makeTrainingRunElement = (): CustomElementConstructor => {
   return class TrainingRunElement extends HTMLElement {
     #dispose: Effect.Effect<void> | null = null
+    #mount: HTMLDivElement | null = null
+    #visualization: TrainingRunVisualizationOptions = {}
+
+    get visualization(): TrainingRunVisualizationOptions {
+      return this.#visualization
+    }
+
+    set visualization(value: unknown) {
+      this.#visualization = trainingOptionsFromUnknown(value)
+      if (this.isConnected && this.#mount !== null) {
+        this.#remount()
+      }
+    }
 
     connectedCallback(): void {
-      if (this.#dispose !== null) return
+      if (this.#mount !== null) return
 
       const shadow = this.shadowRoot ?? this.attachShadow({ mode: "open" })
       shadow.replaceChildren()
@@ -141,16 +165,30 @@ const makeTrainingRunElement = (): CustomElementConstructor => {
 
       const mount = document.createElement("div")
       mount.className = "mount"
+      this.#mount = mount
       shadow.append(style, mount)
 
-      const handle = Effect.runSync(mountTrainingRunVisualization(mount))
-      this.#dispose = handle.dispose
+      this.#remount()
     }
 
     disconnectedCallback(): void {
+      this.#unmount()
+      this.#mount = null
+    }
+
+    #unmount(): void {
       if (this.#dispose === null) return
       Effect.runSync(this.#dispose)
       this.#dispose = null
+    }
+
+    #remount(): void {
+      if (this.#mount === null) return
+      this.#unmount()
+      const handle = Effect.runSync(
+        mountTrainingRunVisualization(this.#mount, this.#visualization),
+      )
+      this.#dispose = handle.dispose
     }
   }
 }
@@ -194,8 +232,14 @@ export const spinningCubeView = <Message>(
 
 export const trainingRunView = <Message>(
   attributes: ReadonlyArray<Attribute<Message>> = [],
+  visualization?: TrainingRunVisualizationOptions,
 ): Html => {
   registerTrainingRunElement()
   const element = trainingRunElement.withMessage<Message>()
-  return element(attributes, [])
+  return element(
+    visualization === undefined
+      ? attributes
+      : [...attributes, element.Visualization(visualization)],
+    [],
+  )
 }

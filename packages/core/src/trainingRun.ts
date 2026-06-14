@@ -64,6 +64,29 @@ export type TrainingRunVisualizationOptions = Readonly<{
   pulseSpeed?: number
 }>
 
+export type TrainingRunVisualizationSnapshot = Readonly<{
+  activeWindowCount?: number
+  assignedContributorCount?: number
+  deviceObserved?: number
+  deviceRequired?: number
+  externalStatus?: string
+  finalValidationLoss?: number | null
+  freivaldsRefCount?: number
+  gradientCloseoutRefCount?: number
+  lossUnderBudget?: boolean
+  maxAllowedStaleSteps?: number
+  maxValidationLoss?: number | null
+  plannedWindowCount?: number
+  reconciledWindowCount?: number
+  rejectedWorkCount?: number
+  runDetail?: string
+  runLabel?: string
+  runState?: "planned" | "active" | "sealed" | "reconciled" | string
+  sealedWindowCount?: number
+  settledPayoutSats?: number
+  verifiedWorkCount?: number
+}>
+
 export type ResolvedTrainingRunVisualizationOptions = Readonly<{
   backgroundColor: number
   pixelRatio: number
@@ -267,6 +290,193 @@ export const resolveTrainingRunVisualizationOptions = (
     options.contributors ?? defaultTrainingRunVisualizationOptions.contributors,
   lossCurve: options.lossCurve ?? defaultTrainingRunVisualizationOptions.lossCurve,
 })
+
+const finiteNonNegative = (value: number | undefined): number =>
+  typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0
+
+const runStatusFromSnapshot = (
+  state: TrainingRunVisualizationSnapshot["runState"],
+): TrainingRunNodeStatus => {
+  switch (state) {
+    case "active":
+      return "active"
+    case "sealed":
+      return "sealed"
+    case "reconciled":
+      return "verified"
+    case "planned":
+      return "planned"
+    default:
+      return "planned"
+  }
+}
+
+const nodeWith = (
+  id: string,
+  next: Partial<TrainingRunNodeDefinition>,
+): TrainingRunNodeDefinition => {
+  const base = defaultTrainingRunNodes.find(node => node.id === id)
+  if (base === undefined) {
+    throw new Error(`unknown training node ${id}`)
+  }
+  return { ...base, ...next }
+}
+
+const contributorDefinitionsFromSnapshot = (
+  snapshot: TrainingRunVisualizationSnapshot,
+): readonly TrainingRunContributorDefinition[] => {
+  const assigned = finiteNonNegative(snapshot.assignedContributorCount)
+  const observed = finiteNonNegative(snapshot.deviceObserved)
+  const rejected = finiteNonNegative(snapshot.rejectedWorkCount)
+  const count = Math.max(1, Math.min(12, Math.ceil(Math.max(assigned, observed))))
+  const contributors: TrainingRunContributorDefinition[] = []
+
+  for (let index = 0; index < count; index += 1) {
+    const active = index < observed
+    contributors.push({
+      id: `pylon.${index + 1}`,
+      label: active ? `P${index + 1}` : `W${index + 1}`,
+      lifecycleState: active ? "active" : index % 2 === 0 ? "warmup" : "qualified",
+      phase: index / count,
+    })
+  }
+
+  if (rejected > 0 || snapshot.externalStatus === "blocked_external") {
+    contributors.push({
+      id: "pylon.sync_reentry",
+      label: "stale",
+      lifecycleState: "sync_reentry",
+      phase: 0.78,
+    })
+  }
+
+  return contributors
+}
+
+const lossCurveFromSnapshot = (
+  snapshot: TrainingRunVisualizationSnapshot,
+): readonly TrainingRunLossPoint[] => {
+  const finalLoss = snapshot.finalValidationLoss
+  const maxLoss = snapshot.maxValidationLoss
+  if (
+    typeof finalLoss !== "number" ||
+    typeof maxLoss !== "number" ||
+    !Number.isFinite(finalLoss) ||
+    !Number.isFinite(maxLoss)
+  ) {
+    return defaultTrainingRunLossCurve
+  }
+
+  const start = Math.max(maxLoss * 1.2, finalLoss * 1.35, 0.01)
+  const midpoint = (start + finalLoss) / 2
+  return [
+    { step: 0, validationLoss: start },
+    { step: 120, validationLoss: midpoint },
+    { step: 240, validationLoss: finalLoss },
+  ]
+}
+
+export const trainingRunVisualizationOptionsFromSnapshot = (
+  snapshot: TrainingRunVisualizationSnapshot,
+): TrainingRunVisualizationOptions => {
+  const activeWindows = finiteNonNegative(snapshot.activeWindowCount)
+  const plannedWindows = finiteNonNegative(snapshot.plannedWindowCount)
+  const sealedWindows = finiteNonNegative(snapshot.sealedWindowCount)
+  const reconciledWindows = finiteNonNegative(snapshot.reconciledWindowCount)
+  const verifiedWork = finiteNonNegative(snapshot.verifiedWorkCount)
+  const freivaldsRefs = finiteNonNegative(snapshot.freivaldsRefCount)
+  const closeoutRefs = finiteNonNegative(snapshot.gradientCloseoutRefCount)
+  const settledSats = finiteNonNegative(snapshot.settledPayoutSats)
+  const observedDevices = finiteNonNegative(snapshot.deviceObserved)
+  const requiredDevices = finiteNonNegative(snapshot.deviceRequired)
+  const deviceReady =
+    requiredDevices === 0 ? observedDevices > 0 : observedDevices >= requiredDevices
+  const externalBlocked = snapshot.externalStatus === "blocked_external"
+
+  return {
+    maxAllowedStaleSteps: snapshot.maxAllowedStaleSteps,
+    contributors: contributorDefinitionsFromSnapshot(snapshot),
+    lossCurve: lossCurveFromSnapshot(snapshot),
+    nodes: [
+      nodeWith("registered", {
+        detail: `${Math.max(observedDevices, finiteNonNegative(snapshot.assignedContributorCount))} pylons seen`,
+        status: observedDevices > 0 ? "active" : "queued",
+      }),
+      nodeWith("qualified", {
+        detail:
+          requiredDevices > 0
+            ? `${observedDevices}/${requiredDevices} device gate`
+            : "device gate",
+        status: deviceReady ? "verified" : "sync",
+      }),
+      nodeWith("state_synced", {
+        detail: `stale <= ${snapshot.maxAllowedStaleSteps ?? 5}`,
+        status: externalBlocked ? "blocked" : "sync",
+      }),
+      nodeWith("warmup", {
+        detail:
+          plannedWindows > 0
+            ? `${plannedWindows} planned windows`
+            : "shadow window",
+        status: activeWindows > 0 ? "active" : "sync",
+      }),
+      nodeWith("active", {
+        detail: `${activeWindows} active windows`,
+        status: activeWindows > 0 ? "active" : "planned",
+      }),
+      nodeWith("sync_reentry", {
+        detail: externalBlocked ? "external blocker" : "stale > bound",
+        status: externalBlocked ? "blocked" : "planned",
+      }),
+      nodeWith("run", {
+        label: snapshot.runLabel ?? "Tassadar / Psion",
+        detail: snapshot.runDetail ?? "training authority",
+        status: runStatusFromSnapshot(snapshot.runState),
+      }),
+      nodeWith("training_window", {
+        label: "windows",
+        detail: `${activeWindows} active / ${reconciledWindows} rec`,
+        status:
+          activeWindows > 0
+            ? "active"
+            : plannedWindows > 0
+              ? "queued"
+              : reconciledWindows > 0
+                ? "verified"
+                : "planned",
+      }),
+      nodeWith("sealed_window", {
+        detail: `${sealedWindows + reconciledWindows} sealed`,
+        status: sealedWindows + reconciledWindows > 0 ? "sealed" : "planned",
+      }),
+      nodeWith("freivalds", {
+        detail: `${freivaldsRefs} refs`,
+        status: freivaldsRefs > 0 ? "verified" : "blocked",
+      }),
+      nodeWith("receipt", {
+        detail: `${verifiedWork} verified`,
+        status:
+          verifiedWork > 0 && closeoutRefs > 0
+            ? "verified"
+            : verifiedWork > 0
+              ? "sealed"
+              : "planned",
+      }),
+      nodeWith("settlement", {
+        detail: `${settledSats} sats`,
+        status: settledSats > 0 ? "verified" : "planned",
+      }),
+      nodeWith("r1", {
+        detail: verifiedWork > 0 ? "evidence observed" : "operator rehearsal",
+        status: verifiedWork > 0 ? "verified" : "sealed",
+      }),
+      nodeWith("r2", {
+        detail: deviceReady ? "contributor ready" : "needs devices",
+        status: deviceReady ? "active" : "planned",
+      }),
+    ],
+  }
+}
 
 export const createTrainingRunEdges = (
   nodes: readonly TrainingRunNodeDefinition[],
