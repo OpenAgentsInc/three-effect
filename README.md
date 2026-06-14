@@ -18,7 +18,9 @@ scope for now.
       GLTF, camera and bounds fitting, Center-style object offsets, scroll
       range/curve/visibility math, HTML overlay projection and raycast
       occlusion, instance matrix/color helpers, Float and CameraShake motion,
-      and shader-material uniform accessors.
+      shader-material uniform accessors, orbit controls, animation mixers,
+      rounded/text/image geometry, masks, staging/environment/shadow helpers,
+      and performance sampling.
     - a React-free port of the pmndrs Bezier curves and nodes example, including
       draggable nodes, labels, endpoint markers, and animated dashed quadratic
       Bezier connections.
@@ -70,9 +72,11 @@ renderer and releases it on disconnect.
 The latest examples sweep scanned `projects/repos/examples/demos` and compared
 the frequent `@react-three/drei` / `@react-three/fiber` primitives against what
 `three-effect` already had. The highest-volume primitives were `useGLTF`,
-`Environment`, `OrbitControls`, `useTexture`, `ScrollControls` / `useScroll`,
-`Text`, `Float`, camera helpers, `Html`, `Bounds`, `Center`, `Instances`, and
-`shaderMaterial`.
+`Environment`, `OrbitControls`, `ContactShadows`, `AccumulativeShadows`,
+`RandomizedLight`, `useTexture`, `ScrollControls` / `useScroll`, `Text`,
+`Float`, camera helpers, `Html`, `Bounds`, `Center`, `Lightformer`,
+`CameraControls`, `Sky`, `useAnimations`, `useCursor`, `Image`, `Mask`,
+`useMask`, `useAspect`, `RoundedBox`, `Stats`, and `shaderMaterial`.
 
 This pass pulled the reusable, React-free layer into `@openagentsinc/three-effect/core`:
 
@@ -95,12 +99,30 @@ This pass pulled the reusable, React-free layer into `@openagentsinc/three-effec
   - deterministic Float-style transforms and CameraShake-style rotations.
 - `shaderMaterialPrimitives`
   - Drei-style shader material classes with uniform property accessors.
+- `controlsPrimitives`
+  - Effect-scoped OrbitControls handles and target focusing helpers.
+- `interactionPrimitives`
+  - pointer normalization, raycasting, cursor controllers, and intersection
+    visibility helpers.
+- `animationPrimitives`
+  - GLTF-style animation mixer/action controllers and scroll-driven clip
+    progress.
+- `geometryPrimitives`
+  - Drei `useAspect` math, rounded boxes, font loading, and text geometry.
+- `imagePrimitives`
+  - image cover scaling and shader-backed image planes.
+- `maskPrimitives`
+  - plain material stencil props for Drei `Mask` / `useMask` semantics.
+- `stagingPrimitives`
+  - scene environment application, RoomEnvironment PMREM textures, preload
+    compilation, shadow baking, Sky, Lightformer, randomized lights,
+    contact-shadow resources, and cube-camera resources.
+- `performancePrimitives`
+  - Drei-inspired performance factor sampling and a small DOM stats overlay.
 
-`OrbitControls`, full environment-map staging, and text mesh layout are still
-treated as scene-level concerns rather than a core dependency decision. They
-show up heavily in the examples, but pulling them into core prematurely would
-force policy around controls, HDR assets, font loading, and layout that should
-remain explicit in Foldkit scenes for now.
+Full CameraControls parity, Troika text layout, HDR preset catalogs, and
+postprocessing composer policy remain out of core. The new modules provide the
+React-free substrate that Foldkit scenes can compose explicitly.
 
 ## Moksha Demo
 

@@ -4,18 +4,33 @@ import * as Three from "three"
 import {
   applyCameraShake,
   applyInstanceTransforms,
+  animationProgressFromScroll,
+  applyMaskMaterial,
   cubicBezierPoints,
+  aspectScale,
+  calculateSkySunPosition,
   cameraShakeRotationAtTime,
   collectGltfObjectMap,
   computeCenterOffset,
+  createAnimationController,
   createBezierNodeConnections,
+  createContactShadowResources,
+  createImagePlane,
+  createImagePlaneMaterial,
   createInstanceColorArray,
   createInstanceMatrix,
+  createLightformer,
+  createPerformanceMonitorState,
   createPerspectiveCamera,
+  createRandomizedLightRig,
+  createRoundedBoxGeometry,
   createShaderMaterial,
+  createSky,
   createTrainingRunEdges,
   defaultBezierNodesGraph,
   defaultCameraShakeOptions,
+  defaultOrbitControlsOptions,
+  defaultPerformanceMonitorOptions,
   defaultMokshaDiamonds,
   defaultMokshaOptions,
   defaultMokshaParagraphs,
@@ -29,13 +44,24 @@ import {
   firstMeshGeometry,
   floatTransformAtTime,
   htmlOverlayStyle,
+  imageCoverScale,
   isWorldPointOccluded,
+  maskMaterialProps,
   pmndrsMokshaSourceRefs,
   pmndrsBezierNodesSourceRefs,
+  pmndrsAnimationPrimitiveSourceRefs,
   pmndrsCommonPrimitiveCounts,
   pmndrsCommonPrimitiveSourceRefs,
+  pmndrsControlsPrimitiveSourceRefs,
+  pmndrsGeometryPrimitiveSourceRefs,
+  pmndrsImagePrimitiveSourceRefs,
+  pmndrsInteractionPrimitiveSourceRefs,
+  pmndrsMaskPrimitiveSourceRefs,
   pmndrsMotionPathCurvePresets,
+  pmndrsPerformancePrimitiveSourceRefs,
+  pmndrsStagingPrimitiveSourceRefs,
   pmndrsTrainingDatavizSourceRefs,
+  pointerNdcFromClientPoint,
   projectWorldToScreen,
   quadraticBezierPoints,
   resolveMokshaOptions,
@@ -46,9 +72,11 @@ import {
   scrollRange,
   scrollVisible,
   resolveSpinningCubeOptions,
+  samplePerformanceFrame,
   summarizeTrainingRunVisualization,
   trainingRunVisualizationOptionsFromSnapshot,
   updateScrollMetrics,
+  useMaskMaterialProps,
   viewportAtDistance,
 } from "./index"
 
@@ -86,6 +114,31 @@ describe("common pmndrs primitive audit", () => {
         entry => entry.primitive === "ScrollControls/useScroll",
       )?.threeEffectModule,
     ).toBe("scrollPrimitives")
+    expect(pmndrsControlsPrimitiveSourceRefs).toContain(
+      "projects/repos/examples/demos/basic-demo/src/App.jsx",
+    )
+    expect(pmndrsAnimationPrimitiveSourceRefs).toContain(
+      "projects/repos/drei/src/core/useAnimations.tsx",
+    )
+    expect(pmndrsGeometryPrimitiveSourceRefs).toContain(
+      "projects/repos/drei/src/core/RoundedBox.tsx",
+    )
+    expect(pmndrsImagePrimitiveSourceRefs).toContain(
+      "projects/repos/drei/src/core/Image.tsx",
+    )
+    expect(pmndrsInteractionPrimitiveSourceRefs).toContain(
+      "projects/repos/drei/src/web/useCursor.tsx",
+    )
+    expect(pmndrsMaskPrimitiveSourceRefs).toContain(
+      "projects/repos/drei/src/core/Mask.tsx",
+    )
+    expect(pmndrsStagingPrimitiveSourceRefs).toContain(
+      "projects/repos/drei/src/core/Environment.tsx",
+    )
+    expect(pmndrsPerformancePrimitiveSourceRefs).toContain(
+      "projects/repos/drei/src/core/PerformanceMonitor.tsx",
+    )
+    expect(defaultOrbitControlsOptions.enableDamping).toBe(true)
   })
 })
 
@@ -277,6 +330,147 @@ describe("instance, motion, shader, and asset primitives", () => {
     expect(map.nodes.box).toBe(mesh)
     expect(map.materials.primary).toBe(material)
     expect(firstMeshGeometry(scene)).toBe(geometry)
+  })
+})
+
+describe("interaction and animation primitives", () => {
+  test("normalizes pointer coordinates and raycasts without useThree", () => {
+    const ndc = pointerNdcFromClientPoint(
+      { x: 50, y: 25 },
+      { left: 0, top: 0, width: 100, height: 100 },
+    )
+    expect(ndc.x).toBe(0)
+    expect(ndc.y).toBe(0.5)
+  })
+
+  test("creates animation actions and supports scroll-driven progress", () => {
+    const root = new Three.Object3D()
+    const clip = new Three.AnimationClip("move", 1, [
+      new Three.VectorKeyframeTrack(".position", [0, 1], [0, 0, 0, 2, 0, 0]),
+    ])
+    const controller = createAnimationController(root, [clip])
+    const action = controller.play("move")
+
+    expect(controller.names).toEqual(["move"])
+    expect(action).toBeDefined()
+    controller.update(0.5)
+    expect(root.position.x).toBeGreaterThan(0)
+    animationProgressFromScroll(action!, clip, 0.25)
+    expect(action!.time).toBeCloseTo(0.25)
+    controller.dispose()
+  })
+})
+
+describe("geometry, image, and mask primitives", () => {
+  test("computes aspect scaling and rounded geometry parameters", () => {
+    expect(aspectScale({ width: 16, height: 9 }, 4, 3)).toEqual([16, 12, 1])
+    const geometry = createRoundedBoxGeometry({
+      width: 2,
+      height: 3,
+      depth: 4,
+      radius: 0.2,
+      segments: 3,
+    })
+    expect(geometry.parameters.width).toBe(2)
+    expect(geometry.parameters.height).toBe(3)
+    expect(geometry.parameters.depth).toBe(4)
+    expect((geometry.parameters as unknown as { radius: number }).radius).toBe(0.2)
+  })
+
+  test("creates cover-scaled image planes with shader accessors", () => {
+    expect(imageCoverScale([2, 1], [1, 1])).toEqual([1, 2])
+    const texture = new Three.Texture()
+    texture.image = { width: 400, height: 200 }
+
+    const material = createImagePlaneMaterial(texture, {
+      width: 2,
+      height: 1,
+      opacity: 0.75,
+      grayscale: 0.5,
+    })
+    expect(material.map.source).toBe(texture.source)
+    expect(material.opacity).toBe(0.75)
+    expect(material.grayscale).toBe(0.5)
+
+    const mesh = createImagePlane(texture, { width: 2, height: 1 })
+    expect(mesh.geometry.parameters.width).toBe(2)
+    expect(mesh.geometry.parameters.height).toBe(1)
+  })
+
+  test("maps Drei mask semantics to plain material props", () => {
+    expect(maskMaterialProps({ id: 7 })).toMatchObject({
+      stencilWrite: true,
+      stencilRef: 7,
+      stencilFunc: Three.AlwaysStencilFunc,
+    })
+    expect(useMaskMaterialProps({ id: 7, inverse: true })).toMatchObject({
+      stencilWrite: true,
+      stencilRef: 7,
+      stencilFunc: Three.NotEqualStencilFunc,
+    })
+
+    const material = applyMaskMaterial(new Three.MeshBasicMaterial(), { id: 3 })
+    expect(material.stencilWrite).toBe(true)
+    expect(material.stencilRef).toBe(3)
+  })
+})
+
+describe("staging and performance primitives", () => {
+  test("creates sky, lightformer, randomized lights, and contact-shadow resources", () => {
+    const sun = calculateSkySunPosition(0.6, 0.1)
+    expect(sun.toArray()).toEqual([
+      Math.cos(2 * Math.PI * (0.1 - 0.5)),
+      Math.sin(Math.PI * (0.6 - 0.5)),
+      Math.sin(2 * Math.PI * (0.1 - 0.5)),
+    ])
+
+    const sky = createSky({ sunPosition: [1, 2, 3], distance: 500 })
+    expect(sky.scale.x).toBe(500)
+    expect(sky.material.uniforms.sunPosition.value.toArray()).toEqual([1, 2, 3])
+
+    const lightformer = createLightformer({
+      form: "rect",
+      color: "white",
+      intensity: 2,
+      scale: [2, 3],
+      target: true,
+      pointLight: { intensity: 1 },
+    })
+    expect(lightformer.scale.toArray()).toEqual([2, 3, 1])
+    expect(lightformer.children.some(child => child instanceof Three.PointLight)).toBe(
+      true,
+    )
+
+    const rig = createRandomizedLightRig({ amount: 4, seed: 123 })
+    expect(
+      rig.children.filter(child => child instanceof Three.DirectionalLight),
+    ).toHaveLength(4)
+
+    const resources = createContactShadowResources({ scale: [2, 3], resolution: 32 })
+    expect(resources.camera.left).toBe(-1)
+    expect(resources.camera.top).toBe(1.5)
+    resources.dispose()
+  })
+
+  test("samples performance frames into incline, decline, and fallback states", () => {
+    const state = createPerformanceMonitorState({ factor: 0.5 })
+    const options = {
+      ...defaultPerformanceMonitorOptions,
+      ms: 10,
+      iterations: 2,
+      threshold: 0.5,
+      bounds: () => [20, 60] as const,
+      step: 0.25,
+    }
+
+    samplePerformanceFrame(state, 0, options)
+    samplePerformanceFrame(state, 20, options)
+    samplePerformanceFrame(state, 40, options)
+    const result = samplePerformanceFrame(state, 60, options)
+
+    expect(result.changed).toBe(true)
+    expect(result.direction).toBe("incline")
+    expect(state.factor).toBe(0.75)
   })
 })
 
