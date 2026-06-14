@@ -1,10 +1,10 @@
 import { Data, Effect } from "effect"
 import * as Three from "three"
 import {
-  DRACOLoader,
   GLTFLoader,
   type GLTF,
-} from "three/examples/jsm/Addons.js"
+} from "three/examples/jsm/loaders/GLTFLoader.js"
+import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js"
 
 export const pmndrsAssetPrimitiveSourceRefs = [
   "projects/repos/drei/src/core/Gltf.tsx",
