@@ -2,8 +2,16 @@ import { Data, Effect } from "effect"
 import * as Three from "three"
 
 export * from "./bezierNodes"
+export * from "./assetPrimitives"
+export * from "./cameraPrimitives"
+export * from "./commonPrimitiveAudit"
 export * from "./curvePrimitives"
+export * from "./htmlOverlayPrimitives"
+export * from "./instancePrimitives"
 export * from "./moksha"
+export * from "./motionPrimitives"
+export * from "./scrollPrimitives"
+export * from "./shaderMaterialPrimitives"
 export * from "./trainingRun"
 
 export class SpinningCubeMountError extends Data.TaggedError(

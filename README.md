@@ -13,6 +13,12 @@ scope for now.
   - Effect-first Three runtime utilities.
   - Current proof points:
     - a scoped spinning cube renderer with deterministic disposal.
+    - React-free core primitives for common pmndrs/R3F/Drei patterns seen
+      across `projects/repos/examples`: Effect asset loaders for textures and
+      GLTF, camera and bounds fitting, Center-style object offsets, scroll
+      range/curve/visibility math, HTML overlay projection and raycast
+      occlusion, instance matrix/color helpers, Float and CameraShake motion,
+      and shader-material uniform accessors.
     - a React-free port of the pmndrs Bezier curves and nodes example, including
       draggable nodes, labels, endpoint markers, and animated dashed quadratic
       Bezier connections.
@@ -58,6 +64,43 @@ The Foldkit helpers register `oa-spinning-cube`, `oa-bezier-nodes`,
 `oa-moksha`, and `oa-training-run` custom elements when a browser
 custom-elements registry is available. Each element owns a scoped Three
 renderer and releases it on disconnect.
+
+## Common Primitive Pass
+
+The latest examples sweep scanned `projects/repos/examples/demos` and compared
+the frequent `@react-three/drei` / `@react-three/fiber` primitives against what
+`three-effect` already had. The highest-volume primitives were `useGLTF`,
+`Environment`, `OrbitControls`, `useTexture`, `ScrollControls` / `useScroll`,
+`Text`, `Float`, camera helpers, `Html`, `Bounds`, `Center`, `Instances`, and
+`shaderMaterial`.
+
+This pass pulled the reusable, React-free layer into `@openagentsinc/three-effect/core`:
+
+- `assetPrimitives`
+  - `loadTexture`, `loadTextures`, `loadGltf`, `loadGltfs`,
+    `collectGltfObjectMap`, and `firstMeshGeometry`.
+- `cameraPrimitives`
+  - perspective and orthographic camera factories, resize helpers, viewport
+    math, bounds measurement, fit-to-box, and Center-style offsets.
+- `scrollPrimitives`
+  - normalized scroll progress, Drei-style `range`, `curve`, `visible`, and
+    damped metrics.
+- `htmlOverlayPrimitives`
+  - world-to-screen projection, z-index calculation, distance scaling, and
+    raycast occlusion checks for DOM overlays.
+- `instancePrimitives`
+  - instance matrices, color buffers, `InstancedMesh` application, and a small
+    mesh factory.
+- `motionPrimitives`
+  - deterministic Float-style transforms and CameraShake-style rotations.
+- `shaderMaterialPrimitives`
+  - Drei-style shader material classes with uniform property accessors.
+
+`OrbitControls`, full environment-map staging, and text mesh layout are still
+treated as scene-level concerns rather than a core dependency decision. They
+show up heavily in the examples, but pulling them into core prematurely would
+force policy around controls, HDR assets, font loading, and layout that should
+remain explicit in Foldkit scenes for now.
 
 ## Moksha Demo
 
