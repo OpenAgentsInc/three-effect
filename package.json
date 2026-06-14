@@ -34,6 +34,7 @@
   ],
   "scripts": {
     "build:demo:bezier": "bun build examples/bezier-nodes/src/main.ts --outdir examples/bezier-nodes/dist --target browser",
+    "build:demo:moksha": "bun build examples/moksha/src/main.ts --outdir examples/moksha/dist --target browser && mkdir -p examples/moksha/dist/assets/moksha && cp packages/core/src/assets/moksha/* examples/moksha/dist/assets/moksha/",
     "build:demo:training": "bun build examples/training-run/src/main.ts --outdir examples/training-run/dist --target browser",
     "test": "bun test",
     "typecheck": "tsc --noEmit -p tsconfig.json",

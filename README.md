@@ -23,6 +23,10 @@ scope for now.
       windows, seal/staleness, verification, receipts, rungs, contributor dots,
       animated flow connectors, contributor orbit tracks, and loss-curve
       feedback with 2D chart scaffolding.
+    - a React-free port of the pmndrs Moksha scrollytelling demo with
+      orthographic scroll parallax, shader-distorted image planes, the Moonget
+      display font, refraction diamonds, stripes, startup fade, and narrative
+      text overlays.
 - `@openagentsinc/three-effect/foldkit`
   - Foldkit custom-element bindings for the core scenes.
   - Designed for Foldkit views to render the element declaratively while Three
@@ -39,19 +43,40 @@ Workspace package manifests also exist under `packages/core` and
 ```ts
 import {
   bezierNodesView,
+  mokshaView,
   spinningCubeView,
   trainingRunView,
 } from "@openagentsinc/three-effect/foldkit"
 
 const preview = spinningCubeView<Message>()
 const graph = bezierNodesView<Message>()
+const moksha = mokshaView<Message>()
 const training = trainingRunView<Message>()
 ```
 
-The Foldkit helpers register `oa-spinning-cube`, `oa-bezier-nodes`, and
-`oa-training-run` custom elements when a browser custom-elements registry is
-available. Each element owns a scoped Three renderer and releases it on
-disconnect.
+The Foldkit helpers register `oa-spinning-cube`, `oa-bezier-nodes`,
+`oa-moksha`, and `oa-training-run` custom elements when a browser
+custom-elements registry is available. Each element owns a scoped Three
+renderer and releases it on disconnect.
+
+## Moksha Demo
+
+The tracked visual smoke for the Moksha port lives at `examples/moksha/`. It is
+based on:
+
+- `projects/repos/examples/demos/moksha/src/index.jsx`
+- `projects/repos/examples/demos/moksha/src/blocks.jsx`
+- `projects/repos/examples/demos/moksha/src/components/Plane.jsx`
+- `projects/repos/examples/demos/moksha/src/components/Text.jsx`
+- `projects/repos/examples/demos/moksha/src/components/CustomMaterial.js`
+- `projects/repos/examples/demos/moksha/src/diamonds/Diamonds.jsx`
+- `projects/repos/examples/demos/moksha/src/diamonds/BackfaceMaterial.js`
+- `projects/repos/examples/demos/moksha/src/diamonds/RefractionMaterial.js`
+
+```sh
+bun run build:demo:moksha
+open examples/moksha/index.html
+```
 
 ## Training Run Demo
 
@@ -92,5 +117,6 @@ open examples/bezier-nodes/index.html
 bun install
 bun run verify
 bun run build:demo:bezier
+bun run build:demo:moksha
 bun run build:demo:training
 ```

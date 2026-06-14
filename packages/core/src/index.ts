@@ -3,6 +3,7 @@ import * as Three from "three"
 
 export * from "./bezierNodes"
 export * from "./curvePrimitives"
+export * from "./moksha"
 export * from "./trainingRun"
 
 export class SpinningCubeMountError extends Data.TaggedError(

@@ -4,6 +4,7 @@ import type { Attribute, Html } from "foldkit/html"
 
 import {
   mountBezierNodes,
+  mountMokshaExperience,
   mountSpinningCube,
   mountTrainingRunVisualization,
   type TrainingRunNodeSelection,
@@ -11,6 +12,7 @@ import {
 } from "@openagentsinc/three-effect/core"
 
 export const bezierNodesTagName = "oa-bezier-nodes"
+export const mokshaTagName = "oa-moksha"
 export const spinningCubeTagName = "oa-spinning-cube"
 export const trainingRunTagName = "oa-training-run"
 
@@ -22,6 +24,12 @@ const bezierNodesElement = defineCustomElement({
 
 const spinningCubeElement = defineCustomElement({
   tag: spinningCubeTagName,
+  properties: {},
+  events: {},
+})
+
+const mokshaElement = defineCustomElement({
+  tag: mokshaTagName,
   properties: {},
   events: {},
 })
@@ -165,6 +173,49 @@ const makeBezierNodesElement = (): CustomElementConstructor => {
   }
 }
 
+const makeMokshaElement = (): CustomElementConstructor => {
+  return class MokshaElement extends HTMLElement {
+    #dispose: Effect.Effect<void> | null = null
+
+    connectedCallback(): void {
+      if (this.#dispose !== null) return
+
+      const shadow = this.shadowRoot ?? this.attachShadow({ mode: "open" })
+      shadow.replaceChildren()
+
+      const style = document.createElement("style")
+      style.textContent = `
+        :host {
+          display: block;
+          min-height: 100dvh;
+          overflow: hidden;
+          background: #0c0f13;
+          color: #f5f5f5;
+          touch-action: pan-y;
+        }
+        .mount {
+          width: 100%;
+          height: 100%;
+          min-height: inherit;
+        }
+      `
+
+      const mount = document.createElement("div")
+      mount.className = "mount"
+      shadow.append(style, mount)
+
+      const handle = Effect.runSync(mountMokshaExperience(mount))
+      this.#dispose = handle.dispose
+    }
+
+    disconnectedCallback(): void {
+      if (this.#dispose === null) return
+      Effect.runSync(this.#dispose)
+      this.#dispose = null
+    }
+  }
+}
+
 const makeTrainingRunElement = (): CustomElementConstructor => {
   return class TrainingRunElement extends HTMLElement {
     #dispose: Effect.Effect<void> | null = null
@@ -256,6 +307,13 @@ export const registerSpinningCubeElement = (): void => {
   customElements.define(spinningCubeTagName, makeSpinningCubeElement())
 }
 
+export const registerMokshaElement = (): void => {
+  if (typeof customElements === "undefined") return
+  if (typeof HTMLElement === "undefined") return
+  if (customElements.get(mokshaTagName) !== undefined) return
+  customElements.define(mokshaTagName, makeMokshaElement())
+}
+
 export const registerTrainingRunElement = (): void => {
   if (typeof customElements === "undefined") return
   if (typeof HTMLElement === "undefined") return
@@ -276,6 +334,14 @@ export const spinningCubeView = <Message>(
 ): Html => {
   registerSpinningCubeElement()
   const element = spinningCubeElement.withMessage<Message>()
+  return element(attributes, [])
+}
+
+export const mokshaView = <Message>(
+  attributes: ReadonlyArray<Attribute<Message>> = [],
+): Html => {
+  registerMokshaElement()
+  const element = mokshaElement.withMessage<Message>()
   return element(attributes, [])
 }
 

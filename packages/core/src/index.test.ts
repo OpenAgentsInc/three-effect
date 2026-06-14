@@ -5,14 +5,19 @@ import {
   createBezierNodeConnections,
   createTrainingRunEdges,
   defaultBezierNodesGraph,
+  defaultMokshaDiamonds,
+  defaultMokshaOptions,
+  defaultMokshaParagraphs,
   defaultQuadraticBezierMidpoint,
   defaultSpinningCubeOptions,
   defaultTrainingRunNodes,
   dreiQuadraticBezierMidpoint,
+  pmndrsMokshaSourceRefs,
   pmndrsBezierNodesSourceRefs,
   pmndrsMotionPathCurvePresets,
   pmndrsTrainingDatavizSourceRefs,
   quadraticBezierPoints,
+  resolveMokshaOptions,
   resolveTrainingRunVisualizationOptions,
   resolveSpinningCubeOptions,
   summarizeTrainingRunVisualization,
@@ -104,6 +109,51 @@ describe("bezier nodes graph", () => {
     expect(first?.start).toEqual([-1.65, 2, 0])
     expect(first?.end).toEqual([1.65, -3, 0])
     expect(first?.mid).toEqual([1.65, 2, 0])
+  })
+})
+
+describe("moksha experience", () => {
+  test("records the local pmndrs Moksha source files used for the port", () => {
+    expect(pmndrsMokshaSourceRefs).toContain(
+      "projects/repos/examples/demos/moksha/src/index.jsx",
+    )
+    expect(pmndrsMokshaSourceRefs).toContain(
+      "projects/repos/examples/demos/moksha/src/diamonds/Diamonds.jsx",
+    )
+    expect(pmndrsMokshaSourceRefs).toContain(
+      "projects/repos/examples/demos/moksha/src/components/CustomMaterial.js",
+    )
+  })
+
+  test("keeps the full Moksha page structure as data", () => {
+    expect(defaultMokshaOptions.sections).toBe(9)
+    expect(defaultMokshaOptions.pages).toBe(8)
+    expect(defaultMokshaParagraphs.map(paragraph => paragraph.header)).toEqual([
+      "District 4",
+      "Diamond Road",
+      "Catalina",
+      "Building 21",
+      "Sector 8",
+      "The Factory",
+    ])
+    expect(defaultMokshaDiamonds).toHaveLength(8)
+  })
+
+  test("resolves Moksha asset and layout overrides", () => {
+    const options = resolveMokshaOptions({
+      assets: {
+        images: {
+          catalina: "/custom/catalina.jpg",
+        },
+      },
+      zoom: 90,
+    })
+
+    expect(options.zoom).toBe(90)
+    expect(options.assets.images.catalina).toBe("/custom/catalina.jpg")
+    expect(options.assets.images.district4).toBe(
+      defaultMokshaOptions.assets.images.district4,
+    )
   })
 })
 
