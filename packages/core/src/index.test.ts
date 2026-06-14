@@ -64,6 +64,7 @@ import {
   isWorldPointOccluded,
   maskMaterialProps,
   mergeBufferGeometries,
+  MokshaPlaneMaterial,
   pmndrsMokshaSourceRefs,
   pmndrsAdvancedMaterialPrimitiveSourceRefs,
   pmndrsBezierNodesSourceRefs,
@@ -760,6 +761,16 @@ describe("moksha experience", () => {
     expect(options.assets.images.district4).toBe(
       defaultMokshaOptions.assets.images.district4,
     )
+  })
+
+  test("constructs the Moksha shader material before uniforms exist", () => {
+    const material = new MokshaPlaneMaterial({ color: 0xff00ff, opacity: 0.45 })
+
+    expect(material.opacity).toBe(0.45)
+    expect(material.mokshaUniforms.opacity.value).toBe(0.45)
+    material.opacity = 0.2
+    expect(material.mokshaUniforms.opacity.value).toBe(0.2)
+    material.dispose()
   })
 })
 

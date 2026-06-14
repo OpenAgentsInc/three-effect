@@ -228,7 +228,14 @@ type MokshaShaderUniforms = {
   tex: { value: Three.Texture | null }
 }
 
-class MokshaPlaneMaterial extends Three.ShaderMaterial {
+const mokshaPendingOpacity: unique symbol = Symbol("mokshaPendingOpacity")
+
+type MokshaOpacityBootState = {
+  [mokshaPendingOpacity]?: number
+  uniforms?: Partial<MokshaShaderUniforms>
+}
+
+export class MokshaPlaneMaterial extends Three.ShaderMaterial {
   constructor(input: {
     color?: Three.ColorRepresentation | undefined
     map?: Three.Texture | null | undefined
@@ -277,6 +284,9 @@ class MokshaPlaneMaterial extends Three.ShaderMaterial {
         }
       `,
     })
+
+    this.opacity = input.opacity ?? this.opacity
+    delete (this as MokshaOpacityBootState)[mokshaPendingOpacity]
   }
 
   get mokshaUniforms(): MokshaShaderUniforms {
@@ -284,11 +294,25 @@ class MokshaPlaneMaterial extends Three.ShaderMaterial {
   }
 
   override get opacity(): number {
-    return this.mokshaUniforms.opacity.value
+    return (
+      (this as MokshaOpacityBootState).uniforms?.opacity?.value ??
+      (this as MokshaOpacityBootState)[mokshaPendingOpacity] ??
+      1
+    )
   }
 
   override set opacity(value: number) {
-    this.mokshaUniforms.opacity.value = value
+    const opacityUniform = (this as MokshaOpacityBootState).uniforms?.opacity
+    if (opacityUniform !== undefined) {
+      opacityUniform.value = value
+      return
+    }
+
+    Object.defineProperty(this, mokshaPendingOpacity, {
+      configurable: true,
+      value,
+      writable: true,
+    })
   }
 
   get scaleAmount(): number {
