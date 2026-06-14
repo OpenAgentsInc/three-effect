@@ -94,25 +94,76 @@ describe("training run visualization", () => {
       finalValidationLoss: 3.1,
       freivaldsRefCount: 3,
       gradientCloseoutRefCount: 2,
+      lifecycleCounts: {
+        active: 2,
+        qualified: 1,
+        state_synced: 1,
+        sync_reentry: 1,
+        warmup: 1,
+      },
       maxAllowedStaleSteps: 7,
       maxValidationLoss: 4,
+      pendingPayoutCount: 1,
+      receiptRefCount: 6,
       reconciledWindowCount: 2,
       runDetail: "run.cs336.a1.real_gradient.demo",
       runLabel: "pylon.first_real_model_training_run.v1",
       runState: "active",
+      sealInFlight: true,
       settledPayoutSats: 21,
       verifiedWorkCount: 3,
     })
 
     expect(options.maxAllowedStaleSteps).toBe(7)
-    expect(options.contributors).toHaveLength(4)
+    expect(options.contributors).toHaveLength(6)
+    expect(options.contributors?.map(contributor => contributor.lifecycleState)).toEqual([
+      "qualified",
+      "state_synced",
+      "warmup",
+      "active",
+      "active",
+      "sync_reentry",
+    ])
     expect(options.lossCurve).toHaveLength(3)
     expect(options.nodes?.find(node => node.id === "run")?.status).toBe("active")
     expect(options.nodes?.find(node => node.id === "freivalds")?.status).toBe(
       "verified",
     )
+    expect(options.nodes?.find(node => node.id === "sealed_window")?.detail).toBe(
+      "seal in flight",
+    )
+    expect(options.nodes?.find(node => node.id === "sealed_window")?.status).toBe(
+      "sealed",
+    )
+    expect(options.nodes?.find(node => node.id === "receipt")?.detail).toBe(
+      "6 receipts",
+    )
     expect(options.nodes?.find(node => node.id === "settlement")?.detail).toBe(
       "21 sats",
+    )
+  })
+
+  test("surfaces blocker and pending-payout state in scene nodes", () => {
+    const options = trainingRunVisualizationOptionsFromSnapshot({
+      blockerRefCount: 2,
+      pendingPayoutCount: 3,
+      receiptRefCount: 0,
+      runState: "planned",
+      sealInFlight: true,
+      verifiedWorkCount: 0,
+    })
+
+    expect(options.nodes?.find(node => node.id === "sync_reentry")?.detail).toBe(
+      "2 blockers",
+    )
+    expect(options.nodes?.find(node => node.id === "sync_reentry")?.status).toBe(
+      "blocked",
+    )
+    expect(options.nodes?.find(node => node.id === "sealed_window")?.detail).toBe(
+      "seal in flight",
+    )
+    expect(options.nodes?.find(node => node.id === "settlement")?.detail).toBe(
+      "3 pending",
     )
   })
 })

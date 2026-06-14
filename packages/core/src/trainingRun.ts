@@ -49,6 +49,18 @@ export type TrainingRunContributorDefinition = Readonly<{
   phase: number
 }>
 
+export type TrainingRunLifecycleState =
+  | "registered"
+  | "qualified"
+  | "state_synced"
+  | "warmup"
+  | "active"
+  | "sync_reentry"
+
+export type TrainingRunLifecycleCounts = Partial<
+  Record<TrainingRunLifecycleState, number>
+>
+
 export type TrainingRunLossPoint = Readonly<{
   step: number
   validationLoss: number
@@ -73,15 +85,21 @@ export type TrainingRunVisualizationSnapshot = Readonly<{
   finalValidationLoss?: number | null
   freivaldsRefCount?: number
   gradientCloseoutRefCount?: number
+  lifecycleCounts?: TrainingRunLifecycleCounts
   lossUnderBudget?: boolean
   maxAllowedStaleSteps?: number
   maxValidationLoss?: number | null
+  blockerRefCount?: number
+  closeoutSatisfied?: boolean
+  pendingPayoutCount?: number
   plannedWindowCount?: number
+  receiptRefCount?: number
   reconciledWindowCount?: number
   rejectedWorkCount?: number
   runDetail?: string
   runLabel?: string
   runState?: "planned" | "active" | "sealed" | "reconciled" | string
+  sealInFlight?: boolean
   sealedWindowCount?: number
   settledPayoutSats?: number
   verifiedWorkCount?: number
@@ -325,6 +343,10 @@ const nodeWith = (
 const contributorDefinitionsFromSnapshot = (
   snapshot: TrainingRunVisualizationSnapshot,
 ): readonly TrainingRunContributorDefinition[] => {
+  const lifecycleContributors =
+    contributorDefinitionsFromLifecycleCounts(snapshot.lifecycleCounts)
+  if (lifecycleContributors.length > 0) return lifecycleContributors
+
   const assigned = finiteNonNegative(snapshot.assignedContributorCount)
   const observed = finiteNonNegative(snapshot.deviceObserved)
   const rejected = finiteNonNegative(snapshot.rejectedWorkCount)
@@ -351,6 +373,51 @@ const contributorDefinitionsFromSnapshot = (
   }
 
   return contributors
+}
+
+const lifecycleStateOrder: readonly TrainingRunLifecycleState[] = [
+  "registered",
+  "qualified",
+  "state_synced",
+  "warmup",
+  "active",
+  "sync_reentry",
+]
+
+const lifecycleStateShortLabel: Readonly<
+  Record<TrainingRunLifecycleState, string>
+> = {
+  active: "A",
+  qualified: "Q",
+  registered: "R",
+  state_synced: "S",
+  sync_reentry: "stale",
+  warmup: "W",
+}
+
+const contributorDefinitionsFromLifecycleCounts = (
+  counts: TrainingRunLifecycleCounts | undefined,
+): readonly TrainingRunContributorDefinition[] => {
+  if (counts === undefined) return []
+
+  const contributors: Array<Omit<TrainingRunContributorDefinition, "phase">> = []
+  for (const state of lifecycleStateOrder) {
+    const count = finiteNonNegative(counts[state])
+    for (let index = 0; index < count && contributors.length < 14; index += 1) {
+      const prefix = lifecycleStateShortLabel[state]
+      contributors.push({
+        id: `pylon.${state}.${index + 1}`,
+        label: state === "sync_reentry" ? prefix : `${prefix}${index + 1}`,
+        lifecycleState: state,
+      })
+    }
+  }
+
+  const divisor = Math.max(contributors.length, 1)
+  return contributors.map((contributor, index) => ({
+    ...contributor,
+    phase: index / divisor,
+  }))
 }
 
 const lossCurveFromSnapshot = (
@@ -386,12 +453,17 @@ export const trainingRunVisualizationOptionsFromSnapshot = (
   const verifiedWork = finiteNonNegative(snapshot.verifiedWorkCount)
   const freivaldsRefs = finiteNonNegative(snapshot.freivaldsRefCount)
   const closeoutRefs = finiteNonNegative(snapshot.gradientCloseoutRefCount)
+  const receiptRefs = finiteNonNegative(snapshot.receiptRefCount)
+  const blockerRefs = finiteNonNegative(snapshot.blockerRefCount)
+  const pendingPayouts = finiteNonNegative(snapshot.pendingPayoutCount)
   const settledSats = finiteNonNegative(snapshot.settledPayoutSats)
   const observedDevices = finiteNonNegative(snapshot.deviceObserved)
   const requiredDevices = finiteNonNegative(snapshot.deviceRequired)
   const deviceReady =
     requiredDevices === 0 ? observedDevices > 0 : observedDevices >= requiredDevices
   const externalBlocked = snapshot.externalStatus === "blocked_external"
+  const sealInFlight = snapshot.sealInFlight === true
+  const closeoutSatisfied = snapshot.closeoutSatisfied === true
 
   return {
     maxAllowedStaleSteps: snapshot.maxAllowedStaleSteps,
@@ -410,12 +482,24 @@ export const trainingRunVisualizationOptionsFromSnapshot = (
         status: deviceReady ? "verified" : "sync",
       }),
       nodeWith("state_synced", {
-        detail: `stale <= ${snapshot.maxAllowedStaleSteps ?? 5}`,
-        status: externalBlocked ? "blocked" : "sync",
+        detail:
+          sealedWindows + reconciledWindows > 0
+            ? "last seal durable"
+            : sealInFlight
+              ? "seal barrier"
+              : `stale <= ${snapshot.maxAllowedStaleSteps ?? 5}`,
+        status:
+          sealedWindows + reconciledWindows > 0
+            ? "verified"
+            : externalBlocked
+              ? "blocked"
+              : "sync",
       }),
       nodeWith("warmup", {
         detail:
-          plannedWindows > 0
+          activeWindows > 0
+            ? `${activeWindows} active windows`
+            : plannedWindows > 0
             ? `${plannedWindows} planned windows`
             : "shadow window",
         status: activeWindows > 0 ? "active" : "sync",
@@ -425,8 +509,13 @@ export const trainingRunVisualizationOptionsFromSnapshot = (
         status: activeWindows > 0 ? "active" : "planned",
       }),
       nodeWith("sync_reentry", {
-        detail: externalBlocked ? "external blocker" : "stale > bound",
-        status: externalBlocked ? "blocked" : "planned",
+        detail:
+          blockerRefs > 0
+            ? `${blockerRefs} blockers`
+            : externalBlocked
+              ? "external blocker"
+              : "stale > bound",
+        status: externalBlocked || blockerRefs > 0 ? "blocked" : "planned",
       }),
       nodeWith("run", {
         label: snapshot.runLabel ?? "Tassadar / Psion",
@@ -435,7 +524,7 @@ export const trainingRunVisualizationOptionsFromSnapshot = (
       }),
       nodeWith("training_window", {
         label: "windows",
-        detail: `${activeWindows} active / ${reconciledWindows} rec`,
+        detail: `${plannedWindows} plan / ${activeWindows} act / ${sealedWindows} seal`,
         status:
           activeWindows > 0
             ? "active"
@@ -446,25 +535,45 @@ export const trainingRunVisualizationOptionsFromSnapshot = (
                 : "planned",
       }),
       nodeWith("sealed_window", {
-        detail: `${sealedWindows + reconciledWindows} sealed`,
-        status: sealedWindows + reconciledWindows > 0 ? "sealed" : "planned",
+        detail: sealInFlight
+          ? "seal in flight"
+          : `${sealedWindows + reconciledWindows} durable`,
+        status:
+          sealedWindows + reconciledWindows > 0
+            ? "sealed"
+            : sealInFlight
+              ? "sync"
+              : "planned",
       }),
       nodeWith("freivalds", {
         detail: `${freivaldsRefs} refs`,
         status: freivaldsRefs > 0 ? "verified" : "blocked",
       }),
       nodeWith("receipt", {
-        detail: `${verifiedWork} verified`,
+        detail:
+          receiptRefs > 0
+            ? `${receiptRefs} receipts`
+            : `${verifiedWork} verified`,
         status:
-          verifiedWork > 0 && closeoutRefs > 0
+          closeoutSatisfied || (verifiedWork > 0 && closeoutRefs > 0)
             ? "verified"
             : verifiedWork > 0
               ? "sealed"
               : "planned",
       }),
       nodeWith("settlement", {
-        detail: `${settledSats} sats`,
-        status: settledSats > 0 ? "verified" : "planned",
+        detail:
+          settledSats > 0
+            ? `${settledSats} sats`
+            : pendingPayouts > 0
+              ? `${pendingPayouts} pending`
+              : "provider confirmed",
+        status:
+          settledSats > 0
+            ? "verified"
+            : pendingPayouts > 0
+              ? "queued"
+              : "planned",
       }),
       nodeWith("r1", {
         detail: verifiedWork > 0 ? "evidence observed" : "operator rehearsal",
