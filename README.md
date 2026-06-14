@@ -203,3 +203,9 @@ bun run build:demo:bezier
 bun run build:demo:moksha
 bun run build:demo:training
 ```
+
+## Implementation Notes
+
+- `docs/2026-06-14-implementation-audit.md` records the first porting pass:
+  the pmndrs/Drei source references, scenes that were rewritten, primitive
+  modules that shipped, OpenAgents integrations, and next work.
