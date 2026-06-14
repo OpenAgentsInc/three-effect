@@ -2,6 +2,7 @@ import { Data, Effect } from "effect"
 import * as Three from "three"
 
 export * from "./bezierNodes"
+export * from "./curvePrimitives"
 export * from "./trainingRun"
 
 export class SpinningCubeMountError extends Data.TaggedError(

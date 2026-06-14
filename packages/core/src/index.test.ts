@@ -1,12 +1,17 @@
 import { describe, expect, test } from "bun:test"
 
 import {
+  cubicBezierPoints,
   createBezierNodeConnections,
   createTrainingRunEdges,
   defaultBezierNodesGraph,
   defaultQuadraticBezierMidpoint,
   defaultSpinningCubeOptions,
   defaultTrainingRunNodes,
+  dreiQuadraticBezierMidpoint,
+  pmndrsBezierNodesSourceRefs,
+  pmndrsMotionPathCurvePresets,
+  quadraticBezierPoints,
   resolveTrainingRunVisualizationOptions,
   resolveSpinningCubeOptions,
   summarizeTrainingRunVisualization,
@@ -27,6 +32,18 @@ describe("spinning cube options", () => {
 })
 
 describe("bezier nodes graph", () => {
+  test("records the exact pmndrs and drei source files used for the port", () => {
+    expect(pmndrsBezierNodesSourceRefs).toContain(
+      "projects/repos/examples/demos/bezier-curves-and-nodes/src/Nodes.jsx",
+    )
+    expect(pmndrsBezierNodesSourceRefs).toContain(
+      "projects/repos/drei/src/core/QuadraticBezierLine.tsx",
+    )
+    expect(pmndrsBezierNodesSourceRefs).toContain(
+      "projects/repos/drei/src/web/DragControls.tsx",
+    )
+  })
+
   test("keeps the pmndrs example topology", () => {
     const connections = createBezierNodeConnections(defaultBezierNodesGraph)
     expect(
@@ -49,6 +66,36 @@ describe("bezier nodes graph", () => {
       2,
       0,
     ])
+    expect(dreiQuadraticBezierMidpoint([1, 2, 0], [3, -1, 0])).toEqual([
+      3,
+      2,
+      0,
+    ])
+  })
+
+  test("generates quadratic curve points without React or drei runtime", () => {
+    const points = quadraticBezierPoints([0, 0, 0], [4, 0, 0], 4)
+    expect(points).toHaveLength(5)
+    expect(points[0]).toEqual([0, 0, 0])
+    expect(points.at(-1)).toEqual([4, 0, 0])
+    expect(points[2]?.[0]).toBe(3)
+  })
+
+  test("keeps the pmndrs cubic motion-path presets available as data", () => {
+    const presetIds = pmndrsMotionPathCurvePresets.map(preset => preset.id)
+    expect(presetIds).toEqual([
+      "heart",
+      "circle",
+      "rollercoaster",
+      "infinity",
+    ])
+    const rollercoaster = pmndrsMotionPathCurvePresets.find(
+      preset => preset.id === "rollercoaster",
+    )
+    expect(rollercoaster?.segments).toHaveLength(2)
+    expect(
+      cubicBezierPoints(rollercoaster!.segments[0]!, 4).at(-1),
+    ).toEqual([6, 3, 0])
   })
 
   test("applies horizontal node insets to connection endpoints", () => {

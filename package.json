@@ -33,6 +33,7 @@
     "packages/*"
   ],
   "scripts": {
+    "build:demo:bezier": "bun build examples/bezier-nodes/src/main.ts --outdir examples/bezier-nodes/dist --target browser",
     "build:demo:training": "bun build examples/training-run/src/main.ts --outdir examples/training-run/dist --target browser",
     "test": "bun test",
     "typecheck": "tsc --noEmit -p tsconfig.json",

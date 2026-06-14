@@ -16,6 +16,9 @@ scope for now.
     - a React-free port of the pmndrs Bezier curves and nodes example, including
       draggable nodes, labels, endpoint markers, and animated dashed quadratic
       Bezier connections.
+    - Drei-inspired quadratic and cubic Bezier point helpers plus data-only
+      motion-path presets for experiments that should not depend on React,
+      `@react-three/fiber`, or `@react-three/drei` at runtime.
     - a dark operator training-run visualization for lifecycle states, run
       windows, seal/staleness, verification, receipts, rungs, contributor dots,
       and loss-curve feedback.
@@ -60,10 +63,26 @@ bun run build:demo:training
 open examples/training-run/index.html
 ```
 
+## Bezier Nodes Demo
+
+The tracked visual smoke for the pmndrs Bezier/nodes port lives at
+`examples/bezier-nodes/`. It is based on:
+
+- `projects/repos/examples/demos/bezier-curves-and-nodes/src/App.jsx`
+- `projects/repos/examples/demos/bezier-curves-and-nodes/src/Nodes.jsx`
+- `projects/repos/drei/src/core/QuadraticBezierLine.tsx`
+- `projects/repos/drei/src/web/DragControls.tsx`
+
+```sh
+bun run build:demo:bezier
+open examples/bezier-nodes/index.html
+```
+
 ## Commands
 
 ```sh
 bun install
 bun run verify
+bun run build:demo:bezier
 bun run build:demo:training
 ```

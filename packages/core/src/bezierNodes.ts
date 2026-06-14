@@ -1,6 +1,11 @@
 import { Data, Effect } from "effect"
 import * as Three from "three"
 
+import {
+  dreiQuadraticBezierMidpoint,
+  quadraticBezierPoints,
+} from "./curvePrimitives"
+
 export class BezierNodesMountError extends Data.TaggedError(
   "BezierNodesMountError",
 )<{
@@ -120,7 +125,7 @@ export const resolveBezierNodesOptions = (
 export const defaultQuadraticBezierMidpoint = (
   start: VectorTuple,
   end: VectorTuple,
-): VectorTuple => [end[0], start[1], end[2]]
+): VectorTuple => dreiQuadraticBezierMidpoint(start, end)
 
 export const createBezierNodeConnections = (
   nodes: readonly BezierNodeDefinition[],
@@ -273,7 +278,14 @@ const setContinuousCurveGeometry = (
   curve: Three.QuadraticBezierCurve3,
   segments: number,
 ): void => {
-  geometry.setFromPoints(curve.getPoints(segments))
+  geometry.setFromPoints(
+    quadraticBezierPoints(
+      [curve.v0.x, curve.v0.y, curve.v0.z],
+      [curve.v2.x, curve.v2.y, curve.v2.z],
+      segments,
+      [curve.v1.x, curve.v1.y, curve.v1.z],
+    ).map(point => tupleToVector(point)),
+  )
 }
 
 const writeDashedCurveGeometry = (
