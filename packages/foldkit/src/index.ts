@@ -5,10 +5,12 @@ import type { Attribute, Html } from "foldkit/html"
 import {
   mountBezierNodes,
   mountSpinningCube,
+  mountTrainingRunVisualization,
 } from "@openagentsinc/three-effect/core"
 
 export const bezierNodesTagName = "oa-bezier-nodes"
 export const spinningCubeTagName = "oa-spinning-cube"
+export const trainingRunTagName = "oa-training-run"
 
 const bezierNodesElement = defineCustomElement({
   tag: bezierNodesTagName,
@@ -18,6 +20,12 @@ const bezierNodesElement = defineCustomElement({
 
 const spinningCubeElement = defineCustomElement({
   tag: spinningCubeTagName,
+  properties: {},
+  events: {},
+})
+
+const trainingRunElement = defineCustomElement({
+  tag: trainingRunTagName,
   properties: {},
   events: {},
 })
@@ -106,6 +114,47 @@ const makeBezierNodesElement = (): CustomElementConstructor => {
   }
 }
 
+const makeTrainingRunElement = (): CustomElementConstructor => {
+  return class TrainingRunElement extends HTMLElement {
+    #dispose: Effect.Effect<void> | null = null
+
+    connectedCallback(): void {
+      if (this.#dispose !== null) return
+
+      const shadow = this.shadowRoot ?? this.attachShadow({ mode: "open" })
+      shadow.replaceChildren()
+
+      const style = document.createElement("style")
+      style.textContent = `
+        :host {
+          display: block;
+          min-height: 340px;
+          overflow: hidden;
+          background: #050505;
+        }
+        .mount {
+          width: 100%;
+          height: 100%;
+          min-height: inherit;
+        }
+      `
+
+      const mount = document.createElement("div")
+      mount.className = "mount"
+      shadow.append(style, mount)
+
+      const handle = Effect.runSync(mountTrainingRunVisualization(mount))
+      this.#dispose = handle.dispose
+    }
+
+    disconnectedCallback(): void {
+      if (this.#dispose === null) return
+      Effect.runSync(this.#dispose)
+      this.#dispose = null
+    }
+  }
+}
+
 export const registerBezierNodesElement = (): void => {
   if (typeof customElements === "undefined") return
   if (typeof HTMLElement === "undefined") return
@@ -118,6 +167,13 @@ export const registerSpinningCubeElement = (): void => {
   if (typeof HTMLElement === "undefined") return
   if (customElements.get(spinningCubeTagName) !== undefined) return
   customElements.define(spinningCubeTagName, makeSpinningCubeElement())
+}
+
+export const registerTrainingRunElement = (): void => {
+  if (typeof customElements === "undefined") return
+  if (typeof HTMLElement === "undefined") return
+  if (customElements.get(trainingRunTagName) !== undefined) return
+  customElements.define(trainingRunTagName, makeTrainingRunElement())
 }
 
 export const bezierNodesView = <Message>(
@@ -133,5 +189,13 @@ export const spinningCubeView = <Message>(
 ): Html => {
   registerSpinningCubeElement()
   const element = spinningCubeElement.withMessage<Message>()
+  return element(attributes, [])
+}
+
+export const trainingRunView = <Message>(
+  attributes: ReadonlyArray<Attribute<Message>> = [],
+): Html => {
+  registerTrainingRunElement()
+  const element = trainingRunElement.withMessage<Message>()
   return element(attributes, [])
 }

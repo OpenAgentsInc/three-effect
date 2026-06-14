@@ -16,6 +16,9 @@ scope for now.
     - a React-free port of the pmndrs Bezier curves and nodes example, including
       draggable nodes, labels, endpoint markers, and animated dashed quadratic
       Bezier connections.
+    - a dark operator training-run visualization for lifecycle states, run
+      windows, seal/staleness, verification, receipts, rungs, contributor dots,
+      and loss-curve feedback.
 - `@openagentsinc/three-effect/foldkit`
   - Foldkit custom-element bindings for the core scenes.
   - Designed for Foldkit views to render the element declaratively while Three
@@ -33,15 +36,18 @@ Workspace package manifests also exist under `packages/core` and
 import {
   bezierNodesView,
   spinningCubeView,
+  trainingRunView,
 } from "@openagentsinc/three-effect/foldkit"
 
 const preview = spinningCubeView<Message>()
 const graph = bezierNodesView<Message>()
+const training = trainingRunView<Message>()
 ```
 
-The Foldkit helpers register `oa-spinning-cube` and `oa-bezier-nodes` custom
-elements when a browser custom-elements registry is available. Each element owns
-a scoped Three renderer and releases it on disconnect.
+The Foldkit helpers register `oa-spinning-cube`, `oa-bezier-nodes`, and
+`oa-training-run` custom elements when a browser custom-elements registry is
+available. Each element owns a scoped Three renderer and releases it on
+disconnect.
 
 ## Commands
 
