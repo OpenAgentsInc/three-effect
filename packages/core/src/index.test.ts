@@ -11,6 +11,7 @@ import {
   dreiQuadraticBezierMidpoint,
   pmndrsBezierNodesSourceRefs,
   pmndrsMotionPathCurvePresets,
+  pmndrsTrainingDatavizSourceRefs,
   quadraticBezierPoints,
   resolveTrainingRunVisualizationOptions,
   resolveSpinningCubeOptions,
@@ -107,6 +108,18 @@ describe("bezier nodes graph", () => {
 })
 
 describe("training run visualization", () => {
+  test("records the pmndrs 2d visualization references used for the dataviz pass", () => {
+    expect(pmndrsTrainingDatavizSourceRefs).toContain(
+      "projects/repos/examples/demos/bezier-curves-and-nodes/src/Nodes.jsx",
+    )
+    expect(pmndrsTrainingDatavizSourceRefs).toContain(
+      "projects/repos/examples/demos/react-ellipsecurve/src/App.jsx",
+    )
+    expect(pmndrsTrainingDatavizSourceRefs).toContain(
+      "projects/repos/examples/demos/scrollcontrols-with-minimap/src/App.jsx",
+    )
+  })
+
   test("keeps lifecycle and proof roles visible", () => {
     expect(summarizeTrainingRunVisualization(defaultTrainingRunNodes)).toEqual({
       lifecycle: 6,

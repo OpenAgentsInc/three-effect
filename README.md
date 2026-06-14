@@ -21,7 +21,8 @@ scope for now.
       `@react-three/fiber`, or `@react-three/drei` at runtime.
     - a dark operator training-run visualization for lifecycle states, run
       windows, seal/staleness, verification, receipts, rungs, contributor dots,
-      and loss-curve feedback.
+      animated flow connectors, contributor orbit tracks, and loss-curve
+      feedback with 2D chart scaffolding.
 - `@openagentsinc/three-effect/foldkit`
   - Foldkit custom-element bindings for the core scenes.
   - Designed for Foldkit views to render the element declaratively while Three
@@ -57,6 +58,13 @@ disconnect.
 The tracked visual smoke for the Training scene lives at
 `examples/training-run/`. It exercises the lifecycle graph, live run snapshot,
 promise-registry signals, and operator-command signals in one dark canvas.
+The latest 2D/dataviz pass pulls in local reference ideas from:
+
+- `projects/repos/examples/demos/bezier-curves-and-nodes/src/Nodes.jsx`
+- `projects/repos/examples/demos/react-ellipsecurve/src/App.jsx`
+- `projects/repos/examples/demos/scrollcontrols-with-minimap/src/App.jsx`
+- `projects/repos/examples/demos/svg-maps-with-html-annotations/src/index.jsx`
+- `projects/repos/examples/demos/canvas-text/src/App.jsx`
 
 ```sh
 bun run build:demo:training

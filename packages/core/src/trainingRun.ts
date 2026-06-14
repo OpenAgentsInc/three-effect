@@ -334,6 +334,14 @@ export const defaultTrainingRunPromiseSignals: readonly TrainingRunPromiseSignal
 export const defaultTrainingRunOperatorSignals: readonly TrainingRunOperatorSignalDefinition[] =
   []
 
+export const pmndrsTrainingDatavizSourceRefs = [
+  "projects/repos/examples/demos/bezier-curves-and-nodes/src/Nodes.jsx",
+  "projects/repos/examples/demos/react-ellipsecurve/src/App.jsx",
+  "projects/repos/examples/demos/scrollcontrols-with-minimap/src/App.jsx",
+  "projects/repos/examples/demos/svg-maps-with-html-annotations/src/index.jsx",
+  "projects/repos/examples/demos/canvas-text/src/App.jsx",
+] as const
+
 export const defaultTrainingRunVisualizationOptions: ResolvedTrainingRunVisualizationOptions =
   {
     backgroundColor: 0x050505,
@@ -819,6 +827,23 @@ const makeCircle = (
     }),
   )
 
+const makeRect = (
+  width: number,
+  height: number,
+  color: number,
+  opacity: number,
+): Three.Mesh<Three.PlaneGeometry, Three.MeshBasicMaterial> =>
+  new Three.Mesh(
+    new Three.PlaneGeometry(width, height),
+    new Three.MeshBasicMaterial({
+      color,
+      opacity,
+      transparent: true,
+      depthWrite: false,
+      side: Three.DoubleSide,
+    }),
+  )
+
 const makeRing = (
   radius: number,
   color: number,
@@ -841,6 +866,7 @@ const makeTextSprite = (
     color?: string
     fontSize?: number
     height?: number
+    worldHeight?: number
     width?: number
   }> = {},
 ): Three.Sprite => {
@@ -866,7 +892,8 @@ const makeTextSprite = (
     depthTest: false,
   })
   const sprite = new Three.Sprite(material)
-  sprite.scale.set((canvas.width / canvas.height) * 0.42, 0.42, 1)
+  const worldHeight = options.worldHeight ?? 0.42
+  sprite.scale.set((canvas.width / canvas.height) * worldHeight, worldHeight, 1)
   return sprite
 }
 
@@ -888,6 +915,40 @@ const makeLine = (
       depthWrite: false,
     }),
   )
+
+const makeDashedLine = (
+  points: readonly Three.Vector3[],
+  color: number,
+  opacity: number,
+  options: Readonly<{
+    dashSize?: number
+    gapSize?: number
+    scale?: number
+  }> = {},
+): Three.Line<Three.BufferGeometry, Three.LineDashedMaterial> => {
+  const line = new Three.Line(
+    lineGeometry(points),
+    new Three.LineDashedMaterial({
+      color,
+      dashSize: options.dashSize ?? 0.16,
+      gapSize: options.gapSize ?? 0.1,
+      opacity,
+      scale: options.scale ?? 1,
+      transparent: opacity < 1,
+      depthWrite: false,
+    }),
+  )
+  line.computeLineDistances()
+  return line
+}
+
+const ellipsePoints = (
+  xRadius: number,
+  yRadius: number,
+): readonly Three.Vector3[] =>
+  new Three.EllipseCurve(0, 0, xRadius, yRadius, 0, Math.PI * 2)
+    .getPoints(96)
+    .map(point => new Three.Vector3(point.x, point.y, 0))
 
 const curvedEdgePoints = (
   source: TrainingRunVector,
@@ -917,30 +978,142 @@ const pointOnPoints = (
   return points[index]!.clone().lerp(points[nextIndex]!, scaled - index)
 }
 
+const lossChartLayout = {
+  height: 0.78,
+  origin: new Three.Vector3(2.15, -0.38, 0.12),
+  width: 2.05,
+} as const
+
+const lossCurveDomain = (
+  curve: readonly TrainingRunLossPoint[],
+):
+  | Readonly<{
+      maxLoss: number
+      maxStep: number
+      minLoss: number
+      minStep: number
+    }>
+  | undefined => {
+  if (curve.length === 0) return undefined
+  return {
+    maxLoss: Math.max(...curve.map(point => point.validationLoss)),
+    maxStep: Math.max(...curve.map(point => point.step)),
+    minLoss: Math.min(...curve.map(point => point.validationLoss)),
+    minStep: Math.min(...curve.map(point => point.step)),
+  }
+}
+
 const lossCurvePoints = (
   curve: readonly TrainingRunLossPoint[],
 ): readonly Three.Vector3[] => {
-  if (curve.length === 0) return []
-
-  const minStep = Math.min(...curve.map(point => point.step))
-  const maxStep = Math.max(...curve.map(point => point.step))
-  const minLoss = Math.min(...curve.map(point => point.validationLoss))
-  const maxLoss = Math.max(...curve.map(point => point.validationLoss))
-  const width = 2.05
-  const height = 0.7
-  const origin = new Three.Vector3(2.15, -0.28, 0.12)
+  const domain = lossCurveDomain(curve)
+  if (domain === undefined) return []
 
   return curve.map(point => {
     const x =
-      maxStep === minStep
+      domain.maxStep === domain.minStep
         ? 0
-        : ((point.step - minStep) / (maxStep - minStep)) * width
+        : ((point.step - domain.minStep) / (domain.maxStep - domain.minStep)) *
+          lossChartLayout.width
     const y =
-      maxLoss === minLoss
+      domain.maxLoss === domain.minLoss
         ? 0
-        : ((maxLoss - point.validationLoss) / (maxLoss - minLoss)) * height
-    return origin.clone().add(new Three.Vector3(x, y, 0))
+        : ((domain.maxLoss - point.validationLoss) /
+            (domain.maxLoss - domain.minLoss)) *
+          lossChartLayout.height
+    return lossChartLayout.origin.clone().add(new Three.Vector3(x, y, 0))
   })
+}
+
+const makeAreaUnderCurve = (
+  points: readonly Three.Vector3[],
+  baselineY: number,
+  color: number,
+  opacity: number,
+): Three.Mesh<Three.ShapeGeometry, Three.MeshBasicMaterial> | undefined => {
+  if (points.length < 2) return undefined
+
+  const shape = new Three.Shape()
+  const first = points[0]!
+  const last = points.at(-1)!
+  shape.moveTo(first.x, baselineY)
+  for (const point of points) {
+    shape.lineTo(point.x, point.y)
+  }
+  shape.lineTo(last.x, baselineY)
+  shape.closePath()
+
+  return new Three.Mesh(
+    new Three.ShapeGeometry(shape),
+    new Three.MeshBasicMaterial({
+      color,
+      opacity,
+      transparent: true,
+      depthWrite: false,
+      side: Three.DoubleSide,
+    }),
+  )
+}
+
+const formatLossTick = (value: number): string =>
+  Number.isFinite(value) ? value.toFixed(2) : "n/a"
+
+const statusChartOrder: readonly TrainingRunNodeStatus[] = [
+  "active",
+  "verified",
+  "sealed",
+  "sync",
+  "blocked",
+  "queued",
+  "planned",
+]
+
+const createStatusMiniChart = (
+  nodes: readonly TrainingRunNodeDefinition[],
+): Three.Group => {
+  const group = new Three.Group()
+  group.position.set(4.48, 0.72, 0.48)
+
+  const counts = new Map<TrainingRunNodeStatus, number>()
+  for (const status of statusChartOrder) counts.set(status, 0)
+  for (const node of nodes) {
+    counts.set(node.status, (counts.get(node.status) ?? 0) + 1)
+  }
+
+  const maxCount = Math.max(...[...counts.values()], 1)
+  const title = makeTextSprite("status mix", {
+    color: "#d1d5db",
+    fontSize: 16,
+    height: 80,
+    width: 240,
+    worldHeight: 0.2,
+  })
+  title.position.set(0, 0.48, 0.2)
+  group.add(title)
+
+  statusChartOrder.forEach((status, index) => {
+    const count = counts.get(status) ?? 0
+    const height =
+      count === 0 ? 0.04 : 0.1 + (count / maxCount) * 0.34
+    const bar = makeRect(
+      0.085,
+      height,
+      colorForStatus(status),
+      count === 0 ? 0.18 : 0.72,
+    )
+    bar.position.set(index * 0.12 - 0.36, height / 2, 0.1)
+    group.add(bar)
+
+    const dot = makeCircle(
+      0.024,
+      colorForStatus(status),
+      count === 0 ? 0.25 : 0.85,
+    )
+    dot.position.set(index * 0.12 - 0.36, -0.08, 0.15)
+    group.add(dot)
+  })
+
+  return group
 }
 
 const disposeMaterial = (material: Three.Material | Three.Material[]): void => {
@@ -1028,6 +1201,14 @@ export const mountTrainingRunVisualization = (
       const staleRing = makeRing(1.12, 0xffffff, 0.18)
       staleRing.position.set(-0.15, 0.28, -0.05)
       root.add(staleRing)
+      const contributorOrbitGroup = new Three.Group()
+      contributorOrbitGroup.position.set(-0.15, 0.28, 0.08)
+      for (const rotation of [-0.32, 0.18, 0.68]) {
+        const orbit = makeLine(ellipsePoints(1.38, 0.92), 0xffffff, 0.11)
+        orbit.rotation.z = rotation
+        contributorOrbitGroup.add(orbit)
+      }
+      root.add(contributorOrbitGroup)
       const staleLabel = makeTextSprite(
         `max stale ${resolved.maxAllowedStaleSteps}`,
         { color: "#d1d5db", fontSize: 26, width: 320, height: 96 },
@@ -1036,6 +1217,13 @@ export const mountTrainingRunVisualization = (
       root.add(staleLabel)
 
       const edges = createTrainingRunEdges(resolved.nodes)
+      const nodeStatusById = new Map(
+        resolved.nodes.map(node => [node.id, node.status] as const),
+      )
+      const flowLines: Array<{
+        line: Three.Line<Three.BufferGeometry, Three.LineDashedMaterial>
+        phase: number
+      }> = []
       const pulses: Array<{
         mesh: Three.Object3D
         phase: number
@@ -1050,7 +1238,27 @@ export const mountTrainingRunVisualization = (
               ? 0.24
               : -0.18
         const points = curvedEdgePoints(edge.source, edge.target, bend)
-        root.add(makeLine(points, 0xffffff, 0.2))
+        const edgeColor = colorForStatus(
+          nodeStatusById.get(edge.targetId) ?? "planned",
+        )
+        root.add(makeLine(points, edgeColor, 0.13))
+        const flowLine = makeDashedLine(points, edgeColor, 0.58, {
+          dashSize: 0.18,
+          gapSize: 0.14,
+        })
+        root.add(flowLine)
+        flowLines.push({
+          line: flowLine,
+          phase: index / Math.max(edges.length, 1),
+        })
+        const startAnchor = makeCircle(0.022, edgeColor, 0.5)
+        startAnchor.position.copy(points[0]!)
+        startAnchor.position.z = 0.3
+        root.add(startAnchor)
+        const endAnchor = makeCircle(0.022, edgeColor, 0.5)
+        endAnchor.position.copy(points.at(-1)!)
+        endAnchor.position.z = 0.3
+        root.add(endAnchor)
         const pulse = makeCircle(0.035, 0xffffff, 0.95)
         pulse.position.copy(pointOnPoints(points, index / Math.max(edges.length, 1)))
         pulse.position.z = 0.35
@@ -1116,19 +1324,111 @@ export const mountTrainingRunVisualization = (
       root.add(contributorGroup)
 
       const lossPoints = lossCurvePoints(resolved.lossCurve)
-      root.add(
-        makeLine(
-          [
-            new Three.Vector3(2.15, -0.28, 0.1),
-            new Three.Vector3(4.2, -0.28, 0.1),
-            new Three.Vector3(4.2, 0.42, 0.1),
-          ],
-          0xffffff,
-          0.16,
-        ),
+      const lossDomain = lossCurveDomain(resolved.lossCurve)
+      const lossPanel = makeRect(
+        lossChartLayout.width + 0.28,
+        lossChartLayout.height + 0.26,
+        0xffffff,
+        0.035,
       )
+      lossPanel.position.set(
+        lossChartLayout.origin.x + lossChartLayout.width / 2,
+        lossChartLayout.origin.y + lossChartLayout.height / 2,
+        0.03,
+      )
+      root.add(lossPanel)
+      for (let index = 0; index <= 4; index += 1) {
+        const x =
+          lossChartLayout.origin.x + (lossChartLayout.width / 4) * index
+        root.add(
+          makeLine(
+            [
+              new Three.Vector3(x, lossChartLayout.origin.y, 0.08),
+              new Three.Vector3(
+                x,
+                lossChartLayout.origin.y + lossChartLayout.height,
+                0.08,
+              ),
+            ],
+            0xffffff,
+            index === 0 || index === 4 ? 0.16 : 0.06,
+          ),
+        )
+      }
+      for (let index = 0; index <= 3; index += 1) {
+        const y =
+          lossChartLayout.origin.y + (lossChartLayout.height / 3) * index
+        root.add(
+          makeLine(
+            [
+              new Three.Vector3(lossChartLayout.origin.x, y, 0.08),
+              new Three.Vector3(
+                lossChartLayout.origin.x + lossChartLayout.width,
+                y,
+                0.08,
+              ),
+            ],
+            0xffffff,
+            index === 0 || index === 3 ? 0.16 : 0.06,
+          ),
+        )
+      }
+      if (lossDomain !== undefined) {
+        const topTick = makeTextSprite(formatLossTick(lossDomain.maxLoss), {
+          color: "#a3a3a3",
+          fontSize: 16,
+          height: 80,
+          width: 180,
+          worldHeight: 0.16,
+        })
+        topTick.position.set(
+          lossChartLayout.origin.x - 0.18,
+          lossChartLayout.origin.y + lossChartLayout.height,
+          0.4,
+        )
+        root.add(topTick)
+        const bottomTick = makeTextSprite(formatLossTick(lossDomain.minLoss), {
+          color: "#a3a3a3",
+          fontSize: 16,
+          height: 80,
+          width: 180,
+          worldHeight: 0.16,
+        })
+        bottomTick.position.set(
+          lossChartLayout.origin.x - 0.18,
+          lossChartLayout.origin.y,
+          0.4,
+        )
+        root.add(bottomTick)
+        const stepTick = makeTextSprite(`${lossDomain.maxStep} step`, {
+          color: "#a3a3a3",
+          fontSize: 16,
+          height: 80,
+          width: 220,
+          worldHeight: 0.16,
+        })
+        stepTick.position.set(
+          lossChartLayout.origin.x + lossChartLayout.width,
+          lossChartLayout.origin.y - 0.18,
+          0.4,
+        )
+        root.add(stepTick)
+      }
       if (lossPoints.length > 1) {
-        root.add(makeLine(lossPoints, 0xffffff, 0.86))
+        const area = makeAreaUnderCurve(
+          lossPoints,
+          lossChartLayout.origin.y,
+          0xb9e6ff,
+          0.12,
+        )
+        if (area !== undefined) {
+          area.position.z = 0.05
+          root.add(area)
+        }
+        root.add(makeDashedLine(lossPoints, 0xffffff, 0.82, {
+          dashSize: 0.08,
+          gapSize: 0.045,
+        }))
         for (const point of lossPoints) {
           const dot = makeCircle(0.03, 0xffffff, 0.9)
           dot.position.copy(point)
@@ -1143,6 +1443,7 @@ export const mountTrainingRunVisualization = (
       })
       lossLabel.position.set(3.2, -0.68, 0.45)
       root.add(lossLabel)
+      root.add(createStatusMiniChart(resolved.nodes))
 
       if (resolved.operatorSignals.length > 0) {
         const operatorGroup = new Three.Group()
@@ -1268,7 +1569,12 @@ export const mountTrainingRunVisualization = (
         const delta = lastTime === 0 ? 0 : (time - lastTime) / 1000
         lastTime = time
         staleRing.rotation.z += delta * 0.18
+        contributorOrbitGroup.rotation.z -= delta * 0.025
         contributorGroup.rotation.z += delta * 0.07
+        for (const flowLine of flowLines) {
+          flowLine.line.material.scale =
+            0.92 + Math.sin(time * 0.0018 + flowLine.phase * Math.PI * 2) * 0.08
+        }
         for (const pulse of pulses) {
           pulse.phase += delta * resolved.pulseSpeed
           pulse.mesh.position.copy(pointOnPoints(pulse.points, pulse.phase))
