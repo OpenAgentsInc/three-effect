@@ -193,6 +193,40 @@ describe("training run visualization", () => {
     ])
   })
 
+  test("preserves explicit operator command scene signals", () => {
+    const options = trainingRunVisualizationOptionsFromSnapshot({
+      operatorSignals: [
+        {
+          detail: "planned",
+          id: "plan",
+          label: "plan",
+          state: "success",
+        },
+        {
+          detail: "claiming",
+          id: "lease",
+          label: "lease",
+          state: "info",
+        },
+      ],
+    })
+
+    expect(options.operatorSignals).toEqual([
+      {
+        detail: "planned",
+        id: "plan",
+        label: "plan",
+        state: "success",
+      },
+      {
+        detail: "claiming",
+        id: "lease",
+        label: "lease",
+        state: "info",
+      },
+    ])
+  })
+
   test("surfaces blocker and pending-payout state in scene nodes", () => {
     const options = trainingRunVisualizationOptionsFromSnapshot({
       blockerRefCount: 2,

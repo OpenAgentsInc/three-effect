@@ -83,6 +83,15 @@ export type TrainingRunPromiseSignalDefinition = Readonly<{
   evidenceRefCount: number
 }>
 
+export type TrainingRunOperatorSignalState = "error" | "idle" | "info" | "success"
+
+export type TrainingRunOperatorSignalDefinition = Readonly<{
+  id: string
+  label: string
+  state: TrainingRunOperatorSignalState
+  detail: string
+}>
+
 export type TrainingRunVisualizationOptions = Readonly<{
   backgroundColor?: number
   pixelRatio?: number
@@ -90,6 +99,7 @@ export type TrainingRunVisualizationOptions = Readonly<{
   nodes?: readonly TrainingRunNodeDefinition[]
   contributors?: readonly TrainingRunContributorDefinition[]
   lossCurve?: readonly TrainingRunLossPoint[]
+  operatorSignals?: readonly TrainingRunOperatorSignalDefinition[]
   promiseSignals?: readonly TrainingRunPromiseSignalDefinition[]
   pulseSpeed?: number
 }>
@@ -111,6 +121,7 @@ export type TrainingRunVisualizationSnapshot = Readonly<{
   closeoutSatisfied?: boolean
   pendingPayoutCount?: number
   plannedWindowCount?: number
+  operatorSignals?: readonly TrainingRunOperatorSignalDefinition[]
   promiseBlockerRefCount?: number
   promiseDegradedCount?: number
   promiseEvidenceRefCount?: number
@@ -140,6 +151,7 @@ export type ResolvedTrainingRunVisualizationOptions = Readonly<{
   nodes: readonly TrainingRunNodeDefinition[]
   contributors: readonly TrainingRunContributorDefinition[]
   lossCurve: readonly TrainingRunLossPoint[]
+  operatorSignals: readonly TrainingRunOperatorSignalDefinition[]
   promiseSignals: readonly TrainingRunPromiseSignalDefinition[]
   pulseSpeed: number
 }>
@@ -319,6 +331,9 @@ export const defaultTrainingRunLossCurve: readonly TrainingRunLossPoint[] = [
 export const defaultTrainingRunPromiseSignals: readonly TrainingRunPromiseSignalDefinition[] =
   []
 
+export const defaultTrainingRunOperatorSignals: readonly TrainingRunOperatorSignalDefinition[] =
+  []
+
 export const defaultTrainingRunVisualizationOptions: ResolvedTrainingRunVisualizationOptions =
   {
     backgroundColor: 0x050505,
@@ -327,6 +342,7 @@ export const defaultTrainingRunVisualizationOptions: ResolvedTrainingRunVisualiz
     nodes: defaultTrainingRunNodes,
     contributors: defaultTrainingRunContributors,
     lossCurve: defaultTrainingRunLossCurve,
+    operatorSignals: defaultTrainingRunOperatorSignals,
     promiseSignals: defaultTrainingRunPromiseSignals,
     pulseSpeed: 0.17,
   }
@@ -340,6 +356,9 @@ export const resolveTrainingRunVisualizationOptions = (
   contributors:
     options.contributors ?? defaultTrainingRunVisualizationOptions.contributors,
   lossCurve: options.lossCurve ?? defaultTrainingRunVisualizationOptions.lossCurve,
+  operatorSignals:
+    options.operatorSignals ??
+    defaultTrainingRunVisualizationOptions.operatorSignals,
   promiseSignals:
     options.promiseSignals ??
     defaultTrainingRunVisualizationOptions.promiseSignals,
@@ -576,6 +595,7 @@ export const trainingRunVisualizationOptionsFromSnapshot = (
     maxAllowedStaleSteps: snapshot.maxAllowedStaleSteps,
     contributors: contributorDefinitionsFromSnapshot(snapshot),
     lossCurve: lossCurveFromSnapshot(snapshot),
+    operatorSignals: snapshot.operatorSignals ?? [],
     promiseSignals: promiseSignalsFromSnapshot(snapshot),
     nodes: [
       nodeWith("registered", {
@@ -772,6 +792,17 @@ const colorForPromiseSignal = (
             state === "withdrawn"
           ? 0xff6b6b
           : 0x9ca3af
+
+const colorForOperatorSignal = (
+  state: TrainingRunOperatorSignalState,
+): number =>
+  state === "success"
+    ? 0xb7f7d4
+    : state === "error"
+      ? 0xff6b6b
+      : state === "info"
+        ? 0xb9e6ff
+        : 0x9ca3af
 
 const makeCircle = (
   radius: number,
@@ -1112,6 +1143,56 @@ export const mountTrainingRunVisualization = (
       })
       lossLabel.position.set(3.2, -0.68, 0.45)
       root.add(lossLabel)
+
+      if (resolved.operatorSignals.length > 0) {
+        const operatorGroup = new Three.Group()
+        operatorGroup.position.set(-3.75, 2.92, 0.5)
+        operatorGroup.add(
+          makeLine(
+            [new Three.Vector3(0, -0.1, 0), new Three.Vector3(7.5, -0.1, 0)],
+            0xffffff,
+            0.1,
+          ),
+        )
+        const title = makeTextSprite("operator commands", {
+          color: "#d1d5db",
+          fontSize: 20,
+          height: 80,
+          width: 320,
+        })
+        title.position.set(0.78, 0.18, 0.2)
+        operatorGroup.add(title)
+
+        for (const [index, signal] of resolved.operatorSignals
+          .slice(0, 6)
+          .entries()) {
+          const x = 1.15 + index * 1.05
+          const color = colorForOperatorSignal(signal.state)
+          const ring = makeRing(0.095, color, 0.48)
+          ring.position.set(x, -0.1, 0.1)
+          operatorGroup.add(ring)
+          const dot = makeCircle(0.035, color, signal.state === "idle" ? 0.5 : 0.92)
+          dot.position.set(x, -0.1, 0.2)
+          operatorGroup.add(dot)
+          const label = makeTextSprite(signal.label, {
+            color: "#ffffff",
+            fontSize: 16,
+            height: 80,
+            width: 220,
+          })
+          label.position.set(x, -0.31, 0.22)
+          operatorGroup.add(label)
+          const detail = makeTextSprite(signal.detail, {
+            color: "#a3a3a3",
+            fontSize: 14,
+            height: 80,
+            width: 260,
+          })
+          detail.position.set(x, -0.52, 0.22)
+          operatorGroup.add(detail)
+        }
+        root.add(operatorGroup)
+      }
 
       if (resolved.promiseSignals.length > 0) {
         const signalGroup = new Three.Group()
