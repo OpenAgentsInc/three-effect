@@ -53,9 +53,18 @@ export type MokshaAssetOverrides = Readonly<
   }
 >
 
+export type MokshaCopyDefinition = Readonly<{
+  closingCaption: string
+  midTitleLines: readonly string[]
+  openingCaption: string
+  openingMobileCaption: string
+  openingTitle: string
+}>
+
 export type MokshaOptions = Readonly<{
   assets?: MokshaAssetOverrides
   backgroundColor?: number
+  copy?: Partial<MokshaCopyDefinition>
   diamonds?: readonly MokshaDiamondDefinition[]
   pages?: number
   paragraphs?: readonly MokshaParagraphDefinition[]
@@ -68,6 +77,7 @@ export type MokshaOptions = Readonly<{
 export type ResolvedMokshaOptions = Readonly<{
   assets: MokshaAssetUrls
   backgroundColor: number
+  copy: MokshaCopyDefinition
   diamonds: readonly MokshaDiamondDefinition[]
   pages: number
   paragraphs: readonly MokshaParagraphDefinition[]
@@ -189,9 +199,18 @@ export const defaultMokshaDiamonds: readonly MokshaDiamondDefinition[] = [
   { factor: 6, offset: 8, scale: 2.5, x: 0 },
 ]
 
+export const defaultMokshaCopy: MokshaCopyDefinition = {
+  closingCaption: "Culture is not your friend.",
+  midTitleLines: ["four", "zero", "zero"],
+  openingCaption: "It was the year 2076. The substance had arrived.",
+  openingMobileCaption: "It was the year 2076.\nThe substance had arrived.",
+  openingTitle: "MOKSHA",
+}
+
 export const defaultMokshaOptions: ResolvedMokshaOptions = {
   assets: defaultMokshaAssetUrls,
   backgroundColor: 0x0c0f13,
+  copy: defaultMokshaCopy,
   diamonds: defaultMokshaDiamonds,
   pages: 8,
   paragraphs: defaultMokshaParagraphs,
@@ -213,6 +232,10 @@ export const resolveMokshaOptions = (
       ...defaultMokshaAssetUrls.images,
       ...(options.assets?.images ?? {}),
     },
+  },
+  copy: {
+    ...defaultMokshaCopy,
+    ...(options.copy ?? {}),
   },
   diamonds: options.diamonds ?? defaultMokshaOptions.diamonds,
   paragraphs: options.paragraphs ?? defaultMokshaOptions.paragraphs,
@@ -792,7 +815,7 @@ export const mountMokshaExperience = (
           color: 0xd40749,
           font: loadedFont,
           size: layout.contentMaxWidth * 0.15,
-          text: "MOKSHA",
+          text: resolved.copy.openingTitle,
         })
         title.position.set(-layout.contentMaxWidth / 3.2, 0.5, -1)
         titleGroup.add(title)
@@ -802,8 +825,8 @@ export const mountMokshaExperience = (
           color: "rgba(255,255,255,0.92)",
           maxPixelWidth: 900,
           text: layout.mobile
-            ? "It was the year 2076.\nThe substance had arrived."
-            : "It was the year 2076. The substance had arrived.",
+            ? resolved.copy.openingMobileCaption
+            : resolved.copy.openingCaption,
           width: layout.mobile ? layout.canvasWidth * 0.75 : layout.canvasWidth * 0.48,
         })
         caption.position.set(
@@ -816,7 +839,7 @@ export const mountMokshaExperience = (
 
       const createMidTitle = (): void => {
         const group = makeScrollGroup(5.7, 1.2)
-        ;["four", "zero", "zero"].forEach((line, index) => {
+        resolved.copy.midTitleLines.forEach((line, index) => {
           const text = makeFontText({
             alignX: "left",
             alignY: "top",
@@ -924,7 +947,7 @@ export const mountMokshaExperience = (
         const caption = makeCanvasTextPlane({
           color: "rgba(255,255,255,0.92)",
           maxPixelWidth: 760,
-          text: "Culture is not your friend.",
+          text: resolved.copy.closingCaption,
           width: layout.mobile ? layout.canvasWidth * 0.75 : layout.canvasWidth * 0.36,
         })
         caption.position.set(

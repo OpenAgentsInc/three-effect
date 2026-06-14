@@ -763,6 +763,26 @@ describe("moksha experience", () => {
     )
   })
 
+  test("resolves Moksha copy overrides without changing defaults", () => {
+    const options = resolveMokshaOptions({
+      copy: {
+        closingCaption: "The forum is not a monument. It is a muster.",
+        midTitleLines: ["agent", "city", "rising"],
+        openingTitle: "OPENAGENTS",
+      },
+    })
+
+    expect(defaultMokshaOptions.copy.openingTitle).toBe("MOKSHA")
+    expect(options.copy.openingTitle).toBe("OPENAGENTS")
+    expect(options.copy.openingCaption).toBe(
+      defaultMokshaOptions.copy.openingCaption,
+    )
+    expect(options.copy.midTitleLines).toEqual(["agent", "city", "rising"])
+    expect(options.copy.closingCaption).toBe(
+      "The forum is not a monument. It is a muster.",
+    )
+  })
+
   test("constructs the Moksha shader material before uniforms exist", () => {
     const material = new MokshaPlaneMaterial({ color: 0xff00ff, opacity: 0.45 })
 

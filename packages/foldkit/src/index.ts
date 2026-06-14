@@ -7,6 +7,7 @@ import {
   mountMokshaExperience,
   mountSpinningCube,
   mountTrainingRunVisualization,
+  type MokshaOptions,
   type TrainingRunNodeSelection,
   type TrainingRunVisualizationOptions,
 } from "@openagentsinc/three-effect/core"
@@ -30,7 +31,9 @@ const spinningCubeElement = defineCustomElement({
 
 const mokshaElement = defineCustomElement({
   tag: mokshaTagName,
-  properties: {},
+  properties: {
+    options: S.Unknown,
+  },
   events: {},
 })
 
@@ -66,9 +69,10 @@ const trainingOptionsFromUnknown = (
 ): TrainingRunVisualizationOptions =>
   isRecord(value) ? (value as TrainingRunVisualizationOptions) : {}
 
-const trainingOptionsSignature = (
-  value: TrainingRunVisualizationOptions,
-): string => {
+const mokshaOptionsFromUnknown = (value: unknown): MokshaOptions =>
+  isRecord(value) ? (value as MokshaOptions) : {}
+
+const stableOptionsSignature = (value: unknown): string => {
   try {
     return JSON.stringify(value)
   } catch {
@@ -176,9 +180,28 @@ const makeBezierNodesElement = (): CustomElementConstructor => {
 const makeMokshaElement = (): CustomElementConstructor => {
   return class MokshaElement extends HTMLElement {
     #dispose: Effect.Effect<void> | null = null
+    #mount: HTMLDivElement | null = null
+    #options: MokshaOptions = {}
+    #optionsSignature = stableOptionsSignature(this.#options)
+
+    get options(): MokshaOptions {
+      return this.#options
+    }
+
+    set options(value: unknown) {
+      const options = mokshaOptionsFromUnknown(value)
+      const signature = stableOptionsSignature(options)
+      if (signature === this.#optionsSignature) return
+
+      this.#options = options
+      this.#optionsSignature = signature
+      if (this.isConnected && this.#mount !== null) {
+        this.#remount()
+      }
+    }
 
     connectedCallback(): void {
-      if (this.#dispose !== null) return
+      if (this.#mount !== null) return
 
       const shadow = this.shadowRoot ?? this.attachShadow({ mode: "open" })
       shadow.replaceChildren()
@@ -202,16 +225,30 @@ const makeMokshaElement = (): CustomElementConstructor => {
 
       const mount = document.createElement("div")
       mount.className = "mount"
+      this.#mount = mount
       shadow.append(style, mount)
 
-      const handle = Effect.runSync(mountMokshaExperience(mount))
-      this.#dispose = handle.dispose
+      this.#remount()
     }
 
     disconnectedCallback(): void {
+      this.#unmount()
+      this.#mount = null
+    }
+
+    #unmount(): void {
       if (this.#dispose === null) return
       Effect.runSync(this.#dispose)
       this.#dispose = null
+    }
+
+    #remount(): void {
+      if (this.#mount === null) return
+      this.#unmount()
+      const handle = Effect.runSync(
+        mountMokshaExperience(this.#mount, this.#options),
+      )
+      this.#dispose = handle.dispose
     }
   }
 }
@@ -221,7 +258,7 @@ const makeTrainingRunElement = (): CustomElementConstructor => {
     #dispose: Effect.Effect<void> | null = null
     #mount: HTMLDivElement | null = null
     #visualization: TrainingRunVisualizationOptions = {}
-    #visualizationSignature = trainingOptionsSignature(this.#visualization)
+    #visualizationSignature = stableOptionsSignature(this.#visualization)
 
     get visualization(): TrainingRunVisualizationOptions {
       return this.#visualization
@@ -229,7 +266,7 @@ const makeTrainingRunElement = (): CustomElementConstructor => {
 
     set visualization(value: unknown) {
       const visualization = trainingOptionsFromUnknown(value)
-      const signature = trainingOptionsSignature(visualization)
+      const signature = stableOptionsSignature(visualization)
       if (signature === this.#visualizationSignature) return
 
       this.#visualization = visualization
@@ -339,10 +376,14 @@ export const spinningCubeView = <Message>(
 
 export const mokshaView = <Message>(
   attributes: ReadonlyArray<Attribute<Message>> = [],
+  options?: MokshaOptions,
 ): Html => {
   registerMokshaElement()
   const element = mokshaElement.withMessage<Message>()
-  return element(attributes, [])
+  return element(
+    options === undefined ? attributes : [...attributes, element.Options(options)],
+    [],
+  )
 }
 
 export const trainingRunView = <Message>(
