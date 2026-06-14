@@ -66,6 +66,23 @@ export type TrainingRunLossPoint = Readonly<{
   validationLoss: number
 }>
 
+export type TrainingRunPromiseSignalState =
+  | "degraded"
+  | "green"
+  | "planned"
+  | "red"
+  | "unknown"
+  | "withdrawn"
+  | "yellow"
+
+export type TrainingRunPromiseSignalDefinition = Readonly<{
+  id: string
+  label: string
+  state: TrainingRunPromiseSignalState
+  blockerCount: number
+  evidenceRefCount: number
+}>
+
 export type TrainingRunVisualizationOptions = Readonly<{
   backgroundColor?: number
   pixelRatio?: number
@@ -73,6 +90,7 @@ export type TrainingRunVisualizationOptions = Readonly<{
   nodes?: readonly TrainingRunNodeDefinition[]
   contributors?: readonly TrainingRunContributorDefinition[]
   lossCurve?: readonly TrainingRunLossPoint[]
+  promiseSignals?: readonly TrainingRunPromiseSignalDefinition[]
   pulseSpeed?: number
 }>
 
@@ -93,6 +111,16 @@ export type TrainingRunVisualizationSnapshot = Readonly<{
   closeoutSatisfied?: boolean
   pendingPayoutCount?: number
   plannedWindowCount?: number
+  promiseBlockerRefCount?: number
+  promiseDegradedCount?: number
+  promiseEvidenceRefCount?: number
+  promiseGreenCount?: number
+  promisePlannedCount?: number
+  promiseRedCount?: number
+  promiseSignals?: readonly TrainingRunPromiseSignalDefinition[]
+  promiseUnknownCount?: number
+  promiseWithdrawnCount?: number
+  promiseYellowCount?: number
   receiptRefCount?: number
   reconciledWindowCount?: number
   rejectedWorkCount?: number
@@ -112,6 +140,7 @@ export type ResolvedTrainingRunVisualizationOptions = Readonly<{
   nodes: readonly TrainingRunNodeDefinition[]
   contributors: readonly TrainingRunContributorDefinition[]
   lossCurve: readonly TrainingRunLossPoint[]
+  promiseSignals: readonly TrainingRunPromiseSignalDefinition[]
   pulseSpeed: number
 }>
 
@@ -287,6 +316,9 @@ export const defaultTrainingRunLossCurve: readonly TrainingRunLossPoint[] = [
   { step: 400, validationLoss: 3.06 },
 ]
 
+export const defaultTrainingRunPromiseSignals: readonly TrainingRunPromiseSignalDefinition[] =
+  []
+
 export const defaultTrainingRunVisualizationOptions: ResolvedTrainingRunVisualizationOptions =
   {
     backgroundColor: 0x050505,
@@ -295,6 +327,7 @@ export const defaultTrainingRunVisualizationOptions: ResolvedTrainingRunVisualiz
     nodes: defaultTrainingRunNodes,
     contributors: defaultTrainingRunContributors,
     lossCurve: defaultTrainingRunLossCurve,
+    promiseSignals: defaultTrainingRunPromiseSignals,
     pulseSpeed: 0.17,
   }
 
@@ -307,6 +340,9 @@ export const resolveTrainingRunVisualizationOptions = (
   contributors:
     options.contributors ?? defaultTrainingRunVisualizationOptions.contributors,
   lossCurve: options.lossCurve ?? defaultTrainingRunVisualizationOptions.lossCurve,
+  promiseSignals:
+    options.promiseSignals ??
+    defaultTrainingRunVisualizationOptions.promiseSignals,
 })
 
 const finiteNonNegative = (value: number | undefined): number =>
@@ -443,6 +479,77 @@ const lossCurveFromSnapshot = (
   ]
 }
 
+const promiseSignalsFromSnapshot = (
+  snapshot: TrainingRunVisualizationSnapshot,
+): readonly TrainingRunPromiseSignalDefinition[] => {
+  if (snapshot.promiseSignals !== undefined) return snapshot.promiseSignals
+
+  const signals: TrainingRunPromiseSignalDefinition[] = []
+  const pushIfPresent = (
+    id: string,
+    label: string,
+    state: TrainingRunPromiseSignalState,
+    count: number,
+  ) => {
+    if (count <= 0) return
+    signals.push({
+      blockerCount:
+        state === "red" || state === "degraded" || state === "withdrawn"
+          ? finiteNonNegative(snapshot.promiseBlockerRefCount)
+          : 0,
+      evidenceRefCount: finiteNonNegative(snapshot.promiseEvidenceRefCount),
+      id,
+      label,
+      state,
+    })
+  }
+
+  pushIfPresent(
+    "promise.green",
+    "green",
+    "green",
+    finiteNonNegative(snapshot.promiseGreenCount),
+  )
+  pushIfPresent(
+    "promise.yellow",
+    "yellow",
+    "yellow",
+    finiteNonNegative(snapshot.promiseYellowCount),
+  )
+  pushIfPresent(
+    "promise.planned",
+    "planned",
+    "planned",
+    finiteNonNegative(snapshot.promisePlannedCount),
+  )
+  pushIfPresent(
+    "promise.red",
+    "red",
+    "red",
+    finiteNonNegative(snapshot.promiseRedCount),
+  )
+  pushIfPresent(
+    "promise.degraded",
+    "degraded",
+    "degraded",
+    finiteNonNegative(snapshot.promiseDegradedCount),
+  )
+  pushIfPresent(
+    "promise.withdrawn",
+    "withdrawn",
+    "withdrawn",
+    finiteNonNegative(snapshot.promiseWithdrawnCount),
+  )
+  pushIfPresent(
+    "promise.unknown",
+    "unknown",
+    "unknown",
+    finiteNonNegative(snapshot.promiseUnknownCount),
+  )
+
+  return signals.slice(0, 7)
+}
+
 export const trainingRunVisualizationOptionsFromSnapshot = (
   snapshot: TrainingRunVisualizationSnapshot,
 ): TrainingRunVisualizationOptions => {
@@ -469,6 +576,7 @@ export const trainingRunVisualizationOptionsFromSnapshot = (
     maxAllowedStaleSteps: snapshot.maxAllowedStaleSteps,
     contributors: contributorDefinitionsFromSnapshot(snapshot),
     lossCurve: lossCurveFromSnapshot(snapshot),
+    promiseSignals: promiseSignalsFromSnapshot(snapshot),
     nodes: [
       nodeWith("registered", {
         detail: `${Math.max(observedDevices, finiteNonNegative(snapshot.assignedContributorCount))} pylons seen`,
@@ -649,6 +757,21 @@ const colorForStatus = (status: TrainingRunNodeStatus): number =>
           : status === "sync"
             ? 0xb9e6ff
             : 0x9ca3af
+
+const colorForPromiseSignal = (
+  state: TrainingRunPromiseSignalState,
+): number =>
+  state === "green"
+    ? 0xb7f7d4
+    : state === "yellow"
+      ? 0xffd166
+      : state === "planned"
+        ? 0xb9e6ff
+        : state === "red" ||
+            state === "degraded" ||
+            state === "withdrawn"
+          ? 0xff6b6b
+          : 0x9ca3af
 
 const makeCircle = (
   radius: number,
@@ -989,6 +1112,59 @@ export const mountTrainingRunVisualization = (
       })
       lossLabel.position.set(3.2, -0.68, 0.45)
       root.add(lossLabel)
+
+      if (resolved.promiseSignals.length > 0) {
+        const signalGroup = new Three.Group()
+        signalGroup.position.set(-4.45, -2.82, 0.48)
+        signalGroup.add(
+          makeLine(
+            [new Three.Vector3(0, 0.18, 0), new Three.Vector3(8.9, 0.18, 0)],
+            0xffffff,
+            0.12,
+          ),
+        )
+        const title = makeTextSprite("promise registry", {
+          color: "#d1d5db",
+          fontSize: 22,
+          height: 80,
+          width: 300,
+        })
+        title.position.set(0.72, 0.5, 0.2)
+        signalGroup.add(title)
+
+        for (const [index, signal] of resolved.promiseSignals
+          .slice(0, 7)
+          .entries()) {
+          const x = 1.05 + index * 1.1
+          const color = colorForPromiseSignal(signal.state)
+          const ring = makeRing(0.11, color, 0.5)
+          ring.position.set(x, 0.18, 0.1)
+          signalGroup.add(ring)
+          const dot = makeCircle(0.04, color, 0.92)
+          dot.position.set(x, 0.18, 0.2)
+          signalGroup.add(dot)
+          const label = makeTextSprite(signal.label, {
+            color: "#ffffff",
+            fontSize: 18,
+            height: 80,
+            width: 240,
+          })
+          label.position.set(x, -0.09, 0.22)
+          signalGroup.add(label)
+          const detail = makeTextSprite(
+            `${signal.state} / ${signal.blockerCount} blk / ${signal.evidenceRefCount} refs`,
+            {
+              color: "#a3a3a3",
+              fontSize: 15,
+              height: 80,
+              width: 320,
+            },
+          )
+          detail.position.set(x, -0.32, 0.22)
+          signalGroup.add(detail)
+        }
+        root.add(signalGroup)
+      }
 
       let disposed = false
       let frame = 0

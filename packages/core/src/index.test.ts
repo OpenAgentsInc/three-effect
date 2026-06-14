@@ -143,6 +143,56 @@ describe("training run visualization", () => {
     )
   })
 
+  test("maps product-promise registry counts into scene signals", () => {
+    const options = trainingRunVisualizationOptionsFromSnapshot({
+      promiseBlockerRefCount: 4,
+      promiseEvidenceRefCount: 9,
+      promiseGreenCount: 1,
+      promisePlannedCount: 2,
+      promiseRedCount: 1,
+      promiseYellowCount: 3,
+    })
+
+    expect(options.promiseSignals?.map(signal => signal.state)).toEqual([
+      "green",
+      "yellow",
+      "planned",
+      "red",
+    ])
+    expect(options.promiseSignals?.find(signal => signal.state === "red")).toEqual({
+      blockerCount: 4,
+      evidenceRefCount: 9,
+      id: "promise.red",
+      label: "red",
+      state: "red",
+    })
+  })
+
+  test("preserves explicit product-promise scene signals", () => {
+    const options = trainingRunVisualizationOptionsFromSnapshot({
+      promiseGreenCount: 3,
+      promiseSignals: [
+        {
+          blockerCount: 2,
+          evidenceRefCount: 5,
+          id: "training.model_ladder.v1",
+          label: "model ladder",
+          state: "yellow",
+        },
+      ],
+    })
+
+    expect(options.promiseSignals).toEqual([
+      {
+        blockerCount: 2,
+        evidenceRefCount: 5,
+        id: "training.model_ladder.v1",
+        label: "model ladder",
+        state: "yellow",
+      },
+    ])
+  })
+
   test("surfaces blocker and pending-payout state in scene nodes", () => {
     const options = trainingRunVisualizationOptionsFromSnapshot({
       blockerRefCount: 2,
