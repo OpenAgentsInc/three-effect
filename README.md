@@ -11,10 +11,13 @@ scope for now.
 
 - `@openagentsinc/three-effect/core`
   - Effect-first Three runtime utilities.
-  - Current proof point: a scoped spinning cube renderer with deterministic
-    disposal.
+  - Current proof points:
+    - a scoped spinning cube renderer with deterministic disposal.
+    - a React-free port of the pmndrs Bezier curves and nodes example, including
+      draggable nodes, labels, endpoint markers, and animated dashed quadratic
+      Bezier connections.
 - `@openagentsinc/three-effect/foldkit`
-  - Foldkit custom-element binding for the core spinning cube.
+  - Foldkit custom-element bindings for the core scenes.
   - Designed for Foldkit views to render the element declaratively while Three
     resources remain outside the Foldkit model.
 
@@ -27,14 +30,18 @@ Workspace package manifests also exist under `packages/core` and
 ## Usage
 
 ```ts
-import { spinningCubeView } from "@openagentsinc/three-effect/foldkit"
+import {
+  bezierNodesView,
+  spinningCubeView,
+} from "@openagentsinc/three-effect/foldkit"
 
 const preview = spinningCubeView<Message>()
+const graph = bezierNodesView<Message>()
 ```
 
-The Foldkit helper registers an `oa-spinning-cube` custom element when a browser
-custom-elements registry is available. The element owns a scoped Three renderer
-and releases it on disconnect.
+The Foldkit helpers register `oa-spinning-cube` and `oa-bezier-nodes` custom
+elements when a browser custom-elements registry is available. Each element owns
+a scoped Three renderer and releases it on disconnect.
 
 ## Commands
 
@@ -42,4 +49,3 @@ and releases it on disconnect.
 bun install
 bun run verify
 ```
-

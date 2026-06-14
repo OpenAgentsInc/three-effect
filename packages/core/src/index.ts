@@ -1,6 +1,8 @@
 import { Data, Effect } from "effect"
 import * as Three from "three"
 
+export * from "./bezierNodes"
+
 export class SpinningCubeMountError extends Data.TaggedError(
   "SpinningCubeMountError",
 )<{
@@ -146,4 +148,3 @@ export const mountSpinningCube = (
         reason: error instanceof Error ? error.message : String(error),
       }),
   })
-
