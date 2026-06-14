@@ -41,6 +41,16 @@ const trainingOptionsFromUnknown = (
 ): TrainingRunVisualizationOptions =>
   isRecord(value) ? (value as TrainingRunVisualizationOptions) : {}
 
+const trainingOptionsSignature = (
+  value: TrainingRunVisualizationOptions,
+): string => {
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return `${Date.now()}`
+  }
+}
+
 const makeSpinningCubeElement = (): CustomElementConstructor => {
   return class SpinningCubeElement extends HTMLElement {
     #dispose: Effect.Effect<void> | null = null
@@ -130,13 +140,19 @@ const makeTrainingRunElement = (): CustomElementConstructor => {
     #dispose: Effect.Effect<void> | null = null
     #mount: HTMLDivElement | null = null
     #visualization: TrainingRunVisualizationOptions = {}
+    #visualizationSignature = trainingOptionsSignature(this.#visualization)
 
     get visualization(): TrainingRunVisualizationOptions {
       return this.#visualization
     }
 
     set visualization(value: unknown) {
-      this.#visualization = trainingOptionsFromUnknown(value)
+      const visualization = trainingOptionsFromUnknown(value)
+      const signature = trainingOptionsSignature(visualization)
+      if (signature === this.#visualizationSignature) return
+
+      this.#visualization = visualization
+      this.#visualizationSignature = signature
       if (this.isConnected && this.#mount !== null) {
         this.#remount()
       }
