@@ -5,13 +5,13 @@
     "": {
       "name": "@openagentsinc/three-effect",
       "dependencies": {
+        "@types/three": "0.184.0",
         "effect": "4.0.0-beta.70",
         "foldkit": "0.102.1",
         "three": "0.184.0",
       },
       "devDependencies": {
         "@types/bun": "1.1.14",
-        "@types/three": "0.184.0",
         "typescript": "6.0.3",
       },
     },
@@ -19,6 +19,7 @@
       "name": "@openagentsinc/three-effect-core",
       "version": "0.0.1",
       "dependencies": {
+        "@types/three": "0.184.0",
         "effect": "4.0.0-beta.70",
         "three": "0.184.0",
       },

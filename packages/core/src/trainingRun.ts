@@ -364,21 +364,27 @@ export const defaultTrainingRunVisualizationOptions: ResolvedTrainingRunVisualiz
 
 export const resolveTrainingRunVisualizationOptions = (
   options: TrainingRunVisualizationOptions = {},
-): ResolvedTrainingRunVisualizationOptions => ({
-  ...defaultTrainingRunVisualizationOptions,
-  ...options,
-  nodes: options.nodes ?? defaultTrainingRunVisualizationOptions.nodes,
-  contributors:
-    options.contributors ?? defaultTrainingRunVisualizationOptions.contributors,
-  lossCurve: options.lossCurve ?? defaultTrainingRunVisualizationOptions.lossCurve,
-  operatorSignals:
-    options.operatorSignals ??
-    defaultTrainingRunVisualizationOptions.operatorSignals,
-  promiseSignals:
-    options.promiseSignals ??
-    defaultTrainingRunVisualizationOptions.promiseSignals,
-  onNodeClick: options.onNodeClick,
-})
+): ResolvedTrainingRunVisualizationOptions => {
+  const resolved = {
+    ...defaultTrainingRunVisualizationOptions,
+    ...options,
+    nodes: options.nodes ?? defaultTrainingRunVisualizationOptions.nodes,
+    contributors:
+      options.contributors ?? defaultTrainingRunVisualizationOptions.contributors,
+    lossCurve:
+      options.lossCurve ?? defaultTrainingRunVisualizationOptions.lossCurve,
+    operatorSignals:
+      options.operatorSignals ??
+      defaultTrainingRunVisualizationOptions.operatorSignals,
+    promiseSignals:
+      options.promiseSignals ??
+      defaultTrainingRunVisualizationOptions.promiseSignals,
+  }
+
+  return options.onNodeClick === undefined
+    ? resolved
+    : { ...resolved, onNodeClick: options.onNodeClick }
+}
 
 const finiteNonNegative = (value: number | undefined): number =>
   typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0
@@ -607,8 +613,7 @@ export const trainingRunVisualizationOptionsFromSnapshot = (
   const sealInFlight = snapshot.sealInFlight === true
   const closeoutSatisfied = snapshot.closeoutSatisfied === true
 
-  return {
-    maxAllowedStaleSteps: snapshot.maxAllowedStaleSteps,
+  const visualization = {
     contributors: contributorDefinitionsFromSnapshot(snapshot),
     lossCurve: lossCurveFromSnapshot(snapshot),
     operatorSignals: snapshot.operatorSignals ?? [],
@@ -729,6 +734,13 @@ export const trainingRunVisualizationOptionsFromSnapshot = (
       }),
     ],
   }
+
+  return snapshot.maxAllowedStaleSteps === undefined
+    ? visualization
+    : {
+        ...visualization,
+        maxAllowedStaleSteps: snapshot.maxAllowedStaleSteps,
+      }
 }
 
 export const createTrainingRunEdges = (
@@ -966,7 +978,7 @@ const ellipsePoints = (
 ): readonly Three.Vector3[] =>
   new Three.EllipseCurve(0, 0, xRadius, yRadius, 0, Math.PI * 2)
     .getPoints(96)
-    .map(point => new Three.Vector3(point.x, point.y, 0))
+    .map((point: Three.Vector2) => new Three.Vector3(point.x, point.y, 0))
 
 const curvedEdgePoints = (
   source: TrainingRunVector,
@@ -1148,7 +1160,7 @@ const disposeMaterial = (material: Three.Material | Three.Material[]): void => {
 }
 
 const disposeObject = (object: Three.Object3D): void => {
-  object.traverse(child => {
+  object.traverse((child: Three.Object3D) => {
     const maybeRenderable = child as Three.Object3D & {
       geometry?: Three.BufferGeometry
       material?: Three.Material | Three.Material[]

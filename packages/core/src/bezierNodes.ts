@@ -233,7 +233,7 @@ const disposeMaterial = (material: Three.Material | Three.Material[]): void => {
 }
 
 const disposeObject = (object: Three.Object3D): void => {
-  object.traverse(child => {
+  object.traverse((child: Three.Object3D) => {
     const maybeMesh = child as Three.Object3D & {
       geometry?: Three.BufferGeometry
       material?: Three.Material | Three.Material[]
