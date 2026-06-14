@@ -209,13 +209,13 @@ export const createSky = (
   const sky = new ThreeSky()
   sky.scale.setScalar(options.distance ?? 1000)
   const uniforms = sky.material.uniforms
-  uniforms.sunPosition.value = options.sunPosition
+  uniforms.sunPosition!.value = options.sunPosition
     ? toVector3(options.sunPosition)
     : calculateSkySunPosition(options.inclination, options.azimuth)
-  uniforms.mieCoefficient.value = options.mieCoefficient ?? 0.005
-  uniforms.mieDirectionalG.value = options.mieDirectionalG ?? 0.8
-  uniforms.rayleigh.value = options.rayleigh ?? 0.5
-  uniforms.turbidity.value = options.turbidity ?? 10
+  uniforms.mieCoefficient!.value = options.mieCoefficient ?? 0.005
+  uniforms.mieDirectionalG!.value = options.mieDirectionalG ?? 0.8
+  uniforms.rayleigh!.value = options.rayleigh ?? 0.5
+  uniforms.turbidity!.value = options.turbidity ?? 10
   return sky
 }
 

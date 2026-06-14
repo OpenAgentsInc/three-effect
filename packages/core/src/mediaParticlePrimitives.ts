@@ -163,7 +163,7 @@ export const createSparkleAttributes = (
   const count = options.count ?? 100
   const random = seededRandom(options.seed ?? 1)
   const scale = options.scale ?? 1
-  const scaleTuple =
+  const scaleTuple: readonly [number, number, number] =
     typeof scale === "number" ? [scale, scale, scale] : [scale[0], scale[1], scale[2]]
   const color = new Three.Color(options.color ?? 0xffffff)
   const positions = new Float32Array(count * 3)
