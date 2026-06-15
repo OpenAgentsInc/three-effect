@@ -18,6 +18,8 @@ import {
   createAnimationController,
   createBezierNodeConnections,
   createContactShadowResources,
+  createConditionalEdgesGeometry,
+  createConditionalLineSegments,
   createDetailedLod,
   createDistortMaterial,
   createEdges,
@@ -72,6 +74,7 @@ import {
   pmndrsAnimationPrimitiveSourceRefs,
   pmndrsCommonPrimitiveCounts,
   pmndrsCommonPrimitiveSourceRefs,
+  threejsSandboxConditionalLineSourceRefs,
   pmndrsControlsPrimitiveSourceRefs,
   pmndrsGeometryPrimitiveSourceRefs,
   pmndrsImagePrimitiveSourceRefs,
@@ -620,6 +623,43 @@ describe("render and scene graph primitives", () => {
       { linewidth: 2, resolution: [100, 100] },
     )
     expect(line.geometry).toBeDefined()
+  })
+
+  test("builds conditional line geometry and materials for faceted meshes", () => {
+    expect(threejsSandboxConditionalLineSourceRefs).toContain(
+      "projects/repos/threejs-sandbox/conditional-lines/src/ConditionalEdgesShader.js",
+    )
+
+    const source = new Three.OctahedronGeometry(1, 1)
+    const edges = createConditionalEdgesGeometry(source)
+    expect(edges.getAttribute("position").count).toBeGreaterThan(0)
+    expect(edges.getAttribute("control0").count).toBe(
+      edges.getAttribute("position").count,
+    )
+    expect(edges.getAttribute("control1").count).toBe(
+      edges.getAttribute("position").count,
+    )
+    expect(edges.getAttribute("direction").count).toBe(
+      edges.getAttribute("position").count,
+    )
+
+    const handle = createConditionalLineSegments(source, {
+      color: "#d8f4ff",
+      linewidth: 1.5,
+      opacity: 0.8,
+      resolution: [320, 240],
+    })
+    expect(handle.line).toBeDefined()
+    expect(handle.material.color.getHexString()).toBe("d8f4ff")
+    expect(handle.material.linewidth).toBe(1.5)
+    expect(handle.material.opacity).toBe(0.8)
+    expect(handle.material.resolution.toArray()).toEqual([320, 240])
+    handle.setResolution(640, 480)
+    expect(handle.material.resolution.toArray()).toEqual([640, 480])
+
+    edges.dispose()
+    handle.dispose()
+    source.dispose()
   })
 
   test("creates LOD levels and applies billboard rotation", () => {
