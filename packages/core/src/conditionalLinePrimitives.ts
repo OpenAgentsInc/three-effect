@@ -223,9 +223,9 @@ export const createConditionalEdgesGeometry = (
     ] as const
 
     for (let edgeIndex = 0; edgeIndex < 3; edgeIndex += 1) {
-      const index0 = indices[edgeIndex]
-      const index1 = indices[(edgeIndex + 1) % 3]
-      const controlIndex = indices[(edgeIndex + 2) % 3]
+      const index0 = indices[edgeIndex]!
+      const index1 = indices[(edgeIndex + 1) % 3]!
+      const controlIndex = indices[(edgeIndex + 2) % 3]!
       const hash = `${index0}_${index1}`
       const reverseHash = `${index1}_${index0}`
       const reverse = edgeInfo.get(reverseHash)
