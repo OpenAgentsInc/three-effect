@@ -132,6 +132,16 @@ import {
   lutColorArray,
   lutColorAt,
   pmndrsMathPrimitiveSourceRefs,
+  bindEntityPresence,
+  createEntityPool,
+  createFlowBeam,
+  createPayoutBurst,
+  defaultTextLabelOptions,
+  pmndrsEntityPoolPrimitiveSourceRefs,
+  pmndrsFlowEffectPrimitiveSourceRefs,
+  pmndrsPresenceBindingPrimitiveSourceRefs,
+  pmndrsTextLabelPrimitiveSourceRefs,
+  resolveTextLabelOptions,
 } from "./index"
 
 import { FirstPersonControls } from "three/examples/jsm/controls/FirstPersonControls.js"
@@ -1284,5 +1294,177 @@ describe("math primitives", () => {
     expect([...colors].every(channel => channel >= 0 && channel <= 1)).toBe(
       true,
     )
+  })
+})
+
+describe("living-run P0 primitives", () => {
+  test("cites the drei/pmndrs source refs for each primitive", () => {
+    expect(pmndrsTextLabelPrimitiveSourceRefs).toContain(
+      "projects/repos/drei/src/core/Text.tsx",
+    )
+    expect(pmndrsTextLabelPrimitiveSourceRefs).toContain(
+      "projects/repos/drei/src/core/Billboard.tsx",
+    )
+    expect(pmndrsEntityPoolPrimitiveSourceRefs).toContain(
+      "projects/repos/drei/src/core/Instances.tsx",
+    )
+    expect(pmndrsFlowEffectPrimitiveSourceRefs).toContain(
+      "projects/repos/examples/demos/lightbeams/src/App.jsx",
+    )
+    expect(pmndrsPresenceBindingPrimitiveSourceRefs).toContain(
+      "projects/repos/drei/src/core/Instances.tsx",
+    )
+  })
+
+  test("resolves crisp text label defaults and overrides", () => {
+    const resolved = resolveTextLabelOptions({ text: "pylon.mac" })
+    expect(resolved.text).toBe("pylon.mac")
+    expect(resolved.billboard).toBe(defaultTextLabelOptions.billboard)
+    expect(resolved.worldHeight).toBe(defaultTextLabelOptions.worldHeight)
+
+    const overridden = resolveTextLabelOptions({
+      text: "node",
+      worldHeight: 0.8,
+      billboard: false,
+      color: 0xff0000,
+    })
+    expect(overridden.worldHeight).toBe(0.8)
+    expect(overridden.billboard).toBe(false)
+    expect(overridden.color).toBe(0xff0000)
+  })
+
+  test("entity pool spawns, updates, reuses freed slots, and disposes", () => {
+    const pool = createEntityPool({ capacity: 4, color: 0x223344 })
+    expect(pool.capacity).toBe(4)
+    expect(pool.count()).toBe(0)
+
+    pool.set("a", { position: [1, 0, 0], color: "red" })
+    pool.set("b", { position: [2, 0, 0] })
+    pool.set("c", { position: [3, 0, 0] })
+    expect(pool.count()).toBe(3)
+    expect(pool.mesh.count).toBe(3)
+    expect(pool.has("b")).toBe(true)
+
+    // updating an existing id keeps the slot
+    const slotA = pool.set("a", { position: [9, 0, 0] })
+    const matrix = new Three.Matrix4()
+    pool.mesh.getMatrixAt(slotA, matrix)
+    const position = new Three.Vector3()
+    position.setFromMatrixPosition(matrix)
+    expect(position.x).toBe(9)
+
+    // removing frees a slot for reuse
+    pool.remove("b")
+    expect(pool.count()).toBe(2)
+    expect(pool.has("b")).toBe(false)
+    const slotD = pool.set("d", { position: [4, 0, 0] })
+    expect(slotD).toBe(1) // reused b's slot index
+    expect(pool.count()).toBe(3)
+
+    expect(() => pool.dispose()).not.toThrow()
+  })
+
+  test("entity pool throws when capacity is exceeded", () => {
+    const pool = createEntityPool({ capacity: 1 })
+    pool.set("a", { position: [0, 0, 0] })
+    expect(() => pool.set("b", { position: [1, 0, 0] })).toThrow()
+    pool.dispose()
+  })
+
+  test("flow beam builds geometry, advances pulses, and retargets", () => {
+    const beam = createFlowBeam({
+      from: [0, 0, 0],
+      to: [2, 0, 0],
+      rate: 1,
+      pulseCount: 2,
+    })
+    expect(beam.object3D).toBeInstanceOf(Three.Group)
+    const pulses = beam.object3D.children.filter(
+      child => child instanceof Three.Mesh && child.geometry instanceof Three.SphereGeometry,
+    )
+    expect(pulses).toHaveLength(2)
+
+    const before = (pulses[0] as Three.Mesh).position.clone()
+    beam.update(0.25)
+    const after = (pulses[0] as Three.Mesh).position.clone()
+    expect(after.distanceTo(before)).toBeGreaterThan(0)
+
+    expect(() => beam.setEndpoints([0, 0, 0], [0, 4, 0])).not.toThrow()
+    expect(() => beam.setRate(2)).not.toThrow()
+    expect(() => beam.dispose()).not.toThrow()
+  })
+
+  test("payout burst is deterministic, expands, and finishes", () => {
+    const a = createPayoutBurst({ at: [0, 0, 0], count: 16, seed: 7, duration: 1 })
+    const b = createPayoutBurst({ at: [0, 0, 0], count: 16, seed: 7, duration: 1 })
+    const posA = a.object3D.geometry.getAttribute("position").array as Float32Array
+    const posB = b.object3D.geometry.getAttribute("position").array as Float32Array
+    expect([...posA]).toEqual([...posB])
+
+    expect(a.done()).toBe(false)
+    const stillRunning = a.update(0.5)
+    expect(stillRunning).toBe(true)
+    expect(a.progress()).toBeCloseTo(0.5)
+    // particles moved away from the origin
+    const moved = a.object3D.geometry.getAttribute("position").array as Float32Array
+    expect(Math.abs(moved[0]!) + Math.abs(moved[1]!) + Math.abs(moved[2]!)).toBeGreaterThan(0)
+
+    const finished = a.update(0.6)
+    expect(finished).toBe(false)
+    expect(a.done()).toBe(true)
+    a.dispose()
+    b.dispose()
+  })
+
+  test("presence binding applies snapshots, interpolates, and prunes", () => {
+    const pool = createEntityPool({ capacity: 8 })
+    const binding = bindEntityPresence(pool, {
+      interpolateMs: 100,
+      statusColor: status => (status === "active" ? 0x00ff00 : undefined),
+    })
+
+    binding.apply([
+      { id: "p1", position: [0, 0, 0], status: "active" },
+      { id: "p2", position: [5, 0, 0] },
+    ])
+    expect([...binding.ids()].sort()).toEqual(["p1", "p2"])
+    expect(pool.count()).toBe(2)
+
+    // retarget p1 and interpolate toward it
+    binding.upsert({ id: "p1", position: [10, 0, 0] })
+    const slot = pool.set("p1", {}) // no-op set returns p1's slot
+    binding.update(50)
+    const matrix = new Three.Matrix4()
+    pool.mesh.getMatrixAt(slot, matrix)
+    const position = new Three.Vector3().setFromMatrixPosition(matrix)
+    expect(position.x).toBeGreaterThan(0)
+    expect(position.x).toBeLessThan(10)
+
+    // a snapshot omitting p2 prunes it
+    binding.apply([{ id: "p1", position: [10, 0, 0] }])
+    expect(binding.ids()).toEqual(["p1"])
+    expect(pool.has("p2")).toBe(false)
+
+    // present:false removes explicitly
+    binding.upsert({ id: "p1", position: [10, 0, 0], present: false })
+    expect(binding.ids()).toEqual([])
+
+    binding.dispose()
+    pool.dispose()
+  })
+
+  test("presence binding without interpolation snaps immediately", () => {
+    const pool = createEntityPool({ capacity: 2 })
+    const binding = bindEntityPresence(pool, { interpolateMs: 0 })
+    binding.upsert({ id: "x", position: [0, 0, 0] })
+    const slot = binding.ids().length
+    expect(slot).toBe(1)
+    binding.upsert({ id: "x", position: [7, 0, 0] })
+    const matrix = new Three.Matrix4()
+    pool.mesh.getMatrixAt(0, matrix)
+    const position = new Three.Vector3().setFromMatrixPosition(matrix)
+    expect(position.x).toBe(7)
+    binding.dispose()
+    pool.dispose()
   })
 })
