@@ -101,6 +101,10 @@ import {
   samplePerformanceFrame,
   setAnimatedMaterialTime,
   summarizeTrainingRunVisualization,
+  resolveTrainingRunEntityPositions,
+  trainingRunEntityNodeStatus,
+  trainingRunEntityRingPosition,
+  trainingRunEntitySelection,
   trainingRunVisualizationOptionsFromSnapshot,
   updateScrollMetrics,
   useMaskMaterialProps,
@@ -1101,6 +1105,92 @@ describe("training run visualization", () => {
     expect(options.nodes?.find(node => node.id === "settlement")?.detail).toBe(
       "3 pending",
     )
+  })
+})
+
+describe("training run entity layer", () => {
+  test("defaults the entity layer to honest-empty arrays", () => {
+    const resolved = resolveTrainingRunVisualizationOptions()
+    expect(resolved.entities).toEqual([])
+    expect(resolved.beams).toEqual([])
+    expect(resolved.bursts).toEqual([])
+  })
+
+  test("passes provided entity layer arrays through resolution", () => {
+    const entities = [
+      { id: "pylon.a", status: "active", label: "A" },
+      { id: "pylon.b", status: "warmup" },
+    ] as const
+    const beams = [{ fromId: "pylon.a", toId: "pylon.b" }] as const
+    const bursts = [{ atId: "pylon.a" }] as const
+
+    const resolved = resolveTrainingRunVisualizationOptions({
+      entities,
+      beams,
+      bursts,
+    })
+    expect(resolved.entities).toEqual(entities)
+    expect(resolved.beams).toEqual(beams)
+    expect(resolved.bursts).toEqual(bursts)
+  })
+
+  test("lays out entities deterministically (no Math.random / time)", () => {
+    const a = trainingRunEntityRingPosition(0, 5)
+    const b = trainingRunEntityRingPosition(0, 5)
+    expect(a).toEqual(b)
+    const c = trainingRunEntityRingPosition(1, 5)
+    expect(c).not.toEqual(a)
+    // ring positions share the z plane of the layout center
+    expect(a[2]).toBe(c[2])
+  })
+
+  test("resolves positions: explicit wins, ring fills the unplaced", () => {
+    const positions = resolveTrainingRunEntityPositions([
+      { id: "fixed", status: "active", position: [3, 1, 0] },
+      { id: "ring0", status: "warmup" },
+      { id: "ring1", status: "qualified" },
+    ])
+    expect(positions.get("fixed")).toEqual([3, 1, 0])
+    // unplaced entities only count themselves for ring spacing
+    expect(positions.get("ring0")).toEqual(
+      trainingRunEntityRingPosition(0, 2),
+    )
+    expect(positions.get("ring1")).toEqual(
+      trainingRunEntityRingPosition(1, 2),
+    )
+  })
+
+  test("maps arbitrary entity status onto the bounded node status enum", () => {
+    expect(trainingRunEntityNodeStatus("active")).toBe("active")
+    expect(trainingRunEntityNodeStatus("verified")).toBe("verified")
+    expect(trainingRunEntityNodeStatus("registered")).toBe("queued")
+    expect(trainingRunEntityNodeStatus("warmup")).toBe("sync")
+    expect(trainingRunEntityNodeStatus("sync_reentry")).toBe("blocked")
+    expect(trainingRunEntityNodeStatus("settled")).toBe("verified")
+    expect(trainingRunEntityNodeStatus("totally-unknown")).toBe("active")
+  })
+
+  test("projects an entity selection for the node-selected / onNodeClick hook", () => {
+    const selection = trainingRunEntitySelection({
+      id: "pylon.operator.mac",
+      status: "warmup",
+      label: "M1",
+    })
+    expect(selection.id).toBe("pylon.operator.mac")
+    expect(selection.label).toBe("M1")
+    expect(selection.role).toBe("run")
+    // bounded status the foldkit event schema accepts ...
+    expect(selection.status).toBe("sync")
+    // ... while the raw entity status survives in detail for #5116 dereference
+    expect(selection.detail).toBe("warmup")
+  })
+
+  test("falls back to the entity id when no label is given", () => {
+    const selection = trainingRunEntitySelection({
+      id: "pylon.unlabeled",
+      status: "active",
+    })
+    expect(selection.label).toBe("pylon.unlabeled")
   })
 })
 

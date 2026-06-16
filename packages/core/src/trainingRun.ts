@@ -1,6 +1,11 @@
 import { Data, Effect } from "effect"
 import * as Three from "three"
 
+import { createEntityPool } from "./entityPoolPrimitives"
+import { createFlowBeam, createPayoutBurst } from "./flowEffectPrimitives"
+import { bindEntityPresence } from "./presenceBindingPrimitives"
+import { createTextLabel } from "./textLabelPrimitives"
+
 export class TrainingRunMountError extends Data.TaggedError(
   "TrainingRunMountError",
 )<{
@@ -97,6 +102,27 @@ export type TrainingRunOperatorSignalDefinition = Readonly<{
   detail: string
 }>
 
+export type TrainingRunEntityDefinition = Readonly<{
+  id: string
+  status: string
+  label?: string
+  position?: TrainingRunVector
+}>
+
+export type TrainingRunBeamDefinition = Readonly<{
+  fromId: string
+  toId: string
+}>
+
+export type TrainingRunBurstDefinition = Readonly<{
+  atId: string
+}>
+
+export type TrainingRunEntitySelection = Pick<
+  TrainingRunEntityDefinition,
+  "id" | "label" | "position" | "status"
+>
+
 export type TrainingRunVisualizationOptions = Readonly<{
   backgroundColor?: number
   pixelRatio?: number
@@ -106,6 +132,9 @@ export type TrainingRunVisualizationOptions = Readonly<{
   lossCurve?: readonly TrainingRunLossPoint[]
   operatorSignals?: readonly TrainingRunOperatorSignalDefinition[]
   promiseSignals?: readonly TrainingRunPromiseSignalDefinition[]
+  entities?: readonly TrainingRunEntityDefinition[]
+  beams?: readonly TrainingRunBeamDefinition[]
+  bursts?: readonly TrainingRunBurstDefinition[]
   onNodeClick?: (node: TrainingRunNodeSelection) => void
   pulseSpeed?: number
 }>
@@ -159,6 +188,9 @@ export type ResolvedTrainingRunVisualizationOptions = Readonly<{
   lossCurve: readonly TrainingRunLossPoint[]
   operatorSignals: readonly TrainingRunOperatorSignalDefinition[]
   promiseSignals: readonly TrainingRunPromiseSignalDefinition[]
+  entities: readonly TrainingRunEntityDefinition[]
+  beams: readonly TrainingRunBeamDefinition[]
+  bursts: readonly TrainingRunBurstDefinition[]
   onNodeClick?: (node: TrainingRunNodeSelection) => void
   pulseSpeed: number
 }>
@@ -359,6 +391,9 @@ export const defaultTrainingRunVisualizationOptions: ResolvedTrainingRunVisualiz
     lossCurve: defaultTrainingRunLossCurve,
     operatorSignals: defaultTrainingRunOperatorSignals,
     promiseSignals: defaultTrainingRunPromiseSignals,
+    entities: [],
+    beams: [],
+    bursts: [],
     pulseSpeed: 0.17,
   }
 
@@ -379,6 +414,9 @@ export const resolveTrainingRunVisualizationOptions = (
     promiseSignals:
       options.promiseSignals ??
       defaultTrainingRunVisualizationOptions.promiseSignals,
+    entities: options.entities ?? defaultTrainingRunVisualizationOptions.entities,
+    beams: options.beams ?? defaultTrainingRunVisualizationOptions.beams,
+    bursts: options.bursts ?? defaultTrainingRunVisualizationOptions.bursts,
   }
 
   return options.onNodeClick === undefined
@@ -802,6 +840,115 @@ const nodeSelection = (
   role: node.role,
   status: node.status,
 })
+
+/**
+ * Map an arbitrary contributor/entity status string onto the bounded node
+ * status enum so an entity selection can travel through the existing
+ * `onNodeClick` / `node-selected` path without widening the foldkit schema.
+ * The raw status is preserved separately (in the selection `detail`).
+ */
+export const trainingRunEntityNodeStatus = (
+  status: string,
+): TrainingRunNodeStatus => {
+  switch (status) {
+    case "planned":
+    case "queued":
+    case "sync":
+    case "active":
+    case "sealed":
+    case "verified":
+    case "blocked":
+      return status
+    case "registered":
+      return "queued"
+    case "qualified":
+    case "state_synced":
+    case "warmup":
+      return "sync"
+    case "sync_reentry":
+      return "blocked"
+    case "reconciled":
+    case "settled":
+      return "verified"
+    default:
+      return "active"
+  }
+}
+
+const colorForEntityStatus = (status: string): number =>
+  colorForStatus(trainingRunEntityNodeStatus(status))
+
+/**
+ * Project an entity into a `TrainingRunNodeSelection` for the shared
+ * `onNodeClick` path. The raw entity status is carried in `detail` so
+ * receipt-dereference consumers (#5116) can recover it exactly, while `status`
+ * is the bounded node-status projection the foldkit event schema accepts.
+ */
+export const trainingRunEntitySelection = (
+  entity: TrainingRunEntityDefinition,
+): TrainingRunNodeSelection => ({
+  detail: entity.status,
+  id: entity.id,
+  label: entity.label ?? entity.id,
+  role: "run",
+  status: trainingRunEntityNodeStatus(entity.status),
+})
+
+/**
+ * Deterministically lay out entities that lack an explicit position on a ring
+ * around the run hub, so the same input always yields the same scene. Uses
+ * index-derived angles (golden-ratio stepped) rather than time/random.
+ */
+export const trainingRunEntityRingPosition = (
+  index: number,
+  count: number,
+  options: Readonly<{
+    center?: TrainingRunVector
+    radius?: number
+  }> = {},
+): TrainingRunVector => {
+  const center = options.center ?? entityRingLayout.center
+  const radius = options.radius ?? entityRingLayout.radius
+  const total = Math.max(1, count)
+  // Even angular spacing with a golden-ratio offset keeps small rings legible
+  // and large rings non-overlapping, all deterministically.
+  const angle =
+    (index / total) * Math.PI * 2 + index * 2.399963229728653
+  return [
+    center[0] + Math.cos(angle) * radius,
+    center[1] + Math.sin(angle) * radius,
+    center[2],
+  ]
+}
+
+const entityRingLayout = {
+  center: [-0.15, 0.28, 0.12] as TrainingRunVector,
+  radius: 1.62,
+} as const
+
+/**
+ * Resolve every entity to a concrete position: explicit `position` wins,
+ * otherwise a deterministic ring slot. Pure and DOM-free for testing.
+ */
+export const resolveTrainingRunEntityPositions = (
+  entities: readonly TrainingRunEntityDefinition[],
+): ReadonlyMap<string, TrainingRunVector> => {
+  const positions = new Map<string, TrainingRunVector>()
+  const unplaced = entities.filter(entity => entity.position === undefined)
+  let ringIndex = 0
+  for (const entity of entities) {
+    if (entity.position !== undefined) {
+      positions.set(entity.id, entity.position)
+    } else {
+      positions.set(
+        entity.id,
+        trainingRunEntityRingPosition(ringIndex, unplaced.length),
+      )
+      ringIndex += 1
+    }
+  }
+  return positions
+}
 
 const colorForStatus = (status: TrainingRunNodeStatus): number =>
   status === "blocked"
@@ -1588,24 +1735,146 @@ export const mountTrainingRunVisualization = (
         root.add(signalGroup)
       }
 
-      const nodeAtEvent = (
+      // ---------------------------------------------------------------------
+      // Entity layer (optional): Pylon contributors, verification beams, and
+      // settlement bursts. Absent/empty arrays render nothing extra.
+      // ---------------------------------------------------------------------
+      const entityPositions = resolveTrainingRunEntityPositions(
+        resolved.entities,
+      )
+      const entityClickTargets: Array<{
+        mesh: Three.Mesh<Three.CircleGeometry, Three.MeshBasicMaterial>
+        entity: TrainingRunEntityDefinition
+      }> = []
+      const entityLabels: Array<{ dispose: () => void }> = []
+      const flowBeams: Array<{ update: (deltaSeconds: number) => void }> = []
+      const beamDisposers: Array<() => void> = []
+      type BurstHandle = ReturnType<typeof createPayoutBurst>
+      const burstSlots: Array<{
+        handle: BurstHandle
+        at: TrainingRunVector
+        seed: number
+      }> = []
+      let entityPool: ReturnType<typeof createEntityPool> | undefined
+      let entityPresence:
+        | ReturnType<typeof bindEntityPresence>
+        | undefined
+
+      if (resolved.entities.length > 0) {
+        const pool = createEntityPool({
+          capacity: resolved.entities.length,
+          geometry: new Three.CircleGeometry(0.085, 24),
+          scale: 1,
+        })
+        pool.mesh.position.z = 0.36
+        root.add(pool.mesh)
+        entityPool = pool
+
+        const presence = bindEntityPresence(pool, {
+          interpolateMs: 0,
+          statusColor: status => colorForEntityStatus(status),
+        })
+        presence.apply(
+          resolved.entities.map(entity => ({
+            id: entity.id,
+            position: entityPositions.get(entity.id) ?? [0, 0, 0],
+            status: entity.status,
+          })),
+        )
+        entityPresence = presence
+
+        for (const entity of resolved.entities) {
+          const position = entityPositions.get(entity.id) ?? [0, 0, 0]
+          const color = colorForEntityStatus(entity.status)
+          const ring = makeRing(0.14, color, 0.42)
+          ring.position.set(position[0], position[1], position[2] - 0.02)
+          root.add(ring)
+
+          const hitTarget = makeCircle(0.16, color, 0.001)
+          hitTarget.position.set(position[0], position[1], 0.7)
+          root.add(hitTarget)
+          entityClickTargets.push({ mesh: hitTarget, entity })
+
+          if (entity.label !== undefined) {
+            const label = createTextLabel({
+              text: entity.label,
+              color: "#e5e7eb",
+              fontSize: 36,
+              worldHeight: 0.2,
+              position: [position[0], position[1] - 0.26, 0.55],
+              billboard: false,
+            })
+            root.add(label.object3D)
+            entityLabels.push(label)
+          }
+        }
+      }
+
+      for (const beam of resolved.beams) {
+        const from = entityPositions.get(beam.fromId)
+        const to = entityPositions.get(beam.toId)
+        if (from === undefined || to === undefined) continue
+        const handle = createFlowBeam({
+          from,
+          to,
+          color: 0xb9e6ff,
+          rate: 0.7,
+          pulseCount: 3,
+          bend: 0.18,
+          opacity: 0.32,
+        })
+        handle.object3D.position.z = 0.34
+        root.add(handle.object3D)
+        flowBeams.push({ update: handle.update })
+        beamDisposers.push(handle.dispose)
+      }
+
+      const makeBurst = (at: TrainingRunVector, seed: number): BurstHandle =>
+        createPayoutBurst({
+          at: [at[0], at[1], at[2] + 0.4],
+          color: 0xb7f7d4,
+          count: 36,
+          duration: 1.1,
+          spread: 0.7,
+          seed,
+        })
+
+      for (const [index, burst] of resolved.bursts.entries()) {
+        const at = entityPositions.get(burst.atId)
+        if (at === undefined) continue
+        const seed = index + 1
+        const handle = makeBurst(at, seed)
+        root.add(handle.object3D)
+        burstSlots.push({ handle, at, seed })
+      }
+
+      const selectionAtEvent = (
         event: PointerEvent,
-      ): TrainingRunNodeDefinition | undefined => {
+      ): TrainingRunNodeSelection | undefined => {
         const rect = canvas.getBoundingClientRect()
         if (rect.width <= 0 || rect.height <= 0) return undefined
         pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1
         pointer.y = -(((event.clientY - rect.top) / rect.height) * 2 - 1)
         raycaster.setFromCamera(pointer, camera)
-        const intersections = raycaster.intersectObjects(
-          clickTargets.map(target => target.mesh),
-          false,
-        )
-        const hit = intersections[0]?.object
-        return clickTargets.find(target => target.mesh === hit)?.node
+        const targets: Three.Object3D[] = [
+          ...clickTargets.map(target => target.mesh),
+          ...entityClickTargets.map(target => target.mesh),
+        ]
+        const hit = raycaster.intersectObjects(targets, false)[0]?.object
+        if (hit === undefined) return undefined
+        const node = clickTargets.find(target => target.mesh === hit)?.node
+        if (node !== undefined) return nodeSelection(node)
+        const entity = entityClickTargets.find(
+          target => target.mesh === hit,
+        )?.entity
+        return entity === undefined
+          ? undefined
+          : trainingRunEntitySelection(entity)
       }
 
       const handlePointerMove = (event: PointerEvent) => {
-        canvas.style.cursor = nodeAtEvent(event) === undefined ? "default" : "pointer"
+        canvas.style.cursor =
+          selectionAtEvent(event) === undefined ? "default" : "pointer"
       }
 
       const handlePointerLeave = () => {
@@ -1613,9 +1882,9 @@ export const mountTrainingRunVisualization = (
       }
 
       const handlePointerDown = (event: PointerEvent) => {
-        const node = nodeAtEvent(event)
-        if (node === undefined) return
-        resolved.onNodeClick?.(nodeSelection(node))
+        const selection = selectionAtEvent(event)
+        if (selection === undefined) return
+        resolved.onNodeClick?.(selection)
       }
 
       canvas.addEventListener("pointermove", handlePointerMove)
@@ -1654,6 +1923,19 @@ export const mountTrainingRunVisualization = (
           pulse.mesh.position.copy(pointOnPoints(pulse.points, pulse.phase))
           pulse.mesh.position.z = 0.35
         }
+        for (const beam of flowBeams) {
+          beam.update(delta)
+        }
+        for (const slot of burstSlots) {
+          slot.handle.update(delta)
+          if (slot.handle.done()) {
+            // Re-arm the settlement burst so the pulse keeps marking the slot.
+            slot.handle.dispose()
+            const next = makeBurst(slot.at, slot.seed)
+            root.add(next.object3D)
+            slot.handle = next
+          }
+        }
         renderer.render(scene, camera)
         frame = requestAnimationFrame(render)
       }
@@ -1675,6 +1957,11 @@ export const mountTrainingRunVisualization = (
         canvas.removeEventListener("pointermove", handlePointerMove)
         canvas.removeEventListener("pointerleave", handlePointerLeave)
         canvas.removeEventListener("pointerdown", handlePointerDown)
+        for (const label of entityLabels) label.dispose()
+        for (const slot of burstSlots) slot.handle.dispose()
+        for (const disposeBeam of beamDisposers) disposeBeam()
+        entityPresence?.dispose()
+        entityPool?.dispose()
         disposeObject(scene)
         renderer.dispose()
         canvas.remove()
