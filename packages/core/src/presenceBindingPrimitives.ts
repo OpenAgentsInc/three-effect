@@ -94,11 +94,12 @@ export const bindEntityPresence = (
     const existing = tracked.get(update.id)
 
     if (existing === undefined) {
-      const entry: Tracked = {
+      const baseEntry = {
         current: targetPosition.clone(),
         target: targetPosition.clone(),
-        color,
       }
+      const entry: Tracked =
+        color === undefined ? baseEntry : { ...baseEntry, color }
       tracked.set(update.id, entry)
       writePool(update.id, entry)
       return
@@ -106,7 +107,11 @@ export const bindEntityPresence = (
 
     existing.target.copy(targetPosition)
     if (!colorEquals(existing.color, color)) {
-      existing.color = color
+      if (color === undefined) {
+        delete existing.color
+      } else {
+        existing.color = color
+      }
       // Color changes apply immediately (no interpolation on color).
       writePool(update.id, existing)
     }
