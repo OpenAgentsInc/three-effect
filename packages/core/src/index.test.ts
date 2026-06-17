@@ -948,6 +948,12 @@ describe("training run visualization", () => {
       evidence: "optional",
       structuralEdges: "static",
     });
+    expect(resolved.sceneChrome).toEqual({
+      contributorOrbit: "visible",
+      lossPanel: "visible",
+      staleRing: "visible",
+      statusChart: "visible",
+    });
     expect(resolved.stageNodeGlyph).toBe("orb");
   });
 
@@ -970,7 +976,19 @@ describe("training run visualization", () => {
 
   test("supports compact aggregate stage glyphs for live scenes", () => {
     const resolved = resolveTrainingRunVisualizationOptions({
+      sceneChrome: {
+        contributorOrbit: "hidden",
+        lossPanel: "hidden",
+        staleRing: "hidden",
+        statusChart: "hidden",
+      },
       stageNodeGlyph: "compact_gate",
+    });
+    expect(resolved.sceneChrome).toEqual({
+      contributorOrbit: "hidden",
+      lossPanel: "hidden",
+      staleRing: "hidden",
+      statusChart: "hidden",
     });
     expect(resolved.stageNodeGlyph).toBe("compact_gate");
   });

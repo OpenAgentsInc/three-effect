@@ -172,6 +172,19 @@ export type TrainingRunMotionPolicy = Readonly<{
 
 export type TrainingRunStageNodeGlyph = "orb" | "compact_gate";
 
+export type TrainingRunSceneChromeVisibility = "visible" | "hidden";
+
+export type TrainingRunLossPanelVisibility =
+  | TrainingRunSceneChromeVisibility
+  | "auto";
+
+export type TrainingRunSceneChrome = Readonly<{
+  contributorOrbit?: TrainingRunSceneChromeVisibility;
+  lossPanel?: TrainingRunLossPanelVisibility;
+  staleRing?: TrainingRunSceneChromeVisibility;
+  statusChart?: TrainingRunSceneChromeVisibility;
+}>;
+
 export type TrainingRunEntitySelection = Pick<
   TrainingRunEntityDefinition,
   "id" | "label" | "position" | "status"
@@ -192,6 +205,8 @@ export type TrainingRunVisualizationOptions = Readonly<{
   motionPolicy?: TrainingRunMotionPolicy;
   /** Draw aggregate non-run stage nodes as compact gates instead of record orbs. */
   stageNodeGlyph?: TrainingRunStageNodeGlyph;
+  /** Toggle auxiliary analytical chrome around the primary scene nodes. */
+  sceneChrome?: TrainingRunSceneChrome;
   onNodeClick?: (node: TrainingRunNodeSelection) => void;
   pulseSpeed?: number;
 }>;
@@ -250,6 +265,7 @@ export type ResolvedTrainingRunVisualizationOptions = Readonly<{
   bursts: readonly TrainingRunBurstDefinition[];
   motionPolicy: Required<TrainingRunMotionPolicy>;
   stageNodeGlyph: TrainingRunStageNodeGlyph;
+  sceneChrome: Required<TrainingRunSceneChrome>;
   onNodeClick?: (node: TrainingRunNodeSelection) => void;
   pulseSpeed: number;
 }>;
@@ -465,6 +481,12 @@ export const defaultTrainingRunVisualizationOptions: ResolvedTrainingRunVisualiz
       structuralEdges: "static",
     },
     stageNodeGlyph: "orb",
+    sceneChrome: {
+      contributorOrbit: "visible",
+      lossPanel: "visible",
+      staleRing: "visible",
+      statusChart: "visible",
+    },
     pulseSpeed: 0.17,
   };
 
@@ -473,6 +495,13 @@ const resolveTrainingRunMotionPolicy = (
 ): Required<TrainingRunMotionPolicy> => ({
   ...defaultTrainingRunVisualizationOptions.motionPolicy,
   ...(policy ?? {}),
+});
+
+const resolveTrainingRunSceneChrome = (
+  chrome: TrainingRunSceneChrome | undefined,
+): Required<TrainingRunSceneChrome> => ({
+  ...defaultTrainingRunVisualizationOptions.sceneChrome,
+  ...(chrome ?? {}),
 });
 
 export const resolveTrainingRunVisualizationOptions = (
@@ -501,6 +530,7 @@ export const resolveTrainingRunVisualizationOptions = (
     stageNodeGlyph:
       options.stageNodeGlyph ??
       defaultTrainingRunVisualizationOptions.stageNodeGlyph,
+    sceneChrome: resolveTrainingRunSceneChrome(options.sceneChrome),
   };
 
   return options.onNodeClick === undefined
@@ -1444,6 +1474,14 @@ export const mountTrainingRunVisualization = (
       const animateStructuralEdges =
         resolved.motionPolicy.structuralEdges === "animated";
       const animateAmbient = resolved.motionPolicy.ambient === "animated";
+      const showContributorOrbit =
+        resolved.sceneChrome.contributorOrbit === "visible";
+      const showStaleRing = resolved.sceneChrome.staleRing === "visible";
+      const showLossPanel =
+        resolved.sceneChrome.lossPanel === "visible" ||
+        (resolved.sceneChrome.lossPanel === "auto" &&
+          resolved.lossCurve.length > 1);
+      const showStatusChart = resolved.sceneChrome.statusChart === "visible";
       const canvas = document.createElement("canvas");
       canvas.style.display = "block";
       canvas.style.width = "100%";
@@ -1501,23 +1539,28 @@ export const mountTrainingRunVisualization = (
       }
       root.add(grid);
 
-      const staleRing = makeRing(1.12, 0xffffff, 0.18);
-      staleRing.position.set(-0.15, 0.28, -0.05);
-      root.add(staleRing);
+      let staleRing: Three.Object3D | undefined;
+      if (showStaleRing) {
+        staleRing = makeRing(1.12, 0xffffff, 0.18);
+        staleRing.position.set(-0.15, 0.28, -0.05);
+        root.add(staleRing);
+        const staleLabel = makeTextSprite(
+          `max stale ${resolved.maxAllowedStaleSteps}`,
+          { color: "#d1d5db", fontSize: 26, width: 320, height: 96 },
+        );
+        staleLabel.position.set(-0.15, -0.92, 0.5);
+        root.add(staleLabel);
+      }
       const contributorOrbitGroup = new Three.Group();
       contributorOrbitGroup.position.set(-0.15, 0.28, 0.08);
-      for (const rotation of [-0.32, 0.18, 0.68]) {
-        const orbit = makeLine(ellipsePoints(1.38, 0.92), 0xffffff, 0.11);
-        orbit.rotation.z = rotation;
-        contributorOrbitGroup.add(orbit);
+      if (showContributorOrbit) {
+        for (const rotation of [-0.32, 0.18, 0.68]) {
+          const orbit = makeLine(ellipsePoints(1.38, 0.92), 0xffffff, 0.11);
+          orbit.rotation.z = rotation;
+          contributorOrbitGroup.add(orbit);
+        }
+        root.add(contributorOrbitGroup);
       }
-      root.add(contributorOrbitGroup);
-      const staleLabel = makeTextSprite(
-        `max stale ${resolved.maxAllowedStaleSteps}`,
-        { color: "#d1d5db", fontSize: 26, width: 320, height: 96 },
-      );
-      staleLabel.position.set(-0.15, -0.92, 0.5);
-      root.add(staleLabel);
 
       const edges = createTrainingRunEdges(resolved.nodes);
       const nodeStatusById = new Map(
@@ -1691,127 +1734,134 @@ export const mountTrainingRunVisualization = (
 
       const lossPoints = lossCurvePoints(resolved.lossCurve);
       const lossDomain = lossCurveDomain(resolved.lossCurve);
-      const lossPanel = makeRect(
-        lossChartLayout.width + 0.28,
-        lossChartLayout.height + 0.26,
-        0xffffff,
-        0.035,
-      );
-      lossPanel.position.set(
-        lossChartLayout.origin.x + lossChartLayout.width / 2,
-        lossChartLayout.origin.y + lossChartLayout.height / 2,
-        0.03,
-      );
-      root.add(lossPanel);
-      for (let index = 0; index <= 4; index += 1) {
-        const x =
-          lossChartLayout.origin.x + (lossChartLayout.width / 4) * index;
-        root.add(
-          makeLine(
-            [
-              new Three.Vector3(x, lossChartLayout.origin.y, 0.08),
-              new Three.Vector3(
-                x,
-                lossChartLayout.origin.y + lossChartLayout.height,
-                0.08,
-              ),
-            ],
-            0xffffff,
-            index === 0 || index === 4 ? 0.16 : 0.06,
-          ),
+      if (showLossPanel) {
+        const lossPanel = makeRect(
+          lossChartLayout.width + 0.28,
+          lossChartLayout.height + 0.26,
+          0xffffff,
+          0.035,
         );
-      }
-      for (let index = 0; index <= 3; index += 1) {
-        const y =
-          lossChartLayout.origin.y + (lossChartLayout.height / 3) * index;
-        root.add(
-          makeLine(
-            [
-              new Three.Vector3(lossChartLayout.origin.x, y, 0.08),
-              new Three.Vector3(
-                lossChartLayout.origin.x + lossChartLayout.width,
-                y,
-                0.08,
-              ),
-            ],
-            0xffffff,
-            index === 0 || index === 3 ? 0.16 : 0.06,
-          ),
+        lossPanel.position.set(
+          lossChartLayout.origin.x + lossChartLayout.width / 2,
+          lossChartLayout.origin.y + lossChartLayout.height / 2,
+          0.03,
         );
-      }
-      if (lossDomain !== undefined) {
-        const topTick = makeTextSprite(formatLossTick(lossDomain.maxLoss), {
-          color: "#a3a3a3",
-          fontSize: 16,
-          height: 80,
-          width: 180,
-          worldHeight: 0.16,
-        });
-        topTick.position.set(
-          lossChartLayout.origin.x - 0.18,
-          lossChartLayout.origin.y + lossChartLayout.height,
-          0.4,
-        );
-        root.add(topTick);
-        const bottomTick = makeTextSprite(formatLossTick(lossDomain.minLoss), {
-          color: "#a3a3a3",
-          fontSize: 16,
-          height: 80,
-          width: 180,
-          worldHeight: 0.16,
-        });
-        bottomTick.position.set(
-          lossChartLayout.origin.x - 0.18,
-          lossChartLayout.origin.y,
-          0.4,
-        );
-        root.add(bottomTick);
-        const stepTick = makeTextSprite(`${lossDomain.maxStep} step`, {
-          color: "#a3a3a3",
-          fontSize: 16,
-          height: 80,
-          width: 220,
-          worldHeight: 0.16,
-        });
-        stepTick.position.set(
-          lossChartLayout.origin.x + lossChartLayout.width,
-          lossChartLayout.origin.y - 0.18,
-          0.4,
-        );
-        root.add(stepTick);
-      }
-      if (lossPoints.length > 1) {
-        const area = makeAreaUnderCurve(
-          lossPoints,
-          lossChartLayout.origin.y,
-          0xb9e6ff,
-          0.12,
-        );
-        if (area !== undefined) {
-          area.position.z = 0.05;
-          root.add(area);
+        root.add(lossPanel);
+        for (let index = 0; index <= 4; index += 1) {
+          const x =
+            lossChartLayout.origin.x + (lossChartLayout.width / 4) * index;
+          root.add(
+            makeLine(
+              [
+                new Three.Vector3(x, lossChartLayout.origin.y, 0.08),
+                new Three.Vector3(
+                  x,
+                  lossChartLayout.origin.y + lossChartLayout.height,
+                  0.08,
+                ),
+              ],
+              0xffffff,
+              index === 0 || index === 4 ? 0.16 : 0.06,
+            ),
+          );
         }
-        root.add(
-          makeDashedLine(lossPoints, 0xffffff, 0.82, {
-            dashSize: 0.08,
-            gapSize: 0.045,
-          }),
-        );
-        for (const point of lossPoints) {
-          const dot = makeCircle(0.03, 0xffffff, 0.9);
-          dot.position.copy(point);
-          dot.position.z = 0.28;
-          root.add(dot);
+        for (let index = 0; index <= 3; index += 1) {
+          const y =
+            lossChartLayout.origin.y + (lossChartLayout.height / 3) * index;
+          root.add(
+            makeLine(
+              [
+                new Three.Vector3(lossChartLayout.origin.x, y, 0.08),
+                new Three.Vector3(
+                  lossChartLayout.origin.x + lossChartLayout.width,
+                  y,
+                  0.08,
+                ),
+              ],
+              0xffffff,
+              index === 0 || index === 3 ? 0.16 : 0.06,
+            ),
+          );
         }
+        if (lossDomain !== undefined) {
+          const topTick = makeTextSprite(formatLossTick(lossDomain.maxLoss), {
+            color: "#a3a3a3",
+            fontSize: 16,
+            height: 80,
+            width: 180,
+            worldHeight: 0.16,
+          });
+          topTick.position.set(
+            lossChartLayout.origin.x - 0.18,
+            lossChartLayout.origin.y + lossChartLayout.height,
+            0.4,
+          );
+          root.add(topTick);
+          const bottomTick = makeTextSprite(
+            formatLossTick(lossDomain.minLoss),
+            {
+              color: "#a3a3a3",
+              fontSize: 16,
+              height: 80,
+              width: 180,
+              worldHeight: 0.16,
+            },
+          );
+          bottomTick.position.set(
+            lossChartLayout.origin.x - 0.18,
+            lossChartLayout.origin.y,
+            0.4,
+          );
+          root.add(bottomTick);
+          const stepTick = makeTextSprite(`${lossDomain.maxStep} step`, {
+            color: "#a3a3a3",
+            fontSize: 16,
+            height: 80,
+            width: 220,
+            worldHeight: 0.16,
+          });
+          stepTick.position.set(
+            lossChartLayout.origin.x + lossChartLayout.width,
+            lossChartLayout.origin.y - 0.18,
+            0.4,
+          );
+          root.add(stepTick);
+        }
+        if (lossPoints.length > 1) {
+          const area = makeAreaUnderCurve(
+            lossPoints,
+            lossChartLayout.origin.y,
+            0xb9e6ff,
+            0.12,
+          );
+          if (area !== undefined) {
+            area.position.z = 0.05;
+            root.add(area);
+          }
+          root.add(
+            makeDashedLine(lossPoints, 0xffffff, 0.82, {
+              dashSize: 0.08,
+              gapSize: 0.045,
+            }),
+          );
+          for (const point of lossPoints) {
+            const dot = makeCircle(0.03, 0xffffff, 0.9);
+            dot.position.copy(point);
+            dot.position.z = 0.28;
+            root.add(dot);
+          }
+        }
+        const lossLabel = makeTextSprite("loss curve", {
+          color: "#d1d5db",
+          fontSize: 24,
+          width: 260,
+        });
+        lossLabel.position.set(3.2, -0.68, 0.45);
+        root.add(lossLabel);
       }
-      const lossLabel = makeTextSprite("loss curve", {
-        color: "#d1d5db",
-        fontSize: 24,
-        width: 260,
-      });
-      lossLabel.position.set(3.2, -0.68, 0.45);
-      root.add(lossLabel);
-      root.add(createStatusMiniChart(resolved.nodes));
+      if (showStatusChart) {
+        root.add(createStatusMiniChart(resolved.nodes));
+      }
 
       if (resolved.operatorSignals.length > 0) {
         const operatorGroup = new Three.Group();
@@ -2097,7 +2147,9 @@ export const mountTrainingRunVisualization = (
         const delta = lastTime === 0 ? 0 : (time - lastTime) / 1000;
         lastTime = time;
         if (animateAmbient) {
-          staleRing.rotation.z += delta * 0.18;
+          if (staleRing !== undefined) {
+            staleRing.rotation.z += delta * 0.18;
+          }
           contributorOrbitGroup.rotation.z -= delta * 0.025;
           contributorGroup.rotation.z += delta * 0.07;
         }
