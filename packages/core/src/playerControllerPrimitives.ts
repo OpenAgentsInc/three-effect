@@ -35,12 +35,13 @@ export type WasdKeyboardState = Readonly<Record<WasdAction, boolean>>;
 export type MutableWasdKeyboardState = Record<WasdAction, boolean>;
 
 export type WasdMouseLookDebugSnapshot = Readonly<{
-  event: "lock" | "unlock" | "mousemove";
+  event: "lock" | "lock_error" | "unlock" | "mousemove";
   applied: boolean;
   locked: boolean;
   movementX: number;
   movementY: number;
   pitch: number;
+  reason?: string;
   source: "controller" | "fallback" | "state" | "stock";
   yaw: number;
 }>;
@@ -337,6 +338,8 @@ export const createWasdMouseLookController = (
       );
       const lastCameraQuaternion = camera.quaternion.clone();
       let debugEventCount = 0;
+      let lastUnlockAt = 0;
+      let disposed = false;
 
       const removers: Array<() => void> = [];
       const keyTarget = resolved.inputTarget;
@@ -346,6 +349,7 @@ export const createWasdMouseLookController = (
         movementX: number,
         movementY: number,
         applied: boolean,
+        reason?: string,
       ) => {
         if (resolved.debug === false) return;
         const [yaw, pitch] = cameraYawPitch(camera);
@@ -356,6 +360,7 @@ export const createWasdMouseLookController = (
           movementX,
           movementY,
           pitch,
+          reason,
           source,
           yaw,
         };
@@ -368,7 +373,7 @@ export const createWasdMouseLookController = (
             debugEventCount <= 40 ||
             debugEventCount % 60 === 0
           ) {
-            console.debug("[three-effect:wasd_mouselook]", snapshot);
+            console.info("[three-effect:wasd_mouselook]", snapshot);
           }
         }
       };
@@ -408,10 +413,66 @@ export const createWasdMouseLookController = (
         emitDebug("mousemove", "controller", movementX, movementY, true);
       };
       domElement.ownerDocument.addEventListener("mousemove", onMouseLook, {
+        capture: true,
         passive: false,
       });
       removers.push(() => {
-        domElement.ownerDocument.removeEventListener("mousemove", onMouseLook);
+        domElement.ownerDocument.removeEventListener("mousemove", onMouseLook, {
+          capture: true,
+        });
+      });
+
+      const requestLock = () => {
+        if (
+          disposed ||
+          pointerLockActive(pointerLockHandle.controls, domElement)
+        ) {
+          return;
+        }
+        const now =
+          typeof performance === "undefined" ? Date.now() : performance.now();
+        if (lastUnlockAt > 0 && now - lastUnlockAt < 300) {
+          emitDebug(
+            "lock_error",
+            "state",
+            0,
+            0,
+            false,
+            "reenter-cooldown",
+          );
+          return;
+        }
+        try {
+          const request = domElement.requestPointerLock({
+            unadjustedMovement: false,
+          });
+          void Promise.resolve(request).catch((error: unknown) => {
+            emitDebug(
+              "lock_error",
+              "state",
+              0,
+              0,
+              false,
+              reason(error),
+            );
+          });
+        } catch (error) {
+          emitDebug("lock_error", "state", 0, 0, false, reason(error));
+        }
+      };
+
+      const onPointerLockError = () => {
+        emitDebug("lock_error", "state", 0, 0, false, "pointerlockerror");
+      };
+      domElement.ownerDocument.addEventListener(
+        "pointerlockerror",
+        onPointerLockError,
+      );
+      removers.push(() => {
+        domElement.ownerDocument.removeEventListener(
+          "pointerlockerror",
+          onPointerLockError,
+        );
       });
 
       if (resolved.lockSelector !== undefined) {
@@ -419,9 +480,8 @@ export const createWasdMouseLookController = (
           const lockTargets = [
             ...document.querySelectorAll<HTMLElement>(resolved.lockSelector),
           ];
-          const lock = () => pointerLockHandle.controls.lock();
           for (const target of lockTargets) {
-            removers.push(addEvent(target, "click", lock));
+            removers.push(addEvent(target, "click", requestLock));
           }
         }
       }
@@ -433,6 +493,8 @@ export const createWasdMouseLookController = (
           resolved.onLockChange?.(true);
         };
         const onUnlock = () => {
+          lastUnlockAt =
+            typeof performance === "undefined" ? Date.now() : performance.now();
           emitDebug("unlock", "state", 0, 0, false);
           resolved.onLockChange?.(false);
         };
@@ -444,7 +506,6 @@ export const createWasdMouseLookController = (
         });
       }
 
-      let disposed = false;
       return {
         controls: pointerLockHandle.controls,
         keyboard,
@@ -467,7 +528,7 @@ export const createWasdMouseLookController = (
               resolved.eyeHeight;
             camera.updateMatrixWorld();
           }),
-        lock: pointerLockHandle.lock,
+        lock: Effect.sync(requestLock),
         unlock: pointerLockHandle.unlock,
         isLocked: pointerLockHandle.isLocked,
         getPosition: Effect.sync(() => camera.position.clone()),

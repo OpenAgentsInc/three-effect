@@ -2260,10 +2260,11 @@ export const mountTrainingRunVisualization = (
       }
 
       const pointerLockActive = (): boolean =>
-        walkController?.controls.isLocked === true;
+        walkController?.controls.isLocked === true ||
+        canvas.ownerDocument.pointerLockElement === canvas;
 
       const selectionAtPointer = (
-        event?: PointerEvent,
+        event?: MouseEvent | PointerEvent,
       ): TrainingRunNodeSelection | undefined => {
         if (pointerLockActive()) {
           pointer.set(0, 0);
@@ -2305,6 +2306,12 @@ export const mountTrainingRunVisualization = (
       };
 
       const handlePointerDown = (event: PointerEvent) => {
+        if (pointerLockActive()) {
+          event.preventDefault();
+        }
+      };
+
+      const handleClick = (event: MouseEvent) => {
         if (
           walkController !== undefined &&
           !pointerLockActive() &&
@@ -2322,6 +2329,7 @@ export const mountTrainingRunVisualization = (
       canvas.addEventListener("pointermove", handlePointerMove);
       canvas.addEventListener("pointerleave", handlePointerLeave);
       canvas.addEventListener("pointerdown", handlePointerDown);
+      canvas.addEventListener("click", handleClick);
 
       let disposed = false;
       let frame = 0;
@@ -2407,6 +2415,7 @@ export const mountTrainingRunVisualization = (
         canvas.removeEventListener("pointermove", handlePointerMove);
         canvas.removeEventListener("pointerleave", handlePointerLeave);
         canvas.removeEventListener("pointerdown", handlePointerDown);
+        canvas.removeEventListener("click", handleClick);
         if (walkController !== undefined) {
           Effect.runSync(walkController.dispose);
         }

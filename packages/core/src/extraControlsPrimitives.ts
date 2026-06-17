@@ -311,10 +311,29 @@ export const createPointerLockControls = (
   Effect.try({
     try: () => {
       const controls = new PointerLockControls(camera, domElement)
+      const defaultErrorLogger = (
+        controls as PointerLockControls & {
+          _onPointerlockError?: EventListener
+        }
+      )._onPointerlockError
+      if (defaultErrorLogger !== undefined) {
+        domElement.ownerDocument.removeEventListener(
+          "pointerlockerror",
+          defaultErrorLogger,
+        )
+      }
       return {
         controls,
         lock: Effect.sync(() => {
-          controls.lock()
+          try {
+            const request = domElement.requestPointerLock({
+              unadjustedMovement: false,
+            })
+            void Promise.resolve(request).catch(() => undefined)
+          } catch {
+            // Callers that need diagnostics should listen for pointerlockerror
+            // or use the higher-level WASD controller debug callback.
+          }
         }),
         unlock: Effect.sync(() => {
           controls.unlock()
