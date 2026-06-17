@@ -255,6 +255,47 @@ The highest-frequency primitives were:
 - `useAspect`
 - `Stats` / `PerformanceMonitor`
 - `MeshReflectorMaterial`
+
+## Quick 3D MMORPG terrain substrate
+
+Date: 2026-06-17
+
+Files:
+
+- `packages/core/src/terrainPrimitives.ts`
+- `packages/core/src/terrainPrimitives.worker.ts`
+- `packages/core/src/terrainPrimitives.test.ts`
+
+Primary references:
+
+- `projects/repos/Quick_3D_MMORPG/client/shared/terrain-height.mjs`
+- `projects/repos/Quick_3D_MMORPG/client/shared/noise.mjs`
+- `projects/repos/Quick_3D_MMORPG/client/src/quadtree.js`
+- `projects/repos/Quick_3D_MMORPG/client/src/terrain-builder-threaded.js`
+- `projects/repos/Quick_3D_MMORPG/client/src/terrain-builder-threaded-worker.js`
+- `projects/repos/Quick_3D_MMORPG/client/src/terrain-chunk.js`
+- `projects/repos/Quick_3D_MMORPG/client/src/texture-splatter.js`
+
+What shipped:
+
+- Deterministic Quick-style height sampling with seeded octave noise.
+- A 2.5D quadtree LOD planner that emits stable chunk keys around a focus
+  point.
+- A synchronous terrain chunk geometry builder for deterministic tests and
+  non-worker fallback paths.
+- A module-worker entrypoint that rebuilds the same chunk geometry and posts
+  transferable typed-array buffers back to the browser.
+- Skirt vertices around each chunk edge to hide LOD seams.
+- Basic four-channel splat texture indices and normalized splat weights for
+  later triplanar material work.
+- A generic width-keyed chunk pool with explicit retire/recycle hooks.
+
+What was deliberately not shipped:
+
+- No terrain is mounted by default in `trainingRunView`.
+- No terrain is added to `/tassadar` or any live OpenAgents page.
+- No Quick texture assets or fantasy-world art are vendored into
+  `three-effect`; the current primitive is substrate only.
 - `RenderTexture` / `useFBO` / `Effects`
 - `MeshDistortMaterial`
 - `Edges` / `Outlines` / `Line`

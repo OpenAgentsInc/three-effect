@@ -38,6 +38,7 @@ export * from "./shaderMaterialPrimitives"
 export * from "./spatialPrimitives"
 export * from "./stagingPrimitives"
 export * from "./textLabelPrimitives"
+export * from "./terrainPrimitives"
 export * from "./trainingRun"
 
 export class SpinningCubeMountError extends Data.TaggedError(
