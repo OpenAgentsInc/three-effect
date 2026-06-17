@@ -9,7 +9,10 @@ import {
   applyModelRenderOptions,
   animationProgressFromScroll,
   applyMaskMaterial,
+  attachObjectToBone,
   applyBillboard,
+  collectBoneMap,
+  createEquipmentAttachmentManager,
   cubicBezierPoints,
   aspectScale,
   calculateSkySunPosition,
@@ -173,6 +176,7 @@ import {
   pmndrsPlayerControllerPrimitiveSourceRefs,
   pmndrsPresenceBindingPrimitiveSourceRefs,
   pmndrsTextLabelPrimitiveSourceRefs,
+  quickMmorpgAttachmentPrimitiveSourceRefs,
   quickMmorpgEntityPrimitiveSourceRefs,
   quickMmorpgAnimationPrimitiveSourceRefs,
   resolveMmorpgCharacterControllerOptions,
@@ -819,6 +823,77 @@ describe("mmo entity primitives", () => {
     expect(cache.missing(["a", "b"])).toEqual(["b"]);
     expect(cache.remove("a")).toBe(true);
     expect(cache.get("a")).toBeUndefined();
+  });
+});
+
+describe("attachment primitives", () => {
+  test("collects named bones and attaches objects with transform offsets", () => {
+    expect(quickMmorpgAttachmentPrimitiveSourceRefs).toContain(
+      "projects/repos/Quick_3D_MMORPG/client/src/equip-weapon-component.js",
+    );
+
+    const root = new Three.Group();
+    const hand = new Three.Bone();
+    hand.name = "RightHandIndex1";
+    root.add(hand);
+
+    const bones = collectBoneMap(root);
+    expect(bones.RightHandIndex1).toBe(hand);
+
+    const object = new Three.Object3D();
+    const handle = attachObjectToBone({
+      root,
+      object,
+      boneNames: ["Missing", "RightHandIndex1"],
+      position: [1, 2, 3],
+      scale: 2,
+    });
+
+    expect(handle?.bone).toBe(hand);
+    expect(object.parent).toBe(hand);
+    expect(object.position.toArray()).toEqual([1, 2, 3]);
+    expect(object.scale.toArray()).toEqual([2, 2, 2]);
+    handle?.detach();
+    expect(object.parent).toBeNull();
+  });
+
+  test("equipment manager replaces records and disposes attached resources", () => {
+    const root = new Three.Group();
+    const hand = new Three.Bone();
+    hand.name = "RightHandIndex1";
+    root.add(hand);
+    const manager = createEquipmentAttachmentManager<{ capability: string }>(root, [
+      { slotId: "right-hand", boneNames: ["RightHandIndex1"], scale: 0.5 },
+    ]);
+
+    const firstGeometry = new Three.BoxGeometry();
+    const firstMaterial = new Three.MeshBasicMaterial();
+    let firstDisposed = false;
+    firstGeometry.addEventListener("dispose", () => {
+      firstDisposed = true;
+    });
+    const first = new Three.Mesh(firstGeometry, firstMaterial);
+
+    const firstRecord = manager.attach("tool", "right-hand", first, {
+      capability: "inspect",
+    });
+    expect(firstRecord?.value).toEqual({ capability: "inspect" });
+    expect(first.parent).toBe(hand);
+
+    const second = new Three.Mesh(
+      new Three.BoxGeometry(),
+      new Three.MeshBasicMaterial(),
+    );
+    const secondRecord = manager.attach("tool", "right-hand", second, {
+      capability: "verify",
+    });
+    expect(secondRecord?.value).toEqual({ capability: "verify" });
+    expect(firstDisposed).toBe(true);
+    expect(first.parent).toBeNull();
+    expect(second.parent).toBe(hand);
+    expect(manager.list().map(record => record.id)).toEqual(["tool"]);
+    expect(manager.detach("tool")).toBe(true);
+    expect(second.parent).toBeNull();
   });
 });
 

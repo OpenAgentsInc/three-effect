@@ -89,6 +89,10 @@ This pass pulled the reusable, React-free layer into `@openagentsinc/three-effec
 - `assetPrimitives`
   - `loadTexture`, `loadTextures`, `loadGltf`, `loadGltfs`,
     `collectGltfObjectMap`, and `firstMeshGeometry`.
+- `attachmentPrimitives`
+  - Quick MMORPG-inspired bone-map collection, named-bone object attachment,
+    transform offsets, resource disposal, and slot-based capability/equipment
+    attachment management.
 - `cameraPrimitives`
   - perspective and orthographic camera factories, resize helpers, viewport
     math, bounds measurement, fit-to-box, and Center-style offsets.
