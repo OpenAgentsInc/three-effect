@@ -93,6 +93,10 @@ This pass pulled the reusable, React-free layer into `@openagentsinc/three-effec
   - Quick MMORPG-inspired bone-map collection, named-bone object attachment,
     transform offsets, resource disposal, and slot-based capability/equipment
     attachment management.
+- `billboardPrimitives`
+  - Quick MMORPG-inspired camera-facing name plates, speech bubble handles,
+    status bars, and grouped entity overlays built on the shared text-label and
+    billboarding primitives.
 - `cameraPrimitives`
   - perspective and orthographic camera factories, resize helpers, viewport
     math, bounds measurement, fit-to-box, and Center-style offsets.

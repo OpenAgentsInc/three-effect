@@ -24,6 +24,7 @@ import {
   createMmoEntityTransformInterpolator,
   createAnimationController,
   createAnimationStateMachine,
+  createBillboardStatusBar,
   createBezierNodeConnections,
   createContactShadowResources,
   createConditionalEdgesGeometry,
@@ -177,7 +178,9 @@ import {
   pmndrsPresenceBindingPrimitiveSourceRefs,
   pmndrsTextLabelPrimitiveSourceRefs,
   quickMmorpgAttachmentPrimitiveSourceRefs,
+  quickMmorpgBillboardPrimitiveSourceRefs,
   quickMmorpgEntityPrimitiveSourceRefs,
+  resolveBillboardStatusBarOptions,
   quickMmorpgAnimationPrimitiveSourceRefs,
   resolveMmorpgCharacterControllerOptions,
   normalizeMmoEntityTransformSnapshot,
@@ -894,6 +897,40 @@ describe("attachment primitives", () => {
     expect(manager.list().map(record => record.id)).toEqual(["tool"]);
     expect(manager.detach("tool")).toBe(true);
     expect(second.parent).toBeNull();
+  });
+});
+
+describe("billboard primitives", () => {
+  test("resolves status bar defaults and clamps values", () => {
+    expect(quickMmorpgBillboardPrimitiveSourceRefs).toContain(
+      "projects/repos/Quick_3D_MMORPG/client/src/health-bar.js",
+    );
+    expect(resolveBillboardStatusBarOptions({ value: 2 }).value).toBe(1);
+    expect(resolveBillboardStatusBarOptions({ value: -1 }).value).toBe(0);
+    expect(resolveBillboardStatusBarOptions({ width: 0 }).width).toBeGreaterThan(0);
+  });
+
+  test("creates disposable billboard status bars that update fill geometry", () => {
+    const handle = createBillboardStatusBar({
+      width: 2,
+      height: 0.2,
+      value: 0.25,
+      position: [1, 2, 3],
+    });
+
+    expect(handle.group.position.toArray()).toEqual([1, 2, 3]);
+    expect(handle.fill.scale.x).toBeCloseTo(0.25);
+    expect(handle.fill.position.x).toBeCloseTo(-0.75);
+    handle.setValue(0.75);
+    expect(handle.fill.scale.x).toBeCloseTo(0.75);
+    expect(handle.fill.position.x).toBeCloseTo(-0.25);
+
+    let disposed = false;
+    handle.fill.geometry.addEventListener("dispose", () => {
+      disposed = true;
+    });
+    handle.dispose();
+    expect(disposed).toBe(true);
   });
 });
 
