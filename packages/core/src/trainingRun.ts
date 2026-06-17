@@ -1095,17 +1095,79 @@ const entityRingLayout = {
   radius: 1.62,
 } as const;
 
+export const trainingRunEntityMinimumDistance = 0.86;
+
+export const uniqueTrainingRunEntities = (
+  entities: readonly TrainingRunEntityDefinition[],
+): readonly TrainingRunEntityDefinition[] => {
+  const byId = new Map<string, TrainingRunEntityDefinition>();
+  for (const entity of entities) {
+    byId.set(entity.id, entity);
+  }
+  return [...byId.values()];
+};
+
+export const separateTrainingRunEntityPositions = (
+  positions: ReadonlyMap<string, TrainingRunVector>,
+  minDistance = trainingRunEntityMinimumDistance,
+): ReadonlyMap<string, TrainingRunVector> => {
+  const ids = [...positions.keys()];
+  const vectors = ids.map((id) => {
+    const position = positions.get(id) ?? [0, 0, 0];
+    return new Three.Vector3(position[0], position[1], position[2]);
+  });
+  const minimum = Math.max(0, minDistance);
+  if (minimum === 0 || vectors.length < 2) return positions;
+  for (let iteration = 0; iteration < 10; iteration += 1) {
+    let moved = false;
+    for (let left = 0; left < vectors.length; left += 1) {
+      for (let right = left + 1; right < vectors.length; right += 1) {
+        const a = vectors[left] ?? new Three.Vector3();
+        const b = vectors[right] ?? new Three.Vector3();
+        const dx = a.x - b.x;
+        const dy = a.y - b.y;
+        const distance = Math.hypot(dx, dy);
+        if (distance >= minimum) continue;
+        const fallbackAngle =
+          ((left + 1) * 1.61803398875 + (right + 1) * 0.754877666) *
+          Math.PI;
+        const nx =
+          distance > 0.000001 ? dx / distance : Math.cos(fallbackAngle);
+        const ny =
+          distance > 0.000001 ? dy / distance : Math.sin(fallbackAngle);
+        const push = (minimum - distance) / 2;
+        a.x += nx * push;
+        a.y += ny * push;
+        b.x -= nx * push;
+        b.y -= ny * push;
+        moved = true;
+      }
+    }
+    if (!moved) break;
+  }
+  return new Map(
+    ids.map((id, index) => {
+      const vector = vectors[index] ?? new Three.Vector3();
+      return [id, [vector.x, vector.y, vector.z] as TrainingRunVector] as const;
+    }),
+  );
+};
+
 /**
  * Resolve every entity to a concrete position: explicit `position` wins,
- * otherwise a deterministic ring slot. Pure and DOM-free for testing.
+ * otherwise a deterministic ring slot. Duplicate IDs collapse to one rendered
+ * node, then a deterministic minimum-distance pass keeps labels legible.
  */
 export const resolveTrainingRunEntityPositions = (
   entities: readonly TrainingRunEntityDefinition[],
 ): ReadonlyMap<string, TrainingRunVector> => {
   const positions = new Map<string, TrainingRunVector>();
-  const unplaced = entities.filter((entity) => entity.position === undefined);
+  const visualEntities = uniqueTrainingRunEntities(entities);
+  const unplaced = visualEntities.filter(
+    (entity) => entity.position === undefined,
+  );
   let ringIndex = 0;
-  for (const entity of entities) {
+  for (const entity of visualEntities) {
     if (entity.position !== undefined) {
       positions.set(entity.id, entity.position);
     } else {
@@ -1116,7 +1178,7 @@ export const resolveTrainingRunEntityPositions = (
       ringIndex += 1;
     }
   }
-  return positions;
+  return separateTrainingRunEntityPositions(positions);
 };
 
 const colorForStatus = (status: TrainingRunNodeStatus): number =>
@@ -2058,6 +2120,7 @@ export const mountTrainingRunVisualization = (
       const entityPositions = resolveTrainingRunEntityPositions(
         resolved.entities,
       );
+      const visualEntities = uniqueTrainingRunEntities(resolved.entities);
       const entityClickTargets: Array<{
         mesh: Three.Mesh<Three.CircleGeometry, Three.MeshBasicMaterial>;
         entity: TrainingRunEntityDefinition;
@@ -2074,9 +2137,9 @@ export const mountTrainingRunVisualization = (
       let entityPool: ReturnType<typeof createEntityPool> | undefined;
       let entityPresence: ReturnType<typeof bindEntityPresence> | undefined;
 
-      if (resolved.entities.length > 0) {
+      if (visualEntities.length > 0) {
         const pool = createEntityPool({
-          capacity: resolved.entities.length,
+          capacity: visualEntities.length,
           geometry: new Three.CircleGeometry(0.085, 24),
           scale: 1,
         });
@@ -2089,7 +2152,7 @@ export const mountTrainingRunVisualization = (
           statusColor: (status) => colorForEntityStatus(status),
         });
         presence.apply(
-          resolved.entities.map((entity) => ({
+          visualEntities.map((entity) => ({
             id: entity.id,
             position: entityPositions.get(entity.id) ?? [0, 0, 0],
             status: entity.status,
@@ -2097,7 +2160,7 @@ export const mountTrainingRunVisualization = (
         );
         entityPresence = presence;
 
-        for (const entity of resolved.entities) {
+        for (const entity of visualEntities) {
           const position = entityPositions.get(entity.id) ?? [0, 0, 0];
           const color = colorForEntityStatus(entity.status);
           const ring = makeRing(0.14, color, 0.42);

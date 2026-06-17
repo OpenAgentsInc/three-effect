@@ -51,6 +51,7 @@ export type WasdMouseLookControllerOptions = Readonly<{
   sprintMultiplier?: number;
   acceleration?: number;
   damping?: number;
+  pointerSensitivity?: number;
   pitchMin?: number;
   pitchMax?: number;
   bounds?: WasdMovementBounds;
@@ -68,6 +69,7 @@ export type ResolvedWasdMouseLookControllerOptions = Readonly<{
   sprintMultiplier: number;
   acceleration: number;
   damping: number;
+  pointerSensitivity: number;
   pitchMin: number;
   pitchMax: number;
   bounds?: WasdMovementBounds;
@@ -108,6 +110,7 @@ export const defaultWasdMouseLookControllerOptions = (
   sprintMultiplier: 1.8,
   acceleration: 18,
   damping: 12,
+  pointerSensitivity: 0.002,
   pitchMin: -Math.PI / 2 + 0.05,
   pitchMax: Math.PI / 2 - 0.05,
   groundHeightAt: () => 0,
@@ -176,6 +179,30 @@ export const setWasdKeyState = (
 
 const yawForward = new Three.Vector3();
 const yawRight = new Three.Vector3();
+const mouseLookEuler = new Three.Euler(0, 0, 0, "YXZ");
+
+export const applyMouseLookDelta = (
+  camera: Three.PerspectiveCamera,
+  movementX: number,
+  movementY: number,
+  options: Pick<
+    ResolvedWasdMouseLookControllerOptions,
+    "pitchMax" | "pitchMin" | "pointerSensitivity"
+  >,
+): Three.PerspectiveCamera => {
+  if (movementX === 0 && movementY === 0) return camera;
+  mouseLookEuler.setFromQuaternion(camera.quaternion);
+  mouseLookEuler.y -= movementX * options.pointerSensitivity;
+  mouseLookEuler.x = Three.MathUtils.clamp(
+    mouseLookEuler.x - movementY * options.pointerSensitivity,
+    options.pitchMin,
+    options.pitchMax,
+  );
+  mouseLookEuler.z = 0;
+  camera.quaternion.setFromEuler(mouseLookEuler);
+  camera.updateMatrixWorld();
+  return camera;
+};
 
 export const wasdDesiredDirection = (
   camera: Three.Camera,
@@ -255,6 +282,7 @@ export const createWasdMouseLookController = (
       const pointerLockHandle = Effect.runSync(
         createPointerLockControls(camera, domElement),
       );
+      pointerLockHandle.controls.pointerSpeed = 0;
       const resolved = resolveWasdMouseLookControllerOptions(
         typeof window === "undefined" ? domElement : window,
         options,
@@ -286,6 +314,25 @@ export const createWasdMouseLookController = (
       removers.push(() => {
         keyTarget.removeEventListener("keydown", onKeyDown as EventListener);
         keyTarget.removeEventListener("keyup", onKeyUp as EventListener);
+      });
+
+      const onMouseLook = (event: MouseEvent | PointerEvent) => {
+        if (!resolved.enabled || !pointerLockHandle.controls.isLocked) return;
+        const movementX = event.movementX;
+        const movementY = event.movementY;
+        if (movementX === 0 && movementY === 0) return;
+        event.preventDefault();
+        applyMouseLookDelta(camera, movementX, movementY, resolved);
+      };
+      domElement.ownerDocument.addEventListener("mousemove", onMouseLook, {
+        passive: false,
+      });
+      domElement.ownerDocument.addEventListener("pointermove", onMouseLook, {
+        passive: false,
+      });
+      removers.push(() => {
+        domElement.ownerDocument.removeEventListener("mousemove", onMouseLook);
+        domElement.ownerDocument.removeEventListener("pointermove", onMouseLook);
       });
 
       if (resolved.lockSelector !== undefined) {

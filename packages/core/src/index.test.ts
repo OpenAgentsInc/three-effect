@@ -5,6 +5,7 @@ import * as Three from "three";
 import {
   applyCameraShake,
   applyInstanceTransforms,
+  applyMouseLookDelta,
   animationProgressFromScroll,
   applyMaskMaterial,
   applyBillboard,
@@ -102,6 +103,8 @@ import {
   setAnimatedMaterialTime,
   summarizeTrainingRunVisualization,
   resolveTrainingRunEntityPositions,
+  uniqueTrainingRunEntities,
+  trainingRunEntityMinimumDistance,
   trainingRunEntityNodeStatus,
   trainingRunEntityRingPosition,
   trainingRunEntitySelection,
@@ -1322,6 +1325,37 @@ describe("training run entity layer", () => {
     expect(positions.get("ring1")).toEqual(trainingRunEntityRingPosition(1, 2));
   });
 
+  test("collapses duplicate entity ids into one visual node", () => {
+    const entities = uniqueTrainingRunEntities([
+      { id: "pylon.same", label: "P1", status: "active" },
+      { id: "pylon.other", label: "P2", status: "warmup" },
+      { id: "pylon.same", label: "RW1", status: "rejected" },
+    ]);
+
+    expect(entities).toEqual([
+      { id: "pylon.same", label: "RW1", status: "rejected" },
+      { id: "pylon.other", label: "P2", status: "warmup" },
+    ]);
+  });
+
+  test("separates entity positions by a deterministic minimum distance", () => {
+    const positions = resolveTrainingRunEntityPositions([
+      { id: "a", status: "active", position: [0, 0, 0] },
+      { id: "b", status: "active", position: [0.1, 0, 0] },
+      { id: "c", status: "active", position: [0.2, 0, 0] },
+    ]);
+    const values = [...positions.values()];
+    for (let left = 0; left < values.length; left += 1) {
+      for (let right = left + 1; right < values.length; right += 1) {
+        const a = values[left] ?? [0, 0, 0];
+        const b = values[right] ?? [0, 0, 0];
+        expect(Math.hypot(a[0] - b[0], a[1] - b[1])).toBeGreaterThanOrEqual(
+          trainingRunEntityMinimumDistance - 0.00001,
+        );
+      }
+    }
+  });
+
   test("maps arbitrary entity status onto the bounded node status enum", () => {
     expect(trainingRunEntityNodeStatus("active")).toBe("active");
     expect(trainingRunEntityNodeStatus("verified")).toBe("verified");
@@ -1459,6 +1493,31 @@ describe("player controller primitives", () => {
     const strafe = wasdDesiredDirection(camera, strafeState);
     expect(strafe.x).toBeCloseTo(0);
     expect(strafe.z).toBeCloseTo(-1);
+  });
+
+  test("applies explicit pointer-lock mouse deltas to camera yaw and pitch", () => {
+    const camera = new Three.PerspectiveCamera();
+    const before = camera.quaternion.clone();
+    applyMouseLookDelta(camera, 80, -40, {
+      pitchMax: Math.PI / 2 - 0.05,
+      pitchMin: -Math.PI / 2 + 0.05,
+      pointerSensitivity: 0.002,
+    });
+
+    expect(camera.quaternion.angleTo(before)).toBeGreaterThan(0);
+    const direction = new Three.Vector3(0, 0, -1).applyQuaternion(
+      camera.quaternion,
+    );
+    expect(direction.x).not.toBeCloseTo(0);
+    expect(direction.y).not.toBeCloseTo(0);
+
+    applyMouseLookDelta(camera, 0, 1000, {
+      pitchMax: 0.1,
+      pitchMin: -0.1,
+      pointerSensitivity: 1,
+    });
+    const euler = new Three.Euler().setFromQuaternion(camera.quaternion, "YXZ");
+    expect(euler.x).toBeCloseTo(-0.1);
   });
 
   test("integrates velocity with acceleration and damping", () => {
