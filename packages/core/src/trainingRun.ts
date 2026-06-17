@@ -1,25 +1,25 @@
-import { Data, Effect } from "effect"
-import * as Three from "three"
+import { Data, Effect } from "effect";
+import * as Three from "three";
 
-import { createEntityPool } from "./entityPoolPrimitives"
-import { createFlowBeam, createPayoutBurst } from "./flowEffectPrimitives"
-import { bindEntityPresence } from "./presenceBindingPrimitives"
-import { createTextLabel } from "./textLabelPrimitives"
+import { createEntityPool } from "./entityPoolPrimitives";
+import { createFlowBeam, createPayoutBurst } from "./flowEffectPrimitives";
+import { bindEntityPresence } from "./presenceBindingPrimitives";
+import { createTextLabel } from "./textLabelPrimitives";
 
 export class TrainingRunMountError extends Data.TaggedError(
   "TrainingRunMountError",
 )<{
-  readonly reason: string
+  readonly reason: string;
 }> {}
 
-export type TrainingRunVector = readonly [number, number, number]
+export type TrainingRunVector = readonly [number, number, number];
 
 export type TrainingRunNodeRole =
   | "lifecycle"
   | "run"
   | "proof"
   | "receipt"
-  | "rung"
+  | "rung";
 
 export type TrainingRunNodeStatus =
   | "planned"
@@ -28,36 +28,36 @@ export type TrainingRunNodeStatus =
   | "active"
   | "sealed"
   | "verified"
-  | "blocked"
+  | "blocked";
 
 export type TrainingRunNodeDefinition = Readonly<{
-  id: string
-  label: string
-  detail: string
-  role: TrainingRunNodeRole
-  status: TrainingRunNodeStatus
-  position: TrainingRunVector
-  connectedTo?: readonly string[]
-}>
+  id: string;
+  label: string;
+  detail: string;
+  role: TrainingRunNodeRole;
+  status: TrainingRunNodeStatus;
+  position: TrainingRunVector;
+  connectedTo?: readonly string[];
+}>;
 
 export type TrainingRunNodeSelection = Pick<
   TrainingRunNodeDefinition,
   "detail" | "id" | "label" | "role" | "status"
->
+>;
 
 export type TrainingRunEdgeDefinition = Readonly<{
-  sourceId: string
-  targetId: string
-  source: TrainingRunVector
-  target: TrainingRunVector
-}>
+  sourceId: string;
+  targetId: string;
+  source: TrainingRunVector;
+  target: TrainingRunVector;
+}>;
 
 export type TrainingRunContributorDefinition = Readonly<{
-  id: string
-  label: string
-  lifecycleState: string
-  phase: number
-}>
+  id: string;
+  label: string;
+  lifecycleState: string;
+  phase: number;
+}>;
 
 export type TrainingRunLifecycleState =
   | "registered"
@@ -65,16 +65,16 @@ export type TrainingRunLifecycleState =
   | "state_synced"
   | "warmup"
   | "active"
-  | "sync_reentry"
+  | "sync_reentry";
 
 export type TrainingRunLifecycleCounts = Partial<
   Record<TrainingRunLifecycleState, number>
->
+>;
 
 export type TrainingRunLossPoint = Readonly<{
-  step: number
-  validationLoss: number
-}>
+  step: number;
+  validationLoss: number;
+}>;
 
 export type TrainingRunPromiseSignalState =
   | "degraded"
@@ -83,124 +83,178 @@ export type TrainingRunPromiseSignalState =
   | "red"
   | "unknown"
   | "withdrawn"
-  | "yellow"
+  | "yellow";
 
 export type TrainingRunPromiseSignalDefinition = Readonly<{
-  id: string
-  label: string
-  state: TrainingRunPromiseSignalState
-  blockerCount: number
-  evidenceRefCount: number
-}>
+  id: string;
+  label: string;
+  state: TrainingRunPromiseSignalState;
+  blockerCount: number;
+  evidenceRefCount: number;
+}>;
 
-export type TrainingRunOperatorSignalState = "error" | "idle" | "info" | "success"
+export type TrainingRunOperatorSignalState =
+  | "error"
+  | "idle"
+  | "info"
+  | "success";
 
 export type TrainingRunOperatorSignalDefinition = Readonly<{
-  id: string
-  label: string
-  state: TrainingRunOperatorSignalState
-  detail: string
-}>
+  id: string;
+  label: string;
+  state: TrainingRunOperatorSignalState;
+  detail: string;
+}>;
 
 export type TrainingRunEntityDefinition = Readonly<{
-  id: string
-  status: string
-  label?: string
-  position?: TrainingRunVector
-}>
+  id: string;
+  status: string;
+  label?: string;
+  position?: TrainingRunVector;
+}>;
 
-export type TrainingRunBeamDefinition = Readonly<{
-  fromId: string
-  toId: string
-}>
+export type TrainingRunMotionKind =
+  | "presence"
+  | "assignment"
+  | "trace_submitted"
+  | "replay_verified"
+  | "replay_rejected"
+  | "settlement_recorded"
+  | "real_bitcoin_moved"
+  | "corpus_accepted"
+  | "counter_changed"
+  | (string & {});
 
-export type TrainingRunBurstDefinition = Readonly<{
-  atId: string
-}>
+export type TrainingRunMotionEvidence = Readonly<{
+  /** Stable identifier for the motion instance. */
+  motionId?: string;
+  /** Public meaning of the motion; e.g. replay_verified or real_bitcoin_moved. */
+  motionKind?: TrainingRunMotionKind;
+  /** Public refs that authorize this motion. Required in strict live scenes. */
+  sourceRefs?: readonly string[];
+  /** Projection timestamp used to derive the motion. */
+  generatedAt?: string;
+  /** Optional stale/expiry boundary for liveness-style motion. */
+  expiresAt?: string;
+  /** True only for explicitly labelled simulation evidence. */
+  simulated?: boolean;
+}>;
+
+export type TrainingRunBeamDefinition = Readonly<
+  TrainingRunMotionEvidence & {
+    fromId: string;
+    toId: string;
+  }
+>;
+
+export type TrainingRunBurstDefinition = Readonly<
+  TrainingRunMotionEvidence & {
+    atId: string;
+  }
+>;
+
+export type TrainingRunStructuralEdgeMotion = "static" | "animated";
+
+export type TrainingRunMotionEvidenceMode = "optional" | "required";
+
+export type TrainingRunBurstPlayback = "once" | "loop";
+
+export type TrainingRunMotionPolicy = Readonly<{
+  /** Base graph edge motion. Live pages should keep this static. */
+  structuralEdges?: TrainingRunStructuralEdgeMotion;
+  /** Ambient orbit/ring rotation. Live pages should keep this static. */
+  ambient?: TrainingRunStructuralEdgeMotion;
+  /** Require sourceRefs before rendering animated beams or bursts. */
+  evidence?: TrainingRunMotionEvidenceMode;
+  /** One-shot event burst by default; demos may opt into looping. */
+  bursts?: TrainingRunBurstPlayback;
+}>;
 
 export type TrainingRunEntitySelection = Pick<
   TrainingRunEntityDefinition,
   "id" | "label" | "position" | "status"
->
+>;
 
 export type TrainingRunVisualizationOptions = Readonly<{
-  backgroundColor?: number
-  pixelRatio?: number
-  maxAllowedStaleSteps?: number
-  nodes?: readonly TrainingRunNodeDefinition[]
-  contributors?: readonly TrainingRunContributorDefinition[]
-  lossCurve?: readonly TrainingRunLossPoint[]
-  operatorSignals?: readonly TrainingRunOperatorSignalDefinition[]
-  promiseSignals?: readonly TrainingRunPromiseSignalDefinition[]
-  entities?: readonly TrainingRunEntityDefinition[]
-  beams?: readonly TrainingRunBeamDefinition[]
-  bursts?: readonly TrainingRunBurstDefinition[]
-  onNodeClick?: (node: TrainingRunNodeSelection) => void
-  pulseSpeed?: number
-}>
+  backgroundColor?: number;
+  pixelRatio?: number;
+  maxAllowedStaleSteps?: number;
+  nodes?: readonly TrainingRunNodeDefinition[];
+  contributors?: readonly TrainingRunContributorDefinition[];
+  lossCurve?: readonly TrainingRunLossPoint[];
+  operatorSignals?: readonly TrainingRunOperatorSignalDefinition[];
+  promiseSignals?: readonly TrainingRunPromiseSignalDefinition[];
+  entities?: readonly TrainingRunEntityDefinition[];
+  beams?: readonly TrainingRunBeamDefinition[];
+  bursts?: readonly TrainingRunBurstDefinition[];
+  motionPolicy?: TrainingRunMotionPolicy;
+  onNodeClick?: (node: TrainingRunNodeSelection) => void;
+  pulseSpeed?: number;
+}>;
 
 export type TrainingRunVisualizationSnapshot = Readonly<{
-  activeWindowCount?: number
-  assignedContributorCount?: number
-  deviceObserved?: number
-  deviceRequired?: number
-  externalStatus?: string
-  finalValidationLoss?: number | null
-  freivaldsRefCount?: number
-  gradientCloseoutRefCount?: number
-  lifecycleCounts?: TrainingRunLifecycleCounts
-  lossUnderBudget?: boolean
-  maxAllowedStaleSteps?: number
-  maxValidationLoss?: number | null
-  blockerRefCount?: number
-  closeoutSatisfied?: boolean
-  pendingPayoutCount?: number
-  plannedWindowCount?: number
-  operatorSignals?: readonly TrainingRunOperatorSignalDefinition[]
-  promiseBlockerRefCount?: number
-  promiseDegradedCount?: number
-  promiseEvidenceRefCount?: number
-  promiseGreenCount?: number
-  promisePlannedCount?: number
-  promiseRedCount?: number
-  promiseSignals?: readonly TrainingRunPromiseSignalDefinition[]
-  promiseUnknownCount?: number
-  promiseWithdrawnCount?: number
-  promiseYellowCount?: number
-  receiptRefCount?: number
-  reconciledWindowCount?: number
-  rejectedWorkCount?: number
-  runDetail?: string
-  runLabel?: string
-  runState?: "planned" | "active" | "sealed" | "reconciled" | string
-  sealInFlight?: boolean
-  sealedWindowCount?: number
-  settledPayoutSats?: number
-  verifiedWorkCount?: number
-}>
+  activeWindowCount?: number;
+  assignedContributorCount?: number;
+  deviceObserved?: number;
+  deviceRequired?: number;
+  externalStatus?: string;
+  finalValidationLoss?: number | null;
+  freivaldsRefCount?: number;
+  gradientCloseoutRefCount?: number;
+  lifecycleCounts?: TrainingRunLifecycleCounts;
+  lossUnderBudget?: boolean;
+  maxAllowedStaleSteps?: number;
+  maxValidationLoss?: number | null;
+  blockerRefCount?: number;
+  closeoutSatisfied?: boolean;
+  pendingPayoutCount?: number;
+  plannedWindowCount?: number;
+  operatorSignals?: readonly TrainingRunOperatorSignalDefinition[];
+  promiseBlockerRefCount?: number;
+  promiseDegradedCount?: number;
+  promiseEvidenceRefCount?: number;
+  promiseGreenCount?: number;
+  promisePlannedCount?: number;
+  promiseRedCount?: number;
+  promiseSignals?: readonly TrainingRunPromiseSignalDefinition[];
+  promiseUnknownCount?: number;
+  promiseWithdrawnCount?: number;
+  promiseYellowCount?: number;
+  receiptRefCount?: number;
+  reconciledWindowCount?: number;
+  rejectedWorkCount?: number;
+  runDetail?: string;
+  runLabel?: string;
+  runState?: "planned" | "active" | "sealed" | "reconciled" | string;
+  sealInFlight?: boolean;
+  sealedWindowCount?: number;
+  settledPayoutSats?: number;
+  verifiedWorkCount?: number;
+}>;
 
 export type ResolvedTrainingRunVisualizationOptions = Readonly<{
-  backgroundColor: number
-  pixelRatio: number
-  maxAllowedStaleSteps: number
-  nodes: readonly TrainingRunNodeDefinition[]
-  contributors: readonly TrainingRunContributorDefinition[]
-  lossCurve: readonly TrainingRunLossPoint[]
-  operatorSignals: readonly TrainingRunOperatorSignalDefinition[]
-  promiseSignals: readonly TrainingRunPromiseSignalDefinition[]
-  entities: readonly TrainingRunEntityDefinition[]
-  beams: readonly TrainingRunBeamDefinition[]
-  bursts: readonly TrainingRunBurstDefinition[]
-  onNodeClick?: (node: TrainingRunNodeSelection) => void
-  pulseSpeed: number
-}>
+  backgroundColor: number;
+  pixelRatio: number;
+  maxAllowedStaleSteps: number;
+  nodes: readonly TrainingRunNodeDefinition[];
+  contributors: readonly TrainingRunContributorDefinition[];
+  lossCurve: readonly TrainingRunLossPoint[];
+  operatorSignals: readonly TrainingRunOperatorSignalDefinition[];
+  promiseSignals: readonly TrainingRunPromiseSignalDefinition[];
+  entities: readonly TrainingRunEntityDefinition[];
+  beams: readonly TrainingRunBeamDefinition[];
+  bursts: readonly TrainingRunBurstDefinition[];
+  motionPolicy: Required<TrainingRunMotionPolicy>;
+  onNodeClick?: (node: TrainingRunNodeSelection) => void;
+  pulseSpeed: number;
+}>;
 
 export type TrainingRunVisualizationHandle = Readonly<{
-  element: HTMLElement
-  canvas: HTMLCanvasElement
-  resize: Effect.Effect<void>
-  dispose: Effect.Effect<void>
-}>
+  element: HTMLElement;
+  canvas: HTMLCanvasElement;
+  resize: Effect.Effect<void>;
+  dispose: Effect.Effect<void>;
+}>;
 
 export const defaultTrainingRunNodes: readonly TrainingRunNodeDefinition[] = [
   {
@@ -327,11 +381,16 @@ export const defaultTrainingRunNodes: readonly TrainingRunNodeDefinition[] = [
     status: "planned",
     position: [4.0, 0.25, 0],
   },
-]
+];
 
 export const defaultTrainingRunContributors: readonly TrainingRunContributorDefinition[] =
   [
-    { id: "pylon.operator.mac", label: "M1", lifecycleState: "active", phase: 0 },
+    {
+      id: "pylon.operator.mac",
+      label: "M1",
+      lifecycleState: "active",
+      phase: 0,
+    },
     {
       id: "pylon.operator.cuda",
       label: "4080",
@@ -356,7 +415,7 @@ export const defaultTrainingRunContributors: readonly TrainingRunContributorDefi
       lifecycleState: "sync_reentry",
       phase: 0.78,
     },
-  ]
+  ];
 
 export const defaultTrainingRunLossCurve: readonly TrainingRunLossPoint[] = [
   { step: 0, validationLoss: 4.8 },
@@ -365,13 +424,13 @@ export const defaultTrainingRunLossCurve: readonly TrainingRunLossPoint[] = [
   { step: 240, validationLoss: 3.42 },
   { step: 320, validationLoss: 3.2 },
   { step: 400, validationLoss: 3.06 },
-]
+];
 
 export const defaultTrainingRunPromiseSignals: readonly TrainingRunPromiseSignalDefinition[] =
-  []
+  [];
 
 export const defaultTrainingRunOperatorSignals: readonly TrainingRunOperatorSignalDefinition[] =
-  []
+  [];
 
 export const pmndrsTrainingDatavizSourceRefs = [
   "projects/repos/examples/demos/bezier-curves-and-nodes/src/Nodes.jsx",
@@ -379,7 +438,7 @@ export const pmndrsTrainingDatavizSourceRefs = [
   "projects/repos/examples/demos/scrollcontrols-with-minimap/src/App.jsx",
   "projects/repos/examples/demos/svg-maps-with-html-annotations/src/index.jsx",
   "projects/repos/examples/demos/canvas-text/src/App.jsx",
-] as const
+] as const;
 
 export const defaultTrainingRunVisualizationOptions: ResolvedTrainingRunVisualizationOptions =
   {
@@ -394,8 +453,21 @@ export const defaultTrainingRunVisualizationOptions: ResolvedTrainingRunVisualiz
     entities: [],
     beams: [],
     bursts: [],
+    motionPolicy: {
+      ambient: "static",
+      bursts: "once",
+      evidence: "optional",
+      structuralEdges: "static",
+    },
     pulseSpeed: 0.17,
-  }
+  };
+
+const resolveTrainingRunMotionPolicy = (
+  policy: TrainingRunMotionPolicy | undefined,
+): Required<TrainingRunMotionPolicy> => ({
+  ...defaultTrainingRunVisualizationOptions.motionPolicy,
+  ...(policy ?? {}),
+});
 
 export const resolveTrainingRunVisualizationOptions = (
   options: TrainingRunVisualizationOptions = {},
@@ -405,7 +477,8 @@ export const resolveTrainingRunVisualizationOptions = (
     ...options,
     nodes: options.nodes ?? defaultTrainingRunVisualizationOptions.nodes,
     contributors:
-      options.contributors ?? defaultTrainingRunVisualizationOptions.contributors,
+      options.contributors ??
+      defaultTrainingRunVisualizationOptions.contributors,
     lossCurve:
       options.lossCurve ?? defaultTrainingRunVisualizationOptions.lossCurve,
     operatorSignals:
@@ -414,68 +487,78 @@ export const resolveTrainingRunVisualizationOptions = (
     promiseSignals:
       options.promiseSignals ??
       defaultTrainingRunVisualizationOptions.promiseSignals,
-    entities: options.entities ?? defaultTrainingRunVisualizationOptions.entities,
+    entities:
+      options.entities ?? defaultTrainingRunVisualizationOptions.entities,
     beams: options.beams ?? defaultTrainingRunVisualizationOptions.beams,
     bursts: options.bursts ?? defaultTrainingRunVisualizationOptions.bursts,
-  }
+    motionPolicy: resolveTrainingRunMotionPolicy(options.motionPolicy),
+  };
 
   return options.onNodeClick === undefined
     ? resolved
-    : { ...resolved, onNodeClick: options.onNodeClick }
-}
+    : { ...resolved, onNodeClick: options.onNodeClick };
+};
 
 const finiteNonNegative = (value: number | undefined): number =>
-  typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0
+  typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0;
 
 const runStatusFromSnapshot = (
   state: TrainingRunVisualizationSnapshot["runState"],
 ): TrainingRunNodeStatus => {
   switch (state) {
     case "active":
-      return "active"
+      return "active";
     case "sealed":
-      return "sealed"
+      return "sealed";
     case "reconciled":
-      return "verified"
+      return "verified";
     case "planned":
-      return "planned"
+      return "planned";
     default:
-      return "planned"
+      return "planned";
   }
-}
+};
 
 const nodeWith = (
   id: string,
   next: Partial<TrainingRunNodeDefinition>,
 ): TrainingRunNodeDefinition => {
-  const base = defaultTrainingRunNodes.find(node => node.id === id)
+  const base = defaultTrainingRunNodes.find((node) => node.id === id);
   if (base === undefined) {
-    throw new Error(`unknown training node ${id}`)
+    throw new Error(`unknown training node ${id}`);
   }
-  return { ...base, ...next }
-}
+  return { ...base, ...next };
+};
 
 const contributorDefinitionsFromSnapshot = (
   snapshot: TrainingRunVisualizationSnapshot,
 ): readonly TrainingRunContributorDefinition[] => {
-  const lifecycleContributors =
-    contributorDefinitionsFromLifecycleCounts(snapshot.lifecycleCounts)
-  if (lifecycleContributors.length > 0) return lifecycleContributors
+  const lifecycleContributors = contributorDefinitionsFromLifecycleCounts(
+    snapshot.lifecycleCounts,
+  );
+  if (lifecycleContributors.length > 0) return lifecycleContributors;
 
-  const assigned = finiteNonNegative(snapshot.assignedContributorCount)
-  const observed = finiteNonNegative(snapshot.deviceObserved)
-  const rejected = finiteNonNegative(snapshot.rejectedWorkCount)
-  const count = Math.max(1, Math.min(12, Math.ceil(Math.max(assigned, observed))))
-  const contributors: TrainingRunContributorDefinition[] = []
+  const assigned = finiteNonNegative(snapshot.assignedContributorCount);
+  const observed = finiteNonNegative(snapshot.deviceObserved);
+  const rejected = finiteNonNegative(snapshot.rejectedWorkCount);
+  const count = Math.max(
+    1,
+    Math.min(12, Math.ceil(Math.max(assigned, observed))),
+  );
+  const contributors: TrainingRunContributorDefinition[] = [];
 
   for (let index = 0; index < count; index += 1) {
-    const active = index < observed
+    const active = index < observed;
     contributors.push({
       id: `pylon.${index + 1}`,
       label: active ? `P${index + 1}` : `W${index + 1}`,
-      lifecycleState: active ? "active" : index % 2 === 0 ? "warmup" : "qualified",
+      lifecycleState: active
+        ? "active"
+        : index % 2 === 0
+          ? "warmup"
+          : "qualified",
       phase: index / count,
-    })
+    });
   }
 
   if (rejected > 0 || snapshot.externalStatus === "blocked_external") {
@@ -484,11 +567,11 @@ const contributorDefinitionsFromSnapshot = (
       label: "stale",
       lifecycleState: "sync_reentry",
       phase: 0.78,
-    })
+    });
   }
 
-  return contributors
-}
+  return contributors;
+};
 
 const lifecycleStateOrder: readonly TrainingRunLifecycleState[] = [
   "registered",
@@ -497,7 +580,7 @@ const lifecycleStateOrder: readonly TrainingRunLifecycleState[] = [
   "warmup",
   "active",
   "sync_reentry",
-]
+];
 
 const lifecycleStateShortLabel: Readonly<
   Record<TrainingRunLifecycleState, string>
@@ -508,69 +591,70 @@ const lifecycleStateShortLabel: Readonly<
   state_synced: "S",
   sync_reentry: "stale",
   warmup: "W",
-}
+};
 
 const contributorDefinitionsFromLifecycleCounts = (
   counts: TrainingRunLifecycleCounts | undefined,
 ): readonly TrainingRunContributorDefinition[] => {
-  if (counts === undefined) return []
+  if (counts === undefined) return [];
 
-  const contributors: Array<Omit<TrainingRunContributorDefinition, "phase">> = []
+  const contributors: Array<Omit<TrainingRunContributorDefinition, "phase">> =
+    [];
   for (const state of lifecycleStateOrder) {
-    const count = finiteNonNegative(counts[state])
+    const count = finiteNonNegative(counts[state]);
     for (let index = 0; index < count && contributors.length < 14; index += 1) {
-      const prefix = lifecycleStateShortLabel[state]
+      const prefix = lifecycleStateShortLabel[state];
       contributors.push({
         id: `pylon.${state}.${index + 1}`,
         label: state === "sync_reentry" ? prefix : `${prefix}${index + 1}`,
         lifecycleState: state,
-      })
+      });
     }
   }
 
-  const divisor = Math.max(contributors.length, 1)
+  const divisor = Math.max(contributors.length, 1);
   return contributors.map((contributor, index) => ({
     ...contributor,
     phase: index / divisor,
-  }))
-}
+  }));
+};
 
 const lossCurveFromSnapshot = (
   snapshot: TrainingRunVisualizationSnapshot,
 ): readonly TrainingRunLossPoint[] => {
-  const finalLoss = snapshot.finalValidationLoss
-  const maxLoss = snapshot.maxValidationLoss
+  const finalLoss = snapshot.finalValidationLoss;
+  const maxLoss = snapshot.maxValidationLoss;
   if (
     typeof finalLoss !== "number" ||
     typeof maxLoss !== "number" ||
     !Number.isFinite(finalLoss) ||
     !Number.isFinite(maxLoss)
   ) {
-    return defaultTrainingRunLossCurve
+    return defaultTrainingRunLossCurve;
   }
 
-  const start = Math.max(maxLoss * 1.2, finalLoss * 1.35, 0.01)
-  const midpoint = (start + finalLoss) / 2
+  const start = Math.max(maxLoss * 1.2, finalLoss * 1.35, 0.01);
+  const midpoint = (start + finalLoss) / 2;
   return [
     { step: 0, validationLoss: start },
     { step: 120, validationLoss: midpoint },
     { step: 240, validationLoss: finalLoss },
-  ]
-}
+  ];
+};
 
 const promiseSignalsFromSnapshot = (
   snapshot: TrainingRunVisualizationSnapshot,
 ): readonly TrainingRunPromiseSignalDefinition[] => {
-  if (snapshot.promiseSignals !== undefined) return snapshot.promiseSignals
+  if (snapshot.promiseSignals !== undefined) return snapshot.promiseSignals;
 
-  const signals: TrainingRunPromiseSignalDefinition[] = []
+  const signals: TrainingRunPromiseSignalDefinition[] = [];
   const pushIfPresent = (
     id: string,
     label: string,
     state: TrainingRunPromiseSignalState,
     count: number,
   ) => {
-    if (count <= 0) return
+    if (count <= 0) return;
     signals.push({
       blockerCount:
         state === "red" || state === "degraded" || state === "withdrawn"
@@ -580,76 +664,78 @@ const promiseSignalsFromSnapshot = (
       id,
       label,
       state,
-    })
-  }
+    });
+  };
 
   pushIfPresent(
     "promise.green",
     "green",
     "green",
     finiteNonNegative(snapshot.promiseGreenCount),
-  )
+  );
   pushIfPresent(
     "promise.yellow",
     "yellow",
     "yellow",
     finiteNonNegative(snapshot.promiseYellowCount),
-  )
+  );
   pushIfPresent(
     "promise.planned",
     "planned",
     "planned",
     finiteNonNegative(snapshot.promisePlannedCount),
-  )
+  );
   pushIfPresent(
     "promise.red",
     "red",
     "red",
     finiteNonNegative(snapshot.promiseRedCount),
-  )
+  );
   pushIfPresent(
     "promise.degraded",
     "degraded",
     "degraded",
     finiteNonNegative(snapshot.promiseDegradedCount),
-  )
+  );
   pushIfPresent(
     "promise.withdrawn",
     "withdrawn",
     "withdrawn",
     finiteNonNegative(snapshot.promiseWithdrawnCount),
-  )
+  );
   pushIfPresent(
     "promise.unknown",
     "unknown",
     "unknown",
     finiteNonNegative(snapshot.promiseUnknownCount),
-  )
+  );
 
-  return signals.slice(0, 7)
-}
+  return signals.slice(0, 7);
+};
 
 export const trainingRunVisualizationOptionsFromSnapshot = (
   snapshot: TrainingRunVisualizationSnapshot,
 ): TrainingRunVisualizationOptions => {
-  const activeWindows = finiteNonNegative(snapshot.activeWindowCount)
-  const plannedWindows = finiteNonNegative(snapshot.plannedWindowCount)
-  const sealedWindows = finiteNonNegative(snapshot.sealedWindowCount)
-  const reconciledWindows = finiteNonNegative(snapshot.reconciledWindowCount)
-  const verifiedWork = finiteNonNegative(snapshot.verifiedWorkCount)
-  const freivaldsRefs = finiteNonNegative(snapshot.freivaldsRefCount)
-  const closeoutRefs = finiteNonNegative(snapshot.gradientCloseoutRefCount)
-  const receiptRefs = finiteNonNegative(snapshot.receiptRefCount)
-  const blockerRefs = finiteNonNegative(snapshot.blockerRefCount)
-  const pendingPayouts = finiteNonNegative(snapshot.pendingPayoutCount)
-  const settledSats = finiteNonNegative(snapshot.settledPayoutSats)
-  const observedDevices = finiteNonNegative(snapshot.deviceObserved)
-  const requiredDevices = finiteNonNegative(snapshot.deviceRequired)
+  const activeWindows = finiteNonNegative(snapshot.activeWindowCount);
+  const plannedWindows = finiteNonNegative(snapshot.plannedWindowCount);
+  const sealedWindows = finiteNonNegative(snapshot.sealedWindowCount);
+  const reconciledWindows = finiteNonNegative(snapshot.reconciledWindowCount);
+  const verifiedWork = finiteNonNegative(snapshot.verifiedWorkCount);
+  const freivaldsRefs = finiteNonNegative(snapshot.freivaldsRefCount);
+  const closeoutRefs = finiteNonNegative(snapshot.gradientCloseoutRefCount);
+  const receiptRefs = finiteNonNegative(snapshot.receiptRefCount);
+  const blockerRefs = finiteNonNegative(snapshot.blockerRefCount);
+  const pendingPayouts = finiteNonNegative(snapshot.pendingPayoutCount);
+  const settledSats = finiteNonNegative(snapshot.settledPayoutSats);
+  const observedDevices = finiteNonNegative(snapshot.deviceObserved);
+  const requiredDevices = finiteNonNegative(snapshot.deviceRequired);
   const deviceReady =
-    requiredDevices === 0 ? observedDevices > 0 : observedDevices >= requiredDevices
-  const externalBlocked = snapshot.externalStatus === "blocked_external"
-  const sealInFlight = snapshot.sealInFlight === true
-  const closeoutSatisfied = snapshot.closeoutSatisfied === true
+    requiredDevices === 0
+      ? observedDevices > 0
+      : observedDevices >= requiredDevices;
+  const externalBlocked = snapshot.externalStatus === "blocked_external";
+  const sealInFlight = snapshot.sealInFlight === true;
+  const closeoutSatisfied = snapshot.closeoutSatisfied === true;
 
   const visualization = {
     contributors: contributorDefinitionsFromSnapshot(snapshot),
@@ -687,8 +773,8 @@ export const trainingRunVisualizationOptionsFromSnapshot = (
           activeWindows > 0
             ? `${activeWindows} active windows`
             : plannedWindows > 0
-            ? `${plannedWindows} planned windows`
-            : "shadow window",
+              ? `${plannedWindows} planned windows`
+              : "shadow window",
         status: activeWindows > 0 ? "active" : "sync",
       }),
       nodeWith("active", {
@@ -771,37 +857,37 @@ export const trainingRunVisualizationOptionsFromSnapshot = (
         status: deviceReady ? "active" : "planned",
       }),
     ],
-  }
+  };
 
   return snapshot.maxAllowedStaleSteps === undefined
     ? visualization
     : {
         ...visualization,
         maxAllowedStaleSteps: snapshot.maxAllowedStaleSteps,
-      }
-}
+      };
+};
 
 export const createTrainingRunEdges = (
   nodes: readonly TrainingRunNodeDefinition[],
 ): readonly TrainingRunEdgeDefinition[] => {
-  const byId = new Map(nodes.map(node => [node.id, node]))
-  const edges: TrainingRunEdgeDefinition[] = []
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const edges: TrainingRunEdgeDefinition[] = [];
 
   for (const node of nodes) {
     for (const targetId of node.connectedTo ?? []) {
-      const target = byId.get(targetId)
-      if (target === undefined) continue
+      const target = byId.get(targetId);
+      if (target === undefined) continue;
       edges.push({
         sourceId: node.id,
         targetId,
         source: node.position,
         target: target.position,
-      })
+      });
     }
   }
 
-  return edges
-}
+  return edges;
+};
 
 export const summarizeTrainingRunVisualization = (
   nodes: readonly TrainingRunNodeDefinition[] = defaultTrainingRunNodes,
@@ -812,24 +898,30 @@ export const summarizeTrainingRunVisualization = (
     receipt: 0,
     rung: 0,
     run: 0,
-  }
+  };
 
   for (const node of nodes) {
-    counts[node.role] += 1
+    counts[node.role] += 1;
   }
 
-  return counts
-}
+  return counts;
+};
 
 const hostSize = (element: HTMLElement): { width: number; height: number } => {
-  const rect = element.getBoundingClientRect()
-  const width = Math.max(1, Math.floor(rect.width || element.clientWidth || 480))
-  const height = Math.max(1, Math.floor(rect.height || element.clientHeight || 340))
-  return { width, height }
-}
+  const rect = element.getBoundingClientRect();
+  const width = Math.max(
+    1,
+    Math.floor(rect.width || element.clientWidth || 480),
+  );
+  const height = Math.max(
+    1,
+    Math.floor(rect.height || element.clientHeight || 340),
+  );
+  return { width, height };
+};
 
 const vector = (point: TrainingRunVector): Three.Vector3 =>
-  new Three.Vector3(point[0], point[1], point[2])
+  new Three.Vector3(point[0], point[1], point[2]);
 
 const nodeSelection = (
   node: TrainingRunNodeDefinition,
@@ -839,7 +931,7 @@ const nodeSelection = (
   label: node.label,
   role: node.role,
   status: node.status,
-})
+});
 
 /**
  * Map an arbitrary contributor/entity status string onto the bounded node
@@ -858,25 +950,25 @@ export const trainingRunEntityNodeStatus = (
     case "sealed":
     case "verified":
     case "blocked":
-      return status
+      return status;
     case "registered":
-      return "queued"
+      return "queued";
     case "qualified":
     case "state_synced":
     case "warmup":
-      return "sync"
+      return "sync";
     case "sync_reentry":
-      return "blocked"
+      return "blocked";
     case "reconciled":
     case "settled":
-      return "verified"
+      return "verified";
     default:
-      return "active"
+      return "active";
   }
-}
+};
 
 const colorForEntityStatus = (status: string): number =>
-  colorForStatus(trainingRunEntityNodeStatus(status))
+  colorForStatus(trainingRunEntityNodeStatus(status));
 
 /**
  * Project an entity into a `TrainingRunNodeSelection` for the shared
@@ -892,7 +984,24 @@ export const trainingRunEntitySelection = (
   label: entity.label ?? entity.id,
   role: "run",
   status: trainingRunEntityNodeStatus(entity.status),
-})
+});
+
+export const trainingRunMotionSourceRefs = (
+  motion: TrainingRunMotionEvidence,
+): readonly string[] =>
+  (motion.sourceRefs ?? [])
+    .map((ref) => ref.trim())
+    .filter((ref) => ref.length > 0);
+
+export const trainingRunMotionHasEvidence = (
+  motion: TrainingRunMotionEvidence,
+): boolean => trainingRunMotionSourceRefs(motion).length > 0;
+
+const motionAllowedByPolicy = (
+  motion: TrainingRunMotionEvidence,
+  policy: Required<TrainingRunMotionPolicy>,
+): boolean =>
+  policy.evidence === "optional" || trainingRunMotionHasEvidence(motion);
 
 /**
  * Deterministically lay out entities that lack an explicit position on a ring
@@ -903,28 +1012,27 @@ export const trainingRunEntityRingPosition = (
   index: number,
   count: number,
   options: Readonly<{
-    center?: TrainingRunVector
-    radius?: number
+    center?: TrainingRunVector;
+    radius?: number;
   }> = {},
 ): TrainingRunVector => {
-  const center = options.center ?? entityRingLayout.center
-  const radius = options.radius ?? entityRingLayout.radius
-  const total = Math.max(1, count)
+  const center = options.center ?? entityRingLayout.center;
+  const radius = options.radius ?? entityRingLayout.radius;
+  const total = Math.max(1, count);
   // Even angular spacing with a golden-ratio offset keeps small rings legible
   // and large rings non-overlapping, all deterministically.
-  const angle =
-    (index / total) * Math.PI * 2 + index * 2.399963229728653
+  const angle = (index / total) * Math.PI * 2 + index * 2.399963229728653;
   return [
     center[0] + Math.cos(angle) * radius,
     center[1] + Math.sin(angle) * radius,
     center[2],
-  ]
-}
+  ];
+};
 
 const entityRingLayout = {
   center: [-0.15, 0.28, 0.12] as TrainingRunVector,
   radius: 1.62,
-} as const
+} as const;
 
 /**
  * Resolve every entity to a concrete position: explicit `position` wins,
@@ -933,22 +1041,22 @@ const entityRingLayout = {
 export const resolveTrainingRunEntityPositions = (
   entities: readonly TrainingRunEntityDefinition[],
 ): ReadonlyMap<string, TrainingRunVector> => {
-  const positions = new Map<string, TrainingRunVector>()
-  const unplaced = entities.filter(entity => entity.position === undefined)
-  let ringIndex = 0
+  const positions = new Map<string, TrainingRunVector>();
+  const unplaced = entities.filter((entity) => entity.position === undefined);
+  let ringIndex = 0;
   for (const entity of entities) {
     if (entity.position !== undefined) {
-      positions.set(entity.id, entity.position)
+      positions.set(entity.id, entity.position);
     } else {
       positions.set(
         entity.id,
         trainingRunEntityRingPosition(ringIndex, unplaced.length),
-      )
-      ringIndex += 1
+      );
+      ringIndex += 1;
     }
   }
-  return positions
-}
+  return positions;
+};
 
 const colorForStatus = (status: TrainingRunNodeStatus): number =>
   status === "blocked"
@@ -961,22 +1069,18 @@ const colorForStatus = (status: TrainingRunNodeStatus): number =>
           ? 0xffffff
           : status === "sync"
             ? 0xb9e6ff
-            : 0x9ca3af
+            : 0x9ca3af;
 
-const colorForPromiseSignal = (
-  state: TrainingRunPromiseSignalState,
-): number =>
+const colorForPromiseSignal = (state: TrainingRunPromiseSignalState): number =>
   state === "green"
     ? 0xb7f7d4
     : state === "yellow"
       ? 0xffd166
       : state === "planned"
         ? 0xb9e6ff
-        : state === "red" ||
-            state === "degraded" ||
-            state === "withdrawn"
+        : state === "red" || state === "degraded" || state === "withdrawn"
           ? 0xff6b6b
-          : 0x9ca3af
+          : 0x9ca3af;
 
 const colorForOperatorSignal = (
   state: TrainingRunOperatorSignalState,
@@ -987,7 +1091,7 @@ const colorForOperatorSignal = (
       ? 0xff6b6b
       : state === "info"
         ? 0xb9e6ff
-        : 0x9ca3af
+        : 0x9ca3af;
 
 const makeCircle = (
   radius: number,
@@ -1002,7 +1106,7 @@ const makeCircle = (
       transparent: opacity < 1,
       depthWrite: opacity >= 1,
     }),
-  )
+  );
 
 const makeRect = (
   width: number,
@@ -1019,7 +1123,7 @@ const makeRect = (
       depthWrite: false,
       side: Three.DoubleSide,
     }),
-  )
+  );
 
 const makeRing = (
   radius: number,
@@ -1035,48 +1139,51 @@ const makeRing = (
       depthWrite: false,
       side: Three.DoubleSide,
     }),
-  )
+  );
 
 const makeTextSprite = (
   text: string,
   options: Readonly<{
-    color?: string
-    fontSize?: number
-    height?: number
-    worldHeight?: number
-    width?: number
+    color?: string;
+    fontSize?: number;
+    height?: number;
+    worldHeight?: number;
+    width?: number;
   }> = {},
 ): Three.Sprite => {
-  const canvas = document.createElement("canvas")
-  canvas.width = options.width ?? 384
-  canvas.height = options.height ?? 96
+  const canvas = document.createElement("canvas");
+  canvas.width = options.width ?? 384;
+  canvas.height = options.height ?? 96;
 
-  const context = canvas.getContext("2d")
+  const context = canvas.getContext("2d");
   if (context !== null) {
-    context.clearRect(0, 0, canvas.width, canvas.height)
-    context.fillStyle = options.color ?? "#f8fafc"
-    context.font = `${options.fontSize ?? 34}px Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont`
-    context.textAlign = "center"
-    context.textBaseline = "middle"
-    context.fillText(text, canvas.width / 2, canvas.height / 2)
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = options.color ?? "#f8fafc";
+    context.font = `${options.fontSize ?? 34}px Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont`;
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    context.fillText(text, canvas.width / 2, canvas.height / 2);
   }
 
-  const texture = new Three.CanvasTexture(canvas)
-  texture.colorSpace = Three.SRGBColorSpace
+  const texture = new Three.CanvasTexture(canvas);
+  texture.colorSpace = Three.SRGBColorSpace;
   const material = new Three.SpriteMaterial({
     map: texture,
     transparent: true,
     depthTest: false,
-  })
-  const sprite = new Three.Sprite(material)
-  const worldHeight = options.worldHeight ?? 0.42
-  sprite.scale.set((canvas.width / canvas.height) * worldHeight, worldHeight, 1)
-  return sprite
-}
+  });
+  const sprite = new Three.Sprite(material);
+  const worldHeight = options.worldHeight ?? 0.42;
+  sprite.scale.set(
+    (canvas.width / canvas.height) * worldHeight,
+    worldHeight,
+    1,
+  );
+  return sprite;
+};
 
-const lineGeometry = (
-  points: readonly Three.Vector3[],
-): Three.BufferGeometry => new Three.BufferGeometry().setFromPoints([...points])
+const lineGeometry = (points: readonly Three.Vector3[]): Three.BufferGeometry =>
+  new Three.BufferGeometry().setFromPoints([...points]);
 
 const makeLine = (
   points: readonly Three.Vector3[],
@@ -1091,16 +1198,16 @@ const makeLine = (
       transparent: opacity < 1,
       depthWrite: false,
     }),
-  )
+  );
 
 const makeDashedLine = (
   points: readonly Three.Vector3[],
   color: number,
   opacity: number,
   options: Readonly<{
-    dashSize?: number
-    gapSize?: number
-    scale?: number
+    dashSize?: number;
+    gapSize?: number;
+    scale?: number;
   }> = {},
 ): Three.Line<Three.BufferGeometry, Three.LineDashedMaterial> => {
   const line = new Three.Line(
@@ -1114,10 +1221,10 @@ const makeDashedLine = (
       transparent: opacity < 1,
       depthWrite: false,
     }),
-  )
-  line.computeLineDistances()
-  return line
-}
+  );
+  line.computeLineDistances();
+  return line;
+};
 
 const ellipsePoints = (
   xRadius: number,
@@ -1125,82 +1232,82 @@ const ellipsePoints = (
 ): readonly Three.Vector3[] =>
   new Three.EllipseCurve(0, 0, xRadius, yRadius, 0, Math.PI * 2)
     .getPoints(96)
-    .map((point: Three.Vector2) => new Three.Vector3(point.x, point.y, 0))
+    .map((point: Three.Vector2) => new Three.Vector3(point.x, point.y, 0));
 
 const curvedEdgePoints = (
   source: TrainingRunVector,
   target: TrainingRunVector,
   bend = 0.3,
 ): readonly Three.Vector3[] => {
-  const start = vector(source)
-  const end = vector(target)
+  const start = vector(source);
+  const end = vector(target);
   const midpoint = start
     .clone()
     .lerp(end, 0.5)
-    .add(new Three.Vector3(0, bend, 0))
-  return new Three.QuadraticBezierCurve3(start, midpoint, end).getPoints(28)
-}
+    .add(new Three.Vector3(0, bend, 0));
+  return new Three.QuadraticBezierCurve3(start, midpoint, end).getPoints(28);
+};
 
 const pointOnPoints = (
   points: readonly Three.Vector3[],
   phase: number,
 ): Three.Vector3 => {
-  if (points.length === 0) return new Three.Vector3()
-  if (points.length === 1) return points[0]!.clone()
+  if (points.length === 0) return new Three.Vector3();
+  if (points.length === 1) return points[0]!.clone();
 
-  const clamped = phase - Math.floor(phase)
-  const scaled = clamped * (points.length - 1)
-  const index = Math.floor(scaled)
-  const nextIndex = Math.min(points.length - 1, index + 1)
-  return points[index]!.clone().lerp(points[nextIndex]!, scaled - index)
-}
+  const clamped = phase - Math.floor(phase);
+  const scaled = clamped * (points.length - 1);
+  const index = Math.floor(scaled);
+  const nextIndex = Math.min(points.length - 1, index + 1);
+  return points[index]!.clone().lerp(points[nextIndex]!, scaled - index);
+};
 
 const lossChartLayout = {
   height: 0.78,
   origin: new Three.Vector3(2.15, -0.38, 0.12),
   width: 2.05,
-} as const
+} as const;
 
 const lossCurveDomain = (
   curve: readonly TrainingRunLossPoint[],
 ):
   | Readonly<{
-      maxLoss: number
-      maxStep: number
-      minLoss: number
-      minStep: number
+      maxLoss: number;
+      maxStep: number;
+      minLoss: number;
+      minStep: number;
     }>
   | undefined => {
-  if (curve.length === 0) return undefined
+  if (curve.length === 0) return undefined;
   return {
-    maxLoss: Math.max(...curve.map(point => point.validationLoss)),
-    maxStep: Math.max(...curve.map(point => point.step)),
-    minLoss: Math.min(...curve.map(point => point.validationLoss)),
-    minStep: Math.min(...curve.map(point => point.step)),
-  }
-}
+    maxLoss: Math.max(...curve.map((point) => point.validationLoss)),
+    maxStep: Math.max(...curve.map((point) => point.step)),
+    minLoss: Math.min(...curve.map((point) => point.validationLoss)),
+    minStep: Math.min(...curve.map((point) => point.step)),
+  };
+};
 
 const lossCurvePoints = (
   curve: readonly TrainingRunLossPoint[],
 ): readonly Three.Vector3[] => {
-  const domain = lossCurveDomain(curve)
-  if (domain === undefined) return []
+  const domain = lossCurveDomain(curve);
+  if (domain === undefined) return [];
 
-  return curve.map(point => {
+  return curve.map((point) => {
     const x =
       domain.maxStep === domain.minStep
         ? 0
         : ((point.step - domain.minStep) / (domain.maxStep - domain.minStep)) *
-          lossChartLayout.width
+          lossChartLayout.width;
     const y =
       domain.maxLoss === domain.minLoss
         ? 0
         : ((domain.maxLoss - point.validationLoss) /
             (domain.maxLoss - domain.minLoss)) *
-          lossChartLayout.height
-    return lossChartLayout.origin.clone().add(new Three.Vector3(x, y, 0))
-  })
-}
+          lossChartLayout.height;
+    return lossChartLayout.origin.clone().add(new Three.Vector3(x, y, 0));
+  });
+};
 
 const makeAreaUnderCurve = (
   points: readonly Three.Vector3[],
@@ -1208,17 +1315,17 @@ const makeAreaUnderCurve = (
   color: number,
   opacity: number,
 ): Three.Mesh<Three.ShapeGeometry, Three.MeshBasicMaterial> | undefined => {
-  if (points.length < 2) return undefined
+  if (points.length < 2) return undefined;
 
-  const shape = new Three.Shape()
-  const first = points[0]!
-  const last = points.at(-1)!
-  shape.moveTo(first.x, baselineY)
+  const shape = new Three.Shape();
+  const first = points[0]!;
+  const last = points.at(-1)!;
+  shape.moveTo(first.x, baselineY);
   for (const point of points) {
-    shape.lineTo(point.x, point.y)
+    shape.lineTo(point.x, point.y);
   }
-  shape.lineTo(last.x, baselineY)
-  shape.closePath()
+  shape.lineTo(last.x, baselineY);
+  shape.closePath();
 
   return new Three.Mesh(
     new Three.ShapeGeometry(shape),
@@ -1229,11 +1336,11 @@ const makeAreaUnderCurve = (
       depthWrite: false,
       side: Three.DoubleSide,
     }),
-  )
-}
+  );
+};
 
 const formatLossTick = (value: number): string =>
-  Number.isFinite(value) ? value.toFixed(2) : "n/a"
+  Number.isFinite(value) ? value.toFixed(2) : "n/a";
 
 const statusChartOrder: readonly TrainingRunNodeStatus[] = [
   "active",
@@ -1243,81 +1350,80 @@ const statusChartOrder: readonly TrainingRunNodeStatus[] = [
   "blocked",
   "queued",
   "planned",
-]
+];
 
 const createStatusMiniChart = (
   nodes: readonly TrainingRunNodeDefinition[],
 ): Three.Group => {
-  const group = new Three.Group()
-  group.position.set(4.48, 0.72, 0.48)
+  const group = new Three.Group();
+  group.position.set(4.48, 0.72, 0.48);
 
-  const counts = new Map<TrainingRunNodeStatus, number>()
-  for (const status of statusChartOrder) counts.set(status, 0)
+  const counts = new Map<TrainingRunNodeStatus, number>();
+  for (const status of statusChartOrder) counts.set(status, 0);
   for (const node of nodes) {
-    counts.set(node.status, (counts.get(node.status) ?? 0) + 1)
+    counts.set(node.status, (counts.get(node.status) ?? 0) + 1);
   }
 
-  const maxCount = Math.max(...[...counts.values()], 1)
+  const maxCount = Math.max(...[...counts.values()], 1);
   const title = makeTextSprite("status mix", {
     color: "#d1d5db",
     fontSize: 16,
     height: 80,
     width: 240,
     worldHeight: 0.2,
-  })
-  title.position.set(0, 0.48, 0.2)
-  group.add(title)
+  });
+  title.position.set(0, 0.48, 0.2);
+  group.add(title);
 
   statusChartOrder.forEach((status, index) => {
-    const count = counts.get(status) ?? 0
-    const height =
-      count === 0 ? 0.04 : 0.1 + (count / maxCount) * 0.34
+    const count = counts.get(status) ?? 0;
+    const height = count === 0 ? 0.04 : 0.1 + (count / maxCount) * 0.34;
     const bar = makeRect(
       0.085,
       height,
       colorForStatus(status),
       count === 0 ? 0.18 : 0.72,
-    )
-    bar.position.set(index * 0.12 - 0.36, height / 2, 0.1)
-    group.add(bar)
+    );
+    bar.position.set(index * 0.12 - 0.36, height / 2, 0.1);
+    group.add(bar);
 
     const dot = makeCircle(
       0.024,
       colorForStatus(status),
       count === 0 ? 0.25 : 0.85,
-    )
-    dot.position.set(index * 0.12 - 0.36, -0.08, 0.15)
-    group.add(dot)
-  })
+    );
+    dot.position.set(index * 0.12 - 0.36, -0.08, 0.15);
+    group.add(dot);
+  });
 
-  return group
-}
+  return group;
+};
 
 const disposeMaterial = (material: Three.Material | Three.Material[]): void => {
   if (Array.isArray(material)) {
-    material.forEach(disposeMaterial)
-    return
+    material.forEach(disposeMaterial);
+    return;
   }
 
   const maybeMapped = material as Three.Material & {
-    map?: Three.Texture | null
-  }
-  maybeMapped.map?.dispose()
-  material.dispose()
-}
+    map?: Three.Texture | null;
+  };
+  maybeMapped.map?.dispose();
+  material.dispose();
+};
 
 const disposeObject = (object: Three.Object3D): void => {
   object.traverse((child: Three.Object3D) => {
     const maybeRenderable = child as Three.Object3D & {
-      geometry?: Three.BufferGeometry
-      material?: Three.Material | Three.Material[]
-    }
-    maybeRenderable.geometry?.dispose()
+      geometry?: Three.BufferGeometry;
+      material?: Three.Material | Three.Material[];
+    };
+    maybeRenderable.geometry?.dispose();
     if (maybeRenderable.material !== undefined) {
-      disposeMaterial(maybeRenderable.material)
+      disposeMaterial(maybeRenderable.material);
     }
-  })
-}
+  });
+};
 
 export const mountTrainingRunVisualization = (
   element: HTMLElement,
@@ -1325,36 +1431,41 @@ export const mountTrainingRunVisualization = (
 ): Effect.Effect<TrainingRunVisualizationHandle, TrainingRunMountError> =>
   Effect.try({
     try: () => {
-      const resolved = resolveTrainingRunVisualizationOptions(options)
-      const canvas = document.createElement("canvas")
-      canvas.style.display = "block"
-      canvas.style.width = "100%"
-      canvas.style.height = "100%"
-      element.replaceChildren(canvas)
+      const resolved = resolveTrainingRunVisualizationOptions(options);
+      const animateStructuralEdges =
+        resolved.motionPolicy.structuralEdges === "animated";
+      const animateAmbient = resolved.motionPolicy.ambient === "animated";
+      const canvas = document.createElement("canvas");
+      canvas.style.display = "block";
+      canvas.style.width = "100%";
+      canvas.style.height = "100%";
+      element.replaceChildren(canvas);
 
       const renderer = new Three.WebGLRenderer({
         canvas,
         antialias: true,
         alpha: false,
-      })
-      renderer.setClearColor(resolved.backgroundColor, 1)
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, resolved.pixelRatio))
+      });
+      renderer.setClearColor(resolved.backgroundColor, 1);
+      renderer.setPixelRatio(
+        Math.min(window.devicePixelRatio || 1, resolved.pixelRatio),
+      );
 
-      const scene = new Three.Scene()
-      const camera = new Three.OrthographicCamera(-5, 5, 3, -3, 0.1, 100)
-      camera.position.set(0, 0, 10)
-      camera.lookAt(0, 0, 0)
+      const scene = new Three.Scene();
+      const camera = new Three.OrthographicCamera(-5, 5, 3, -3, 0.1, 100);
+      camera.position.set(0, 0, 10);
+      camera.lookAt(0, 0, 0);
 
-      const root = new Three.Group()
-      scene.add(root)
-      const raycaster = new Three.Raycaster()
-      const pointer = new Three.Vector2()
+      const root = new Three.Group();
+      scene.add(root);
+      const raycaster = new Three.Raycaster();
+      const pointer = new Three.Vector2();
       const clickTargets: Array<{
-        mesh: Three.Mesh<Three.CircleGeometry, Three.MeshBasicMaterial>
-        node: TrainingRunNodeDefinition
-      }> = []
+        mesh: Three.Mesh<Three.CircleGeometry, Three.MeshBasicMaterial>;
+        node: TrainingRunNodeDefinition;
+      }> = [];
 
-      const grid = new Three.Group()
+      const grid = new Three.Group();
       for (let x = -4; x <= 4; x += 1) {
         grid.add(
           makeLine(
@@ -1365,7 +1476,7 @@ export const mountTrainingRunVisualization = (
             0xffffff,
             x === 0 ? 0.12 : 0.045,
           ),
-        )
+        );
       }
       for (let y = -2; y <= 2; y += 1) {
         grid.add(
@@ -1377,41 +1488,41 @@ export const mountTrainingRunVisualization = (
             0xffffff,
             y === 0 ? 0.12 : 0.045,
           ),
-        )
+        );
       }
-      root.add(grid)
+      root.add(grid);
 
-      const staleRing = makeRing(1.12, 0xffffff, 0.18)
-      staleRing.position.set(-0.15, 0.28, -0.05)
-      root.add(staleRing)
-      const contributorOrbitGroup = new Three.Group()
-      contributorOrbitGroup.position.set(-0.15, 0.28, 0.08)
+      const staleRing = makeRing(1.12, 0xffffff, 0.18);
+      staleRing.position.set(-0.15, 0.28, -0.05);
+      root.add(staleRing);
+      const contributorOrbitGroup = new Three.Group();
+      contributorOrbitGroup.position.set(-0.15, 0.28, 0.08);
       for (const rotation of [-0.32, 0.18, 0.68]) {
-        const orbit = makeLine(ellipsePoints(1.38, 0.92), 0xffffff, 0.11)
-        orbit.rotation.z = rotation
-        contributorOrbitGroup.add(orbit)
+        const orbit = makeLine(ellipsePoints(1.38, 0.92), 0xffffff, 0.11);
+        orbit.rotation.z = rotation;
+        contributorOrbitGroup.add(orbit);
       }
-      root.add(contributorOrbitGroup)
+      root.add(contributorOrbitGroup);
       const staleLabel = makeTextSprite(
         `max stale ${resolved.maxAllowedStaleSteps}`,
         { color: "#d1d5db", fontSize: 26, width: 320, height: 96 },
-      )
-      staleLabel.position.set(-0.15, -0.92, 0.5)
-      root.add(staleLabel)
+      );
+      staleLabel.position.set(-0.15, -0.92, 0.5);
+      root.add(staleLabel);
 
-      const edges = createTrainingRunEdges(resolved.nodes)
+      const edges = createTrainingRunEdges(resolved.nodes);
       const nodeStatusById = new Map(
-        resolved.nodes.map(node => [node.id, node.status] as const),
-      )
+        resolved.nodes.map((node) => [node.id, node.status] as const),
+      );
       const flowLines: Array<{
-        line: Three.Line<Three.BufferGeometry, Three.LineDashedMaterial>
-        phase: number
-      }> = []
+        line: Three.Line<Three.BufferGeometry, Three.LineDashedMaterial>;
+        phase: number;
+      }> = [];
       const pulses: Array<{
-        mesh: Three.Object3D
-        phase: number
-        points: readonly Three.Vector3[]
-      }> = []
+        mesh: Three.Object3D;
+        phase: number;
+        points: readonly Three.Vector3[];
+      }> = [];
 
       for (const [index, edge] of edges.entries()) {
         const bend =
@@ -1419,114 +1530,128 @@ export const mountTrainingRunVisualization = (
             ? 0
             : index % 2 === 0
               ? 0.24
-              : -0.18
-        const points = curvedEdgePoints(edge.source, edge.target, bend)
+              : -0.18;
+        const points = curvedEdgePoints(edge.source, edge.target, bend);
         const edgeColor = colorForStatus(
           nodeStatusById.get(edge.targetId) ?? "planned",
-        )
-        root.add(makeLine(points, edgeColor, 0.13))
-        const flowLine = makeDashedLine(points, edgeColor, 0.58, {
-          dashSize: 0.18,
-          gapSize: 0.14,
-        })
-        root.add(flowLine)
-        flowLines.push({
-          line: flowLine,
-          phase: index / Math.max(edges.length, 1),
-        })
-        const startAnchor = makeCircle(0.022, edgeColor, 0.5)
-        startAnchor.position.copy(points[0]!)
-        startAnchor.position.z = 0.3
-        root.add(startAnchor)
-        const endAnchor = makeCircle(0.022, edgeColor, 0.5)
-        endAnchor.position.copy(points.at(-1)!)
-        endAnchor.position.z = 0.3
-        root.add(endAnchor)
-        const pulse = makeCircle(0.035, 0xffffff, 0.95)
-        pulse.position.copy(pointOnPoints(points, index / Math.max(edges.length, 1)))
-        pulse.position.z = 0.35
-        root.add(pulse)
-        pulses.push({
-          mesh: pulse,
-          phase: index / Math.max(edges.length, 1),
+        );
+        root.add(makeLine(points, edgeColor, 0.13));
+        const flowLine = makeDashedLine(
           points,
-        })
+          edgeColor,
+          animateStructuralEdges ? 0.58 : 0.28,
+          {
+            dashSize: 0.18,
+            gapSize: 0.14,
+          },
+        );
+        root.add(flowLine);
+        if (animateStructuralEdges) {
+          flowLines.push({
+            line: flowLine,
+            phase: index / Math.max(edges.length, 1),
+          });
+        }
+        const startAnchor = makeCircle(0.022, edgeColor, 0.5);
+        startAnchor.position.copy(points[0]!);
+        startAnchor.position.z = 0.3;
+        root.add(startAnchor);
+        const endAnchor = makeCircle(0.022, edgeColor, 0.5);
+        endAnchor.position.copy(points.at(-1)!);
+        endAnchor.position.z = 0.3;
+        root.add(endAnchor);
+        if (animateStructuralEdges) {
+          const pulse = makeCircle(0.035, 0xffffff, 0.95);
+          pulse.position.copy(
+            pointOnPoints(points, index / Math.max(edges.length, 1)),
+          );
+          pulse.position.z = 0.35;
+          root.add(pulse);
+          pulses.push({
+            mesh: pulse,
+            phase: index / Math.max(edges.length, 1),
+            points,
+          });
+        }
       }
 
       for (const node of resolved.nodes) {
-        const group = new Three.Group()
-        const statusColor = colorForStatus(node.status)
-        group.position.copy(vector(node.position))
+        const group = new Three.Group();
+        const statusColor = colorForStatus(node.status);
+        group.position.copy(vector(node.position));
 
         const radius =
-          node.role === "run" ? 0.56 : node.role === "rung" ? 0.34 : 0.27
-        group.add(makeRing(radius, statusColor, node.role === "run" ? 0.58 : 0.38))
-        const hitTarget = makeCircle(radius * 0.92, statusColor, 0.001)
-        hitTarget.position.z = 0.62
-        group.add(hitTarget)
-        clickTargets.push({ mesh: hitTarget, node })
-        group.add(makeCircle(radius * 0.32, statusColor, 0.95))
+          node.role === "run" ? 0.56 : node.role === "rung" ? 0.34 : 0.27;
+        group.add(
+          makeRing(radius, statusColor, node.role === "run" ? 0.58 : 0.38),
+        );
+        const hitTarget = makeCircle(radius * 0.92, statusColor, 0.001);
+        hitTarget.position.z = 0.62;
+        group.add(hitTarget);
+        clickTargets.push({ mesh: hitTarget, node });
+        group.add(makeCircle(radius * 0.32, statusColor, 0.95));
 
         const label = makeTextSprite(node.label, {
           color: "#ffffff",
           fontSize: node.role === "run" ? 32 : 28,
           width: node.role === "run" ? 512 : 384,
-        })
-        label.position.set(0, -radius - 0.25, 0.55)
-        group.add(label)
+        });
+        label.position.set(0, -radius - 0.25, 0.55);
+        group.add(label);
 
         const detail = makeTextSprite(node.detail, {
           color: "#a3a3a3",
           fontSize: 22,
           width: 448,
-        })
-        detail.position.set(0, -radius - 0.58, 0.55)
-        group.add(detail)
+        });
+        detail.position.set(0, -radius - 0.58, 0.55);
+        group.add(detail);
 
-        root.add(group)
+        root.add(group);
       }
 
-      const contributorGroup = new Three.Group()
-      contributorGroup.position.set(-0.15, 0.28, 0.4)
+      const contributorGroup = new Three.Group();
+      contributorGroup.position.set(-0.15, 0.28, 0.4);
       for (const contributor of resolved.contributors) {
         const dot = makeCircle(
           contributor.lifecycleState === "active" ? 0.065 : 0.045,
           0xffffff,
           contributor.lifecycleState === "sync_reentry" ? 0.45 : 0.88,
-        )
-        const angle = contributor.phase * Math.PI * 2
-        const radius = contributor.lifecycleState === "sync_reentry" ? 1.45 : 1.22
-        dot.position.set(Math.cos(angle) * radius, Math.sin(angle) * radius, 0)
-        contributorGroup.add(dot)
+        );
+        const angle = contributor.phase * Math.PI * 2;
+        const radius =
+          contributor.lifecycleState === "sync_reentry" ? 1.45 : 1.22;
+        dot.position.set(Math.cos(angle) * radius, Math.sin(angle) * radius, 0);
+        contributorGroup.add(dot);
 
         const label = makeTextSprite(contributor.label, {
           color: "#d4d4d4",
           fontSize: 18,
           height: 80,
           width: 220,
-        })
-        label.position.set(dot.position.x, dot.position.y - 0.16, 0.3)
-        contributorGroup.add(label)
+        });
+        label.position.set(dot.position.x, dot.position.y - 0.16, 0.3);
+        contributorGroup.add(label);
       }
-      root.add(contributorGroup)
+      root.add(contributorGroup);
 
-      const lossPoints = lossCurvePoints(resolved.lossCurve)
-      const lossDomain = lossCurveDomain(resolved.lossCurve)
+      const lossPoints = lossCurvePoints(resolved.lossCurve);
+      const lossDomain = lossCurveDomain(resolved.lossCurve);
       const lossPanel = makeRect(
         lossChartLayout.width + 0.28,
         lossChartLayout.height + 0.26,
         0xffffff,
         0.035,
-      )
+      );
       lossPanel.position.set(
         lossChartLayout.origin.x + lossChartLayout.width / 2,
         lossChartLayout.origin.y + lossChartLayout.height / 2,
         0.03,
-      )
-      root.add(lossPanel)
+      );
+      root.add(lossPanel);
       for (let index = 0; index <= 4; index += 1) {
         const x =
-          lossChartLayout.origin.x + (lossChartLayout.width / 4) * index
+          lossChartLayout.origin.x + (lossChartLayout.width / 4) * index;
         root.add(
           makeLine(
             [
@@ -1540,11 +1665,11 @@ export const mountTrainingRunVisualization = (
             0xffffff,
             index === 0 || index === 4 ? 0.16 : 0.06,
           ),
-        )
+        );
       }
       for (let index = 0; index <= 3; index += 1) {
         const y =
-          lossChartLayout.origin.y + (lossChartLayout.height / 3) * index
+          lossChartLayout.origin.y + (lossChartLayout.height / 3) * index;
         root.add(
           makeLine(
             [
@@ -1558,7 +1683,7 @@ export const mountTrainingRunVisualization = (
             0xffffff,
             index === 0 || index === 3 ? 0.16 : 0.06,
           ),
-        )
+        );
       }
       if (lossDomain !== undefined) {
         const topTick = makeTextSprite(formatLossTick(lossDomain.maxLoss), {
@@ -1567,39 +1692,39 @@ export const mountTrainingRunVisualization = (
           height: 80,
           width: 180,
           worldHeight: 0.16,
-        })
+        });
         topTick.position.set(
           lossChartLayout.origin.x - 0.18,
           lossChartLayout.origin.y + lossChartLayout.height,
           0.4,
-        )
-        root.add(topTick)
+        );
+        root.add(topTick);
         const bottomTick = makeTextSprite(formatLossTick(lossDomain.minLoss), {
           color: "#a3a3a3",
           fontSize: 16,
           height: 80,
           width: 180,
           worldHeight: 0.16,
-        })
+        });
         bottomTick.position.set(
           lossChartLayout.origin.x - 0.18,
           lossChartLayout.origin.y,
           0.4,
-        )
-        root.add(bottomTick)
+        );
+        root.add(bottomTick);
         const stepTick = makeTextSprite(`${lossDomain.maxStep} step`, {
           color: "#a3a3a3",
           fontSize: 16,
           height: 80,
           width: 220,
           worldHeight: 0.16,
-        })
+        });
         stepTick.position.set(
           lossChartLayout.origin.x + lossChartLayout.width,
           lossChartLayout.origin.y - 0.18,
           0.4,
-        )
-        root.add(stepTick)
+        );
+        root.add(stepTick);
       }
       if (lossPoints.length > 1) {
         const area = makeAreaUnderCurve(
@@ -1607,119 +1732,125 @@ export const mountTrainingRunVisualization = (
           lossChartLayout.origin.y,
           0xb9e6ff,
           0.12,
-        )
+        );
         if (area !== undefined) {
-          area.position.z = 0.05
-          root.add(area)
+          area.position.z = 0.05;
+          root.add(area);
         }
-        root.add(makeDashedLine(lossPoints, 0xffffff, 0.82, {
-          dashSize: 0.08,
-          gapSize: 0.045,
-        }))
+        root.add(
+          makeDashedLine(lossPoints, 0xffffff, 0.82, {
+            dashSize: 0.08,
+            gapSize: 0.045,
+          }),
+        );
         for (const point of lossPoints) {
-          const dot = makeCircle(0.03, 0xffffff, 0.9)
-          dot.position.copy(point)
-          dot.position.z = 0.28
-          root.add(dot)
+          const dot = makeCircle(0.03, 0xffffff, 0.9);
+          dot.position.copy(point);
+          dot.position.z = 0.28;
+          root.add(dot);
         }
       }
       const lossLabel = makeTextSprite("loss curve", {
         color: "#d1d5db",
         fontSize: 24,
         width: 260,
-      })
-      lossLabel.position.set(3.2, -0.68, 0.45)
-      root.add(lossLabel)
-      root.add(createStatusMiniChart(resolved.nodes))
+      });
+      lossLabel.position.set(3.2, -0.68, 0.45);
+      root.add(lossLabel);
+      root.add(createStatusMiniChart(resolved.nodes));
 
       if (resolved.operatorSignals.length > 0) {
-        const operatorGroup = new Three.Group()
-        operatorGroup.position.set(-3.75, 2.92, 0.5)
+        const operatorGroup = new Three.Group();
+        operatorGroup.position.set(-3.75, 2.92, 0.5);
         operatorGroup.add(
           makeLine(
             [new Three.Vector3(0, -0.1, 0), new Three.Vector3(7.5, -0.1, 0)],
             0xffffff,
             0.1,
           ),
-        )
+        );
         const title = makeTextSprite("operator commands", {
           color: "#d1d5db",
           fontSize: 20,
           height: 80,
           width: 320,
-        })
-        title.position.set(0.78, 0.18, 0.2)
-        operatorGroup.add(title)
+        });
+        title.position.set(0.78, 0.18, 0.2);
+        operatorGroup.add(title);
 
         for (const [index, signal] of resolved.operatorSignals
           .slice(0, 6)
           .entries()) {
-          const x = 1.15 + index * 1.05
-          const color = colorForOperatorSignal(signal.state)
-          const ring = makeRing(0.095, color, 0.48)
-          ring.position.set(x, -0.1, 0.1)
-          operatorGroup.add(ring)
-          const dot = makeCircle(0.035, color, signal.state === "idle" ? 0.5 : 0.92)
-          dot.position.set(x, -0.1, 0.2)
-          operatorGroup.add(dot)
+          const x = 1.15 + index * 1.05;
+          const color = colorForOperatorSignal(signal.state);
+          const ring = makeRing(0.095, color, 0.48);
+          ring.position.set(x, -0.1, 0.1);
+          operatorGroup.add(ring);
+          const dot = makeCircle(
+            0.035,
+            color,
+            signal.state === "idle" ? 0.5 : 0.92,
+          );
+          dot.position.set(x, -0.1, 0.2);
+          operatorGroup.add(dot);
           const label = makeTextSprite(signal.label, {
             color: "#ffffff",
             fontSize: 16,
             height: 80,
             width: 220,
-          })
-          label.position.set(x, -0.31, 0.22)
-          operatorGroup.add(label)
+          });
+          label.position.set(x, -0.31, 0.22);
+          operatorGroup.add(label);
           const detail = makeTextSprite(signal.detail, {
             color: "#a3a3a3",
             fontSize: 14,
             height: 80,
             width: 260,
-          })
-          detail.position.set(x, -0.52, 0.22)
-          operatorGroup.add(detail)
+          });
+          detail.position.set(x, -0.52, 0.22);
+          operatorGroup.add(detail);
         }
-        root.add(operatorGroup)
+        root.add(operatorGroup);
       }
 
       if (resolved.promiseSignals.length > 0) {
-        const signalGroup = new Three.Group()
-        signalGroup.position.set(-4.45, -2.82, 0.48)
+        const signalGroup = new Three.Group();
+        signalGroup.position.set(-4.45, -2.82, 0.48);
         signalGroup.add(
           makeLine(
             [new Three.Vector3(0, 0.18, 0), new Three.Vector3(8.9, 0.18, 0)],
             0xffffff,
             0.12,
           ),
-        )
+        );
         const title = makeTextSprite("promise registry", {
           color: "#d1d5db",
           fontSize: 22,
           height: 80,
           width: 300,
-        })
-        title.position.set(0.72, 0.5, 0.2)
-        signalGroup.add(title)
+        });
+        title.position.set(0.72, 0.5, 0.2);
+        signalGroup.add(title);
 
         for (const [index, signal] of resolved.promiseSignals
           .slice(0, 7)
           .entries()) {
-          const x = 1.05 + index * 1.1
-          const color = colorForPromiseSignal(signal.state)
-          const ring = makeRing(0.11, color, 0.5)
-          ring.position.set(x, 0.18, 0.1)
-          signalGroup.add(ring)
-          const dot = makeCircle(0.04, color, 0.92)
-          dot.position.set(x, 0.18, 0.2)
-          signalGroup.add(dot)
+          const x = 1.05 + index * 1.1;
+          const color = colorForPromiseSignal(signal.state);
+          const ring = makeRing(0.11, color, 0.5);
+          ring.position.set(x, 0.18, 0.1);
+          signalGroup.add(ring);
+          const dot = makeCircle(0.04, color, 0.92);
+          dot.position.set(x, 0.18, 0.2);
+          signalGroup.add(dot);
           const label = makeTextSprite(signal.label, {
             color: "#ffffff",
             fontSize: 18,
             height: 80,
             width: 240,
-          })
-          label.position.set(x, -0.09, 0.22)
-          signalGroup.add(label)
+          });
+          label.position.set(x, -0.09, 0.22);
+          signalGroup.add(label);
           const detail = makeTextSprite(
             `${signal.state} / ${signal.blockerCount} blk / ${signal.evidenceRefCount} refs`,
             {
@@ -1728,11 +1859,11 @@ export const mountTrainingRunVisualization = (
               height: 80,
               width: 320,
             },
-          )
-          detail.position.set(x, -0.32, 0.22)
-          signalGroup.add(detail)
+          );
+          detail.position.set(x, -0.32, 0.22);
+          signalGroup.add(detail);
         }
-        root.add(signalGroup)
+        root.add(signalGroup);
       }
 
       // ---------------------------------------------------------------------
@@ -1741,59 +1872,57 @@ export const mountTrainingRunVisualization = (
       // ---------------------------------------------------------------------
       const entityPositions = resolveTrainingRunEntityPositions(
         resolved.entities,
-      )
+      );
       const entityClickTargets: Array<{
-        mesh: Three.Mesh<Three.CircleGeometry, Three.MeshBasicMaterial>
-        entity: TrainingRunEntityDefinition
-      }> = []
-      const entityLabels: Array<{ dispose: () => void }> = []
-      const flowBeams: Array<{ update: (deltaSeconds: number) => void }> = []
-      const beamDisposers: Array<() => void> = []
-      type BurstHandle = ReturnType<typeof createPayoutBurst>
+        mesh: Three.Mesh<Three.CircleGeometry, Three.MeshBasicMaterial>;
+        entity: TrainingRunEntityDefinition;
+      }> = [];
+      const entityLabels: Array<{ dispose: () => void }> = [];
+      const flowBeams: Array<{ update: (deltaSeconds: number) => void }> = [];
+      const beamDisposers: Array<() => void> = [];
+      type BurstHandle = ReturnType<typeof createPayoutBurst>;
       const burstSlots: Array<{
-        handle: BurstHandle
-        at: TrainingRunVector
-        seed: number
-      }> = []
-      let entityPool: ReturnType<typeof createEntityPool> | undefined
-      let entityPresence:
-        | ReturnType<typeof bindEntityPresence>
-        | undefined
+        handle: BurstHandle;
+        at: TrainingRunVector;
+        seed: number;
+      }> = [];
+      let entityPool: ReturnType<typeof createEntityPool> | undefined;
+      let entityPresence: ReturnType<typeof bindEntityPresence> | undefined;
 
       if (resolved.entities.length > 0) {
         const pool = createEntityPool({
           capacity: resolved.entities.length,
           geometry: new Three.CircleGeometry(0.085, 24),
           scale: 1,
-        })
-        pool.mesh.position.z = 0.36
-        root.add(pool.mesh)
-        entityPool = pool
+        });
+        pool.mesh.position.z = 0.36;
+        root.add(pool.mesh);
+        entityPool = pool;
 
         const presence = bindEntityPresence(pool, {
           interpolateMs: 0,
-          statusColor: status => colorForEntityStatus(status),
-        })
+          statusColor: (status) => colorForEntityStatus(status),
+        });
         presence.apply(
-          resolved.entities.map(entity => ({
+          resolved.entities.map((entity) => ({
             id: entity.id,
             position: entityPositions.get(entity.id) ?? [0, 0, 0],
             status: entity.status,
           })),
-        )
-        entityPresence = presence
+        );
+        entityPresence = presence;
 
         for (const entity of resolved.entities) {
-          const position = entityPositions.get(entity.id) ?? [0, 0, 0]
-          const color = colorForEntityStatus(entity.status)
-          const ring = makeRing(0.14, color, 0.42)
-          ring.position.set(position[0], position[1], position[2] - 0.02)
-          root.add(ring)
+          const position = entityPositions.get(entity.id) ?? [0, 0, 0];
+          const color = colorForEntityStatus(entity.status);
+          const ring = makeRing(0.14, color, 0.42);
+          ring.position.set(position[0], position[1], position[2] - 0.02);
+          root.add(ring);
 
-          const hitTarget = makeCircle(0.16, color, 0.001)
-          hitTarget.position.set(position[0], position[1], 0.7)
-          root.add(hitTarget)
-          entityClickTargets.push({ mesh: hitTarget, entity })
+          const hitTarget = makeCircle(0.16, color, 0.001);
+          hitTarget.position.set(position[0], position[1], 0.7);
+          root.add(hitTarget);
+          entityClickTargets.push({ mesh: hitTarget, entity });
 
           if (entity.label !== undefined) {
             const label = createTextLabel({
@@ -1803,17 +1932,18 @@ export const mountTrainingRunVisualization = (
               worldHeight: 0.2,
               position: [position[0], position[1] - 0.26, 0.55],
               billboard: false,
-            })
-            root.add(label.object3D)
-            entityLabels.push(label)
+            });
+            root.add(label.object3D);
+            entityLabels.push(label);
           }
         }
       }
 
       for (const beam of resolved.beams) {
-        const from = entityPositions.get(beam.fromId)
-        const to = entityPositions.get(beam.toId)
-        if (from === undefined || to === undefined) continue
+        if (!motionAllowedByPolicy(beam, resolved.motionPolicy)) continue;
+        const from = entityPositions.get(beam.fromId);
+        const to = entityPositions.get(beam.toId);
+        if (from === undefined || to === undefined) continue;
         const handle = createFlowBeam({
           from,
           to,
@@ -1822,11 +1952,11 @@ export const mountTrainingRunVisualization = (
           pulseCount: 3,
           bend: 0.18,
           opacity: 0.32,
-        })
-        handle.object3D.position.z = 0.34
-        root.add(handle.object3D)
-        flowBeams.push({ update: handle.update })
-        beamDisposers.push(handle.dispose)
+        });
+        handle.object3D.position.z = 0.34;
+        root.add(handle.object3D);
+        flowBeams.push({ update: handle.update });
+        beamDisposers.push(handle.dispose);
       }
 
       const makeBurst = (at: TrainingRunVector, seed: number): BurstHandle =>
@@ -1837,145 +1967,149 @@ export const mountTrainingRunVisualization = (
           duration: 1.1,
           spread: 0.7,
           seed,
-        })
+        });
 
       for (const [index, burst] of resolved.bursts.entries()) {
-        const at = entityPositions.get(burst.atId)
-        if (at === undefined) continue
-        const seed = index + 1
-        const handle = makeBurst(at, seed)
-        root.add(handle.object3D)
-        burstSlots.push({ handle, at, seed })
+        if (!motionAllowedByPolicy(burst, resolved.motionPolicy)) continue;
+        const at = entityPositions.get(burst.atId);
+        if (at === undefined) continue;
+        const seed = index + 1;
+        const handle = makeBurst(at, seed);
+        root.add(handle.object3D);
+        burstSlots.push({ handle, at, seed });
       }
 
       const selectionAtEvent = (
         event: PointerEvent,
       ): TrainingRunNodeSelection | undefined => {
-        const rect = canvas.getBoundingClientRect()
-        if (rect.width <= 0 || rect.height <= 0) return undefined
-        pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1
-        pointer.y = -(((event.clientY - rect.top) / rect.height) * 2 - 1)
-        raycaster.setFromCamera(pointer, camera)
+        const rect = canvas.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return undefined;
+        pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        pointer.y = -(((event.clientY - rect.top) / rect.height) * 2 - 1);
+        raycaster.setFromCamera(pointer, camera);
         const targets: Three.Object3D[] = [
-          ...clickTargets.map(target => target.mesh),
-          ...entityClickTargets.map(target => target.mesh),
-        ]
-        const hit = raycaster.intersectObjects(targets, false)[0]?.object
-        if (hit === undefined) return undefined
-        const node = clickTargets.find(target => target.mesh === hit)?.node
-        if (node !== undefined) return nodeSelection(node)
+          ...clickTargets.map((target) => target.mesh),
+          ...entityClickTargets.map((target) => target.mesh),
+        ];
+        const hit = raycaster.intersectObjects(targets, false)[0]?.object;
+        if (hit === undefined) return undefined;
+        const node = clickTargets.find((target) => target.mesh === hit)?.node;
+        if (node !== undefined) return nodeSelection(node);
         const entity = entityClickTargets.find(
-          target => target.mesh === hit,
-        )?.entity
+          (target) => target.mesh === hit,
+        )?.entity;
         return entity === undefined
           ? undefined
-          : trainingRunEntitySelection(entity)
-      }
+          : trainingRunEntitySelection(entity);
+      };
 
       const handlePointerMove = (event: PointerEvent) => {
         canvas.style.cursor =
-          selectionAtEvent(event) === undefined ? "default" : "pointer"
-      }
+          selectionAtEvent(event) === undefined ? "default" : "pointer";
+      };
 
       const handlePointerLeave = () => {
-        canvas.style.cursor = "default"
-      }
+        canvas.style.cursor = "default";
+      };
 
       const handlePointerDown = (event: PointerEvent) => {
-        const selection = selectionAtEvent(event)
-        if (selection === undefined) return
-        resolved.onNodeClick?.(selection)
-      }
+        const selection = selectionAtEvent(event);
+        if (selection === undefined) return;
+        resolved.onNodeClick?.(selection);
+      };
 
-      canvas.addEventListener("pointermove", handlePointerMove)
-      canvas.addEventListener("pointerleave", handlePointerLeave)
-      canvas.addEventListener("pointerdown", handlePointerDown)
+      canvas.addEventListener("pointermove", handlePointerMove);
+      canvas.addEventListener("pointerleave", handlePointerLeave);
+      canvas.addEventListener("pointerdown", handlePointerDown);
 
-      let disposed = false
-      let frame = 0
-      let lastTime = 0
+      let disposed = false;
+      let frame = 0;
+      let lastTime = 0;
 
       const resize = () => {
-        const { width, height } = hostSize(element)
-        renderer.setSize(width, height, false)
-        const aspect = width / height
-        const viewHeight = 6.25
-        camera.left = (-viewHeight * aspect) / 2
-        camera.right = (viewHeight * aspect) / 2
-        camera.top = viewHeight / 2
-        camera.bottom = -viewHeight / 2
-        camera.updateProjectionMatrix()
-      }
+        const { width, height } = hostSize(element);
+        renderer.setSize(width, height, false);
+        const aspect = width / height;
+        const viewHeight = 6.25;
+        camera.left = (-viewHeight * aspect) / 2;
+        camera.right = (viewHeight * aspect) / 2;
+        camera.top = viewHeight / 2;
+        camera.bottom = -viewHeight / 2;
+        camera.updateProjectionMatrix();
+      };
 
       const render = (time: number) => {
-        if (disposed) return
-        const delta = lastTime === 0 ? 0 : (time - lastTime) / 1000
-        lastTime = time
-        staleRing.rotation.z += delta * 0.18
-        contributorOrbitGroup.rotation.z -= delta * 0.025
-        contributorGroup.rotation.z += delta * 0.07
+        if (disposed) return;
+        const delta = lastTime === 0 ? 0 : (time - lastTime) / 1000;
+        lastTime = time;
+        if (animateAmbient) {
+          staleRing.rotation.z += delta * 0.18;
+          contributorOrbitGroup.rotation.z -= delta * 0.025;
+          contributorGroup.rotation.z += delta * 0.07;
+        }
         for (const flowLine of flowLines) {
           flowLine.line.material.scale =
-            0.92 + Math.sin(time * 0.0018 + flowLine.phase * Math.PI * 2) * 0.08
+            0.92 +
+            Math.sin(time * 0.0018 + flowLine.phase * Math.PI * 2) * 0.08;
         }
         for (const pulse of pulses) {
-          pulse.phase += delta * resolved.pulseSpeed
-          pulse.mesh.position.copy(pointOnPoints(pulse.points, pulse.phase))
-          pulse.mesh.position.z = 0.35
+          pulse.phase += delta * resolved.pulseSpeed;
+          pulse.mesh.position.copy(pointOnPoints(pulse.points, pulse.phase));
+          pulse.mesh.position.z = 0.35;
         }
         for (const beam of flowBeams) {
-          beam.update(delta)
+          beam.update(delta);
         }
         for (const slot of burstSlots) {
-          slot.handle.update(delta)
-          if (slot.handle.done()) {
+          slot.handle.update(delta);
+          if (resolved.motionPolicy.bursts === "loop" && slot.handle.done()) {
             // Re-arm the settlement burst so the pulse keeps marking the slot.
-            slot.handle.dispose()
-            const next = makeBurst(slot.at, slot.seed)
-            root.add(next.object3D)
-            slot.handle = next
+            slot.handle.dispose();
+            const next = makeBurst(slot.at, slot.seed);
+            root.add(next.object3D);
+            slot.handle = next;
           }
         }
-        renderer.render(scene, camera)
-        frame = requestAnimationFrame(render)
-      }
+        renderer.render(scene, camera);
+        frame = requestAnimationFrame(render);
+      };
 
       const observer =
         typeof ResizeObserver === "undefined"
           ? null
-          : new ResizeObserver(() => resize())
+          : new ResizeObserver(() => resize());
 
-      resize()
-      observer?.observe(element)
-      frame = requestAnimationFrame(render)
+      resize();
+      observer?.observe(element);
+      frame = requestAnimationFrame(render);
 
       const dispose = Effect.sync(() => {
-        if (disposed) return
-        disposed = true
-        cancelAnimationFrame(frame)
-        observer?.disconnect()
-        canvas.removeEventListener("pointermove", handlePointerMove)
-        canvas.removeEventListener("pointerleave", handlePointerLeave)
-        canvas.removeEventListener("pointerdown", handlePointerDown)
-        for (const label of entityLabels) label.dispose()
-        for (const slot of burstSlots) slot.handle.dispose()
-        for (const disposeBeam of beamDisposers) disposeBeam()
-        entityPresence?.dispose()
-        entityPool?.dispose()
-        disposeObject(scene)
-        renderer.dispose()
-        canvas.remove()
-      })
+        if (disposed) return;
+        disposed = true;
+        cancelAnimationFrame(frame);
+        observer?.disconnect();
+        canvas.removeEventListener("pointermove", handlePointerMove);
+        canvas.removeEventListener("pointerleave", handlePointerLeave);
+        canvas.removeEventListener("pointerdown", handlePointerDown);
+        for (const label of entityLabels) label.dispose();
+        for (const slot of burstSlots) slot.handle.dispose();
+        for (const disposeBeam of beamDisposers) disposeBeam();
+        entityPresence?.dispose();
+        entityPool?.dispose();
+        disposeObject(scene);
+        renderer.dispose();
+        canvas.remove();
+      });
 
       return {
         element,
         canvas,
         resize: Effect.sync(resize),
         dispose,
-      }
+      };
     },
-    catch: error =>
+    catch: (error) =>
       new TrainingRunMountError({
         reason: error instanceof Error ? error.message : String(error),
       }),
-  })
+  });
