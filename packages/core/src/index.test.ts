@@ -948,6 +948,7 @@ describe("training run visualization", () => {
       evidence: "optional",
       structuralEdges: "static",
     });
+    expect(resolved.stageNodeGlyph).toBe("orb");
   });
 
   test("resolves explicit motion policy overrides", () => {
@@ -965,6 +966,13 @@ describe("training run visualization", () => {
       evidence: "required",
       structuralEdges: "animated",
     });
+  });
+
+  test("supports compact aggregate stage glyphs for live scenes", () => {
+    const resolved = resolveTrainingRunVisualizationOptions({
+      stageNodeGlyph: "compact_gate",
+    });
+    expect(resolved.stageNodeGlyph).toBe("compact_gate");
   });
 
   test("recognizes evidence-bound motion source refs", () => {

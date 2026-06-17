@@ -170,6 +170,8 @@ export type TrainingRunMotionPolicy = Readonly<{
   bursts?: TrainingRunBurstPlayback;
 }>;
 
+export type TrainingRunStageNodeGlyph = "orb" | "compact_gate";
+
 export type TrainingRunEntitySelection = Pick<
   TrainingRunEntityDefinition,
   "id" | "label" | "position" | "status"
@@ -188,6 +190,8 @@ export type TrainingRunVisualizationOptions = Readonly<{
   beams?: readonly TrainingRunBeamDefinition[];
   bursts?: readonly TrainingRunBurstDefinition[];
   motionPolicy?: TrainingRunMotionPolicy;
+  /** Draw aggregate non-run stage nodes as compact gates instead of record orbs. */
+  stageNodeGlyph?: TrainingRunStageNodeGlyph;
   onNodeClick?: (node: TrainingRunNodeSelection) => void;
   pulseSpeed?: number;
 }>;
@@ -245,6 +249,7 @@ export type ResolvedTrainingRunVisualizationOptions = Readonly<{
   beams: readonly TrainingRunBeamDefinition[];
   bursts: readonly TrainingRunBurstDefinition[];
   motionPolicy: Required<TrainingRunMotionPolicy>;
+  stageNodeGlyph: TrainingRunStageNodeGlyph;
   onNodeClick?: (node: TrainingRunNodeSelection) => void;
   pulseSpeed: number;
 }>;
@@ -459,6 +464,7 @@ export const defaultTrainingRunVisualizationOptions: ResolvedTrainingRunVisualiz
       evidence: "optional",
       structuralEdges: "static",
     },
+    stageNodeGlyph: "orb",
     pulseSpeed: 0.17,
   };
 
@@ -492,6 +498,9 @@ export const resolveTrainingRunVisualizationOptions = (
     beams: options.beams ?? defaultTrainingRunVisualizationOptions.beams,
     bursts: options.bursts ?? defaultTrainingRunVisualizationOptions.bursts,
     motionPolicy: resolveTrainingRunMotionPolicy(options.motionPolicy),
+    stageNodeGlyph:
+      options.stageNodeGlyph ??
+      defaultTrainingRunVisualizationOptions.stageNodeGlyph,
   };
 
   return options.onNodeClick === undefined
@@ -1579,6 +1588,51 @@ export const mountTrainingRunVisualization = (
         const group = new Three.Group();
         const statusColor = colorForStatus(node.status);
         group.position.copy(vector(node.position));
+
+        const compactStageNode =
+          resolved.stageNodeGlyph === "compact_gate" && node.role !== "run";
+        if (compactStageNode) {
+          const hitTarget = makeCircle(0.34, statusColor, 0.001);
+          hitTarget.position.z = 0.62;
+          group.add(hitTarget);
+          clickTargets.push({ mesh: hitTarget, node });
+
+          group.add(
+            makeLine(
+              [
+                new Three.Vector3(-0.26, 0, 0.56),
+                new Three.Vector3(0.26, 0, 0.56),
+              ],
+              statusColor,
+              0.42,
+            ),
+          );
+          const marker =
+            node.status === "blocked"
+              ? makeRing(0.08, statusColor, 0.6)
+              : makeCircle(0.055, statusColor, 0.92);
+          marker.position.z = 0.62;
+          group.add(marker);
+
+          const label = makeTextSprite(node.label, {
+            color: "#ffffff",
+            fontSize: 21,
+            width: 336,
+          });
+          label.position.set(0, -0.18, 0.55);
+          group.add(label);
+
+          const detail = makeTextSprite(node.detail, {
+            color: "#a3a3a3",
+            fontSize: 16,
+            width: 384,
+          });
+          detail.position.set(0, -0.42, 0.55);
+          group.add(detail);
+
+          root.add(group);
+          continue;
+        }
 
         const radius =
           node.role === "run" ? 0.56 : node.role === "rung" ? 0.34 : 0.27;
