@@ -160,6 +160,9 @@ What shipped:
 - Smooth indefinite animation loop; the earlier three-second reset/flicker was
   replaced with continuous phase math.
 - Node selection custom event from the custom element to Foldkit.
+- Optional `cameraMode: "perspective_walk"` and
+  `controller: "wasd_mouselook"` options that reuse the same row-backed scene
+  data on a 2.5D ground plane.
 - Foldkit `trainingRunView` accepts:
   - attributes
   - visualization options
@@ -509,6 +512,26 @@ wrappers plus the local `Quick_3D_MMORPG` player input/entity/camera examples
 used as references. The implementation keeps the runtime contract small enough
 for downstream scenes such as the Tassadar run page to compose a 2.5D walk mode
 without forking parallel controller logic.
+
+## Follow-up pass: training run perspective walk mode (2026-06-17)
+
+`mountTrainingRunVisualization` now supports an additive `perspective_walk`
+camera mode. The default remains the original orthographic map, so existing
+consumers keep the same camera, layout, pointer selection, and animation
+behavior unless they explicitly pass the new options.
+
+When enabled, the training-run graph is rotated onto an X/Z ground plane,
+rendered with a `PerspectiveCamera`, and given a subtle floor grid for spatial
+reference. If `controller: "wasd_mouselook"` is also set, the scene mounts the
+shared `createWasdMouseLookController` handle, updates it inside the existing
+render loop, and uses center-reticle raycasting while pointer lock is active.
+Pointer-based selection remains active when pointer lock is inactive, and the
+selected node/entity event shape is unchanged.
+
+This pass deliberately does not add synthetic data motion. The added movement
+is camera/user interaction. Existing animated beams, bursts, or structural
+edge pulses are still controlled by the input `motionPolicy` and evidence
+rules already present in the visualization options.
 
 ### `helperPrimitives.ts`
 

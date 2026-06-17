@@ -949,6 +949,8 @@ describe("training run visualization", () => {
 
   test("keeps anonymous training-run motion disabled by default", () => {
     const resolved = resolveTrainingRunVisualizationOptions();
+    expect(resolved.cameraMode).toBe("orthographic_map");
+    expect(resolved.controller).toBe("none");
     expect(resolved.motionPolicy).toEqual({
       ambient: "static",
       bursts: "once",
@@ -962,6 +964,43 @@ describe("training run visualization", () => {
       statusChart: "visible",
     });
     expect(resolved.stageNodeGlyph).toBe("orb");
+    expect(resolved.walkController).toEqual({});
+  });
+
+  test("resolves perspective walk controller options", () => {
+    const groundHeightAt = (x: number, z: number) => (x + z) * 0.01;
+    const onLockChange = () => {};
+    const resolved = resolveTrainingRunVisualizationOptions({
+      cameraMode: "perspective_walk",
+      controller: "wasd_mouselook",
+      walkController: {
+        bounds: {
+          maxX: 2,
+          maxZ: 4,
+          minX: -2,
+          minZ: -4,
+        },
+        groundHeightAt,
+        lockSelector: "[data-enter-world]",
+        movementSpeed: 2.5,
+        onLockChange,
+      },
+    });
+
+    expect(resolved.cameraMode).toBe("perspective_walk");
+    expect(resolved.controller).toBe("wasd_mouselook");
+    expect(resolved.walkController).toMatchObject({
+      bounds: {
+        maxX: 2,
+        maxZ: 4,
+        minX: -2,
+        minZ: -4,
+      },
+      lockSelector: "[data-enter-world]",
+      movementSpeed: 2.5,
+    });
+    expect(resolved.walkController.groundHeightAt).toBe(groundHeightAt);
+    expect(resolved.walkController.onLockChange).toBe(onLockChange);
   });
 
   test("resolves explicit motion policy overrides", () => {

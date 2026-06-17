@@ -207,6 +207,11 @@ open examples/moksha/index.html
 The tracked visual smoke for the Training scene lives at
 `examples/training-run/`. It exercises the lifecycle graph, live run snapshot,
 promise-registry signals, and operator-command signals in one dark canvas.
+The default view remains the orthographic map. Scenes can opt into
+`cameraMode: "perspective_walk"` and `controller: "wasd_mouselook"` to place
+the same graph on a shallow 2.5D ground plane with a PerspectiveCamera,
+pointer-lock mouselook, WASD movement, and center-reticle selection while
+pointer lock is active.
 The latest 2D/dataviz pass pulls in local reference ideas from:
 
 - `projects/repos/examples/demos/bezier-curves-and-nodes/src/Nodes.jsx`

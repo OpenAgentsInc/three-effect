@@ -3,6 +3,11 @@ import * as Three from "three";
 
 import { createEntityPool } from "./entityPoolPrimitives";
 import { createFlowBeam, createPayoutBurst } from "./flowEffectPrimitives";
+import {
+  createWasdMouseLookController,
+  type WasdMouseLookControllerHandle,
+  type WasdMouseLookControllerOptions,
+} from "./playerControllerPrimitives";
 import { bindEntityPresence } from "./presenceBindingPrimitives";
 import { createTextLabel } from "./textLabelPrimitives";
 
@@ -185,6 +190,10 @@ export type TrainingRunSceneChrome = Readonly<{
   statusChart?: TrainingRunSceneChromeVisibility;
 }>;
 
+export type TrainingRunCameraMode = "orthographic_map" | "perspective_walk";
+
+export type TrainingRunControllerMode = "none" | "wasd_mouselook";
+
 export type TrainingRunEntitySelection = Pick<
   TrainingRunEntityDefinition,
   "id" | "label" | "position" | "status"
@@ -192,6 +201,8 @@ export type TrainingRunEntitySelection = Pick<
 
 export type TrainingRunVisualizationOptions = Readonly<{
   backgroundColor?: number;
+  cameraMode?: TrainingRunCameraMode;
+  controller?: TrainingRunControllerMode;
   pixelRatio?: number;
   maxAllowedStaleSteps?: number;
   nodes?: readonly TrainingRunNodeDefinition[];
@@ -207,6 +218,7 @@ export type TrainingRunVisualizationOptions = Readonly<{
   stageNodeGlyph?: TrainingRunStageNodeGlyph;
   /** Toggle auxiliary analytical chrome around the primary scene nodes. */
   sceneChrome?: TrainingRunSceneChrome;
+  walkController?: WasdMouseLookControllerOptions;
   onNodeClick?: (node: TrainingRunNodeSelection) => void;
   pulseSpeed?: number;
 }>;
@@ -253,6 +265,8 @@ export type TrainingRunVisualizationSnapshot = Readonly<{
 
 export type ResolvedTrainingRunVisualizationOptions = Readonly<{
   backgroundColor: number;
+  cameraMode: TrainingRunCameraMode;
+  controller: TrainingRunControllerMode;
   pixelRatio: number;
   maxAllowedStaleSteps: number;
   nodes: readonly TrainingRunNodeDefinition[];
@@ -266,6 +280,7 @@ export type ResolvedTrainingRunVisualizationOptions = Readonly<{
   motionPolicy: Required<TrainingRunMotionPolicy>;
   stageNodeGlyph: TrainingRunStageNodeGlyph;
   sceneChrome: Required<TrainingRunSceneChrome>;
+  walkController: WasdMouseLookControllerOptions;
   onNodeClick?: (node: TrainingRunNodeSelection) => void;
   pulseSpeed: number;
 }>;
@@ -464,6 +479,8 @@ export const pmndrsTrainingDatavizSourceRefs = [
 export const defaultTrainingRunVisualizationOptions: ResolvedTrainingRunVisualizationOptions =
   {
     backgroundColor: 0x050505,
+    cameraMode: "orthographic_map",
+    controller: "none",
     pixelRatio: 2,
     maxAllowedStaleSteps: 5,
     nodes: defaultTrainingRunNodes,
@@ -487,6 +504,7 @@ export const defaultTrainingRunVisualizationOptions: ResolvedTrainingRunVisualiz
       staleRing: "visible",
       statusChart: "visible",
     },
+    walkController: {},
     pulseSpeed: 0.17,
   };
 
@@ -531,6 +549,10 @@ export const resolveTrainingRunVisualizationOptions = (
       options.stageNodeGlyph ??
       defaultTrainingRunVisualizationOptions.stageNodeGlyph,
     sceneChrome: resolveTrainingRunSceneChrome(options.sceneChrome),
+    walkController: {
+      ...defaultTrainingRunVisualizationOptions.walkController,
+      ...(options.walkController ?? {}),
+    },
   };
 
   return options.onNodeClick === undefined
@@ -1239,6 +1261,52 @@ const makeLine = (
     }),
   );
 
+const makePerspectiveFloorGrid = (): Three.Group => {
+  const group = new Three.Group();
+  for (let x = -6; x <= 6; x += 1) {
+    group.add(
+      makeLine(
+        [new Three.Vector3(x, -0.24, -4), new Three.Vector3(x, -0.24, 4)],
+        0xffffff,
+        x === 0 ? 0.1 : 0.035,
+      ),
+    );
+  }
+  for (let z = -4; z <= 4; z += 1) {
+    group.add(
+      makeLine(
+        [new Three.Vector3(-6, -0.24, z), new Three.Vector3(6, -0.24, z)],
+        0xffffff,
+        z === 0 ? 0.1 : 0.035,
+      ),
+    );
+  }
+  return group;
+};
+
+const makeCenterReticle = (): Three.Group => {
+  const group = new Three.Group();
+  group.position.set(0, 0, -1);
+  group.visible = false;
+  const horizontal = makeLine(
+    [new Three.Vector3(-0.015, 0, 0), new Three.Vector3(0.015, 0, 0)],
+    0xffffff,
+    0.42,
+  );
+  const vertical = makeLine(
+    [new Three.Vector3(0, -0.015, 0), new Three.Vector3(0, 0.015, 0)],
+    0xffffff,
+    0.42,
+  );
+  horizontal.material.depthTest = false;
+  vertical.material.depthTest = false;
+  horizontal.renderOrder = 10;
+  vertical.renderOrder = 10;
+  group.add(horizontal);
+  group.add(vertical);
+  return group;
+};
+
 const makeDashedLine = (
   points: readonly Three.Vector3[],
   color: number,
@@ -1482,6 +1550,7 @@ export const mountTrainingRunVisualization = (
         (resolved.sceneChrome.lossPanel === "auto" &&
           resolved.lossCurve.length > 1);
       const showStatusChart = resolved.sceneChrome.statusChart === "visible";
+      const perspectiveWalk = resolved.cameraMode === "perspective_walk";
       const canvas = document.createElement("canvas");
       canvas.style.display = "block";
       canvas.style.width = "100%";
@@ -1499,11 +1568,23 @@ export const mountTrainingRunVisualization = (
       );
 
       const scene = new Three.Scene();
-      const camera = new Three.OrthographicCamera(-5, 5, 3, -3, 0.1, 100);
-      camera.position.set(0, 0, 10);
-      camera.lookAt(0, 0, 0);
+      const camera = perspectiveWalk
+        ? new Three.PerspectiveCamera(62, 1, 0.05, 120)
+        : new Three.OrthographicCamera(-5, 5, 3, -3, 0.1, 100);
+      if (camera instanceof Three.PerspectiveCamera) {
+        camera.position.set(0, 1.65, 6.25);
+        camera.lookAt(0, 0.35, 0);
+        scene.add(camera);
+      } else {
+        camera.position.set(0, 0, 10);
+        camera.lookAt(0, 0, 0);
+      }
 
       const root = new Three.Group();
+      if (perspectiveWalk) {
+        root.rotation.x = -Math.PI / 2;
+        scene.add(makePerspectiveFloorGrid());
+      }
       scene.add(root);
       const raycaster = new Three.Raycaster();
       const pointer = new Three.Vector2();
@@ -2083,13 +2164,52 @@ export const mountTrainingRunVisualization = (
         burstSlots.push({ handle, at, seed });
       }
 
-      const selectionAtEvent = (
-        event: PointerEvent,
+      let walkController: WasdMouseLookControllerHandle | undefined;
+      const centerReticle =
+        perspectiveWalk && camera instanceof Three.PerspectiveCamera
+          ? makeCenterReticle()
+          : undefined;
+      if (centerReticle !== undefined) camera.add(centerReticle);
+      if (
+        perspectiveWalk &&
+        resolved.controller === "wasd_mouselook" &&
+        camera instanceof Three.PerspectiveCamera
+      ) {
+        const onLockChange = resolved.walkController.onLockChange;
+        walkController = Effect.runSync(
+          createWasdMouseLookController(camera, canvas, {
+            initialPosition: [0, 1.65, 6.25],
+            bounds: {
+              minX: -6,
+              maxX: 6,
+              minZ: -4.5,
+              maxZ: 5.2,
+            },
+            ...resolved.walkController,
+            onLockChange: (locked) => {
+              canvas.style.cursor = locked ? "none" : "default";
+              if (centerReticle !== undefined) centerReticle.visible = locked;
+              onLockChange?.(locked);
+            },
+          }),
+        );
+      }
+
+      const pointerLockActive = (): boolean =>
+        walkController?.controls.isLocked === true;
+
+      const selectionAtPointer = (
+        event?: PointerEvent,
       ): TrainingRunNodeSelection | undefined => {
-        const rect = canvas.getBoundingClientRect();
-        if (rect.width <= 0 || rect.height <= 0) return undefined;
-        pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-        pointer.y = -(((event.clientY - rect.top) / rect.height) * 2 - 1);
+        if (pointerLockActive()) {
+          pointer.set(0, 0);
+        } else {
+          if (event === undefined) return undefined;
+          const rect = canvas.getBoundingClientRect();
+          if (rect.width <= 0 || rect.height <= 0) return undefined;
+          pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+          pointer.y = -(((event.clientY - rect.top) / rect.height) * 2 - 1);
+        }
         raycaster.setFromCamera(pointer, camera);
         const targets: Three.Object3D[] = [
           ...clickTargets.map((target) => target.mesh),
@@ -2108,8 +2228,12 @@ export const mountTrainingRunVisualization = (
       };
 
       const handlePointerMove = (event: PointerEvent) => {
+        if (pointerLockActive()) {
+          canvas.style.cursor = "none";
+          return;
+        }
         canvas.style.cursor =
-          selectionAtEvent(event) === undefined ? "default" : "pointer";
+          selectionAtPointer(event) === undefined ? "default" : "pointer";
       };
 
       const handlePointerLeave = () => {
@@ -2117,7 +2241,7 @@ export const mountTrainingRunVisualization = (
       };
 
       const handlePointerDown = (event: PointerEvent) => {
-        const selection = selectionAtEvent(event);
+        const selection = selectionAtPointer(event);
         if (selection === undefined) return;
         resolved.onNodeClick?.(selection);
       };
@@ -2134,11 +2258,15 @@ export const mountTrainingRunVisualization = (
         const { width, height } = hostSize(element);
         renderer.setSize(width, height, false);
         const aspect = width / height;
-        const viewHeight = 6.25;
-        camera.left = (-viewHeight * aspect) / 2;
-        camera.right = (viewHeight * aspect) / 2;
-        camera.top = viewHeight / 2;
-        camera.bottom = -viewHeight / 2;
+        if (camera instanceof Three.PerspectiveCamera) {
+          camera.aspect = aspect;
+        } else {
+          const viewHeight = 6.25;
+          camera.left = (-viewHeight * aspect) / 2;
+          camera.right = (viewHeight * aspect) / 2;
+          camera.top = viewHeight / 2;
+          camera.bottom = -viewHeight / 2;
+        }
         camera.updateProjectionMatrix();
       };
 
@@ -2176,6 +2304,12 @@ export const mountTrainingRunVisualization = (
             slot.handle = next;
           }
         }
+        if (walkController !== undefined) {
+          Effect.runSync(walkController.update(delta));
+          if (centerReticle !== undefined) {
+            centerReticle.visible = walkController.controls.isLocked;
+          }
+        }
         renderer.render(scene, camera);
         frame = requestAnimationFrame(render);
       };
@@ -2197,6 +2331,9 @@ export const mountTrainingRunVisualization = (
         canvas.removeEventListener("pointermove", handlePointerMove);
         canvas.removeEventListener("pointerleave", handlePointerLeave);
         canvas.removeEventListener("pointerdown", handlePointerDown);
+        if (walkController !== undefined) {
+          Effect.runSync(walkController.dispose);
+        }
         for (const label of entityLabels) label.dispose();
         for (const slot of burstSlots) slot.handle.dispose();
         for (const disposeBeam of beamDisposers) disposeBeam();
