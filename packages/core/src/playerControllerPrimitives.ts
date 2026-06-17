@@ -35,7 +35,13 @@ export type WasdKeyboardState = Readonly<Record<WasdAction, boolean>>;
 export type MutableWasdKeyboardState = Record<WasdAction, boolean>;
 
 export type WasdMouseLookDebugSnapshot = Readonly<{
-  event: "lock" | "lock_error" | "unlock" | "mousemove";
+  event:
+    | "lock"
+    | "lock_error"
+    | "unlock"
+    | "mousemove"
+    | "pointermove"
+    | "pointerrawupdate";
   applied: boolean;
   locked: boolean;
   movementX: number;
@@ -243,7 +249,7 @@ const pointerLockActive = (
   controls: PointerLockControls,
   domElement: HTMLElement,
 ): boolean =>
-  controls.isLocked || domElement.ownerDocument.pointerLockElement === domElement;
+  controls.isLocked || domElement.ownerDocument.pointerLockElement !== null;
 
 export const wasdDesiredDirection = (
   camera: Three.Camera,
@@ -339,6 +345,9 @@ export const createWasdMouseLookController = (
       const lastCameraQuaternion = camera.quaternion.clone();
       let debugEventCount = 0;
       let lastUnlockAt = 0;
+      let lastAppliedMotionStamp = Number.NaN;
+      let lastAppliedMotionX = 0;
+      let lastAppliedMotionY = 0;
       let disposed = false;
 
       const removers: Array<() => void> = [];
@@ -350,13 +359,15 @@ export const createWasdMouseLookController = (
         movementY: number,
         applied: boolean,
         reason?: string,
+        locked?: boolean,
       ) => {
         if (resolved.debug === false) return;
         const [yaw, pitch] = cameraYawPitch(camera);
         const snapshot: WasdMouseLookDebugSnapshot = {
           event,
           applied,
-          locked: pointerLockActive(pointerLockHandle.controls, domElement),
+          locked:
+            locked ?? pointerLockActive(pointerLockHandle.controls, domElement),
           movementX,
           movementY,
           pitch,
@@ -368,12 +379,16 @@ export const createWasdMouseLookController = (
           resolved.debug(snapshot);
         } else if (typeof console !== "undefined") {
           debugEventCount += 1;
+          const motionEvent =
+            event === "mousemove" ||
+            event === "pointermove" ||
+            event === "pointerrawupdate";
           if (
-            event !== "mousemove" ||
+            !motionEvent ||
             debugEventCount <= 40 ||
             debugEventCount % 60 === 0
           ) {
-            console.info("[three-effect:wasd_mouselook]", snapshot);
+            console.warn("[three-effect:wasd_mouselook]", snapshot);
           }
         }
       };
@@ -395,7 +410,13 @@ export const createWasdMouseLookController = (
         keyTarget.removeEventListener("keyup", onKeyUp as EventListener);
       });
 
-      const onMouseLook = (event: MouseEvent | PointerEvent) => {
+      const applyMotionEvent = (
+        event: MouseEvent | PointerEvent,
+        eventName: Extract<
+          WasdMouseLookDebugSnapshot["event"],
+          "mousemove" | "pointermove" | "pointerrawupdate"
+        >,
+      ) => {
         if (
           !resolved.enabled ||
           !pointerLockActive(pointerLockHandle.controls, domElement)
@@ -403,24 +424,45 @@ export const createWasdMouseLookController = (
           return;
         }
         const [movementX, movementY] = wasdMouseMovementFromEvent(event);
+        if (
+          event.timeStamp === lastAppliedMotionStamp &&
+          movementX === lastAppliedMotionX &&
+          movementY === lastAppliedMotionY
+        ) {
+          emitDebug(eventName, "fallback", movementX, movementY, false);
+          return;
+        }
+        lastAppliedMotionStamp = event.timeStamp;
+        lastAppliedMotionX = movementX;
+        lastAppliedMotionY = movementY;
         if (movementX === 0 && movementY === 0) {
-          emitDebug("mousemove", "controller", movementX, movementY, false);
+          emitDebug(eventName, "controller", movementX, movementY, false);
           return;
         }
         event.preventDefault();
         applyMouseLookDelta(camera, movementX, movementY, resolved);
         lastCameraQuaternion.copy(camera.quaternion);
-        emitDebug("mousemove", "controller", movementX, movementY, true);
+        emitDebug(eventName, "controller", movementX, movementY, true);
       };
-      domElement.ownerDocument.addEventListener("mousemove", onMouseLook, {
-        capture: true,
-        passive: false,
-      });
-      removers.push(() => {
-        domElement.ownerDocument.removeEventListener("mousemove", onMouseLook, {
+      const addMotionEvent = (
+        type: "mousemove" | "pointermove" | "pointerrawupdate",
+      ) => {
+        const listener = (event: Event) => {
+          applyMotionEvent(event as MouseEvent | PointerEvent, type);
+        };
+        domElement.ownerDocument.addEventListener(type, listener, {
           capture: true,
+          passive: false,
         });
-      });
+        removers.push(() => {
+          domElement.ownerDocument.removeEventListener(type, listener, {
+            capture: true,
+          });
+        });
+      };
+      addMotionEvent("mousemove");
+      addMotionEvent("pointermove");
+      addMotionEvent("pointerrawupdate");
 
       const requestLock = () => {
         if (
@@ -432,14 +474,7 @@ export const createWasdMouseLookController = (
         const now =
           typeof performance === "undefined" ? Date.now() : performance.now();
         if (lastUnlockAt > 0 && now - lastUnlockAt < 300) {
-          emitDebug(
-            "lock_error",
-            "state",
-            0,
-            0,
-            false,
-            "reenter-cooldown",
-          );
+          emitDebug("lock_error", "state", 0, 0, false, "reenter-cooldown");
           return;
         }
         try {
@@ -486,25 +521,23 @@ export const createWasdMouseLookController = (
         }
       }
 
-      if (resolved.onLockChange !== undefined) {
-        const onLock = () => {
-          lastCameraQuaternion.copy(camera.quaternion);
-          emitDebug("lock", "state", 0, 0, false);
-          resolved.onLockChange?.(true);
-        };
-        const onUnlock = () => {
-          lastUnlockAt =
-            typeof performance === "undefined" ? Date.now() : performance.now();
-          emitDebug("unlock", "state", 0, 0, false);
-          resolved.onLockChange?.(false);
-        };
-        pointerLockHandle.controls.addEventListener("lock", onLock);
-        pointerLockHandle.controls.addEventListener("unlock", onUnlock);
-        removers.push(() => {
-          pointerLockHandle.controls.removeEventListener("lock", onLock);
-          pointerLockHandle.controls.removeEventListener("unlock", onUnlock);
-        });
-      }
+      const onLock = () => {
+        lastCameraQuaternion.copy(camera.quaternion);
+        emitDebug("lock", "state", 0, 0, false, undefined, true);
+        resolved.onLockChange?.(true);
+      };
+      const onUnlock = () => {
+        lastUnlockAt =
+          typeof performance === "undefined" ? Date.now() : performance.now();
+        emitDebug("unlock", "state", 0, 0, false, undefined, false);
+        resolved.onLockChange?.(false);
+      };
+      pointerLockHandle.controls.addEventListener("lock", onLock);
+      pointerLockHandle.controls.addEventListener("unlock", onUnlock);
+      removers.push(() => {
+        pointerLockHandle.controls.removeEventListener("lock", onLock);
+        pointerLockHandle.controls.removeEventListener("unlock", onUnlock);
+      });
 
       return {
         controls: pointerLockHandle.controls,
