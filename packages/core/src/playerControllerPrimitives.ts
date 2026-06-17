@@ -9,6 +9,7 @@ export const pmndrsPlayerControllerPrimitiveSourceRefs = [
   "projects/repos/drei/src/web/KeyboardControls.tsx",
   "projects/repos/Quick_3D_MMORPG/client/src/player-input.js",
   "projects/repos/Quick_3D_MMORPG/client/src/player-entity.js",
+  "projects/repos/Quick_3D_MMORPG/client/src/player-state.js",
   "projects/repos/Quick_3D_MMORPG/client/src/third-person-camera.js",
 ] as const;
 
@@ -57,6 +58,81 @@ export type WasdMovementBounds = Readonly<{
   maxX: number;
   minZ: number;
   maxZ: number;
+}>;
+
+export type ThirdPersonCameraTarget = Readonly<{
+  position: Three.Vector3;
+  quaternion: Three.Quaternion;
+}>;
+
+export type ThirdPersonFollowCameraOptions = Readonly<{
+  offset?: readonly [number, number, number];
+  lookAtOffset?: readonly [number, number, number];
+  smoothing?: number;
+  minGroundClearance?: number;
+  groundHeightAt?: (x: number, z: number) => number;
+}>;
+
+export type ResolvedThirdPersonFollowCameraOptions = Readonly<{
+  offset: readonly [number, number, number];
+  lookAtOffset: readonly [number, number, number];
+  smoothing: number;
+  minGroundClearance: number;
+  groundHeightAt: (x: number, z: number) => number;
+}>;
+
+export type ThirdPersonFollowCameraState = Readonly<{
+  currentPosition: Three.Vector3;
+  currentLookAt: Three.Vector3;
+}>;
+
+export type ThirdPersonFollowCameraHandle = Readonly<{
+  state: ThirdPersonFollowCameraState;
+  update: (delta: number) => Effect.Effect<void>;
+  snap: Effect.Effect<void>;
+}>;
+
+export type MmorpgCharacterAction = "idle" | "run" | "walk";
+
+export type MmorpgCharacterForwardAxis = "negativeZ" | "positiveZ";
+
+export type MmorpgCharacterControllerState = {
+  action: MmorpgCharacterAction;
+  velocity: Three.Vector3;
+};
+
+export type MmorpgCharacterControllerOptions = Readonly<{
+  acceleration?: number;
+  damping?: number;
+  walkSpeed?: number;
+  runSpeed?: number;
+  backwardSpeedMultiplier?: number;
+  turnSpeed?: number;
+  forwardAxis?: MmorpgCharacterForwardAxis;
+  bounds?: WasdMovementBounds;
+  groundHeightAt?: (x: number, z: number) => number;
+  canMoveTo?: (next: Three.Vector3, previous: Three.Vector3) => boolean;
+}>;
+
+export type ResolvedMmorpgCharacterControllerOptions = Readonly<{
+  acceleration: number;
+  damping: number;
+  walkSpeed: number;
+  runSpeed: number;
+  backwardSpeedMultiplier: number;
+  turnSpeed: number;
+  forwardAxis: MmorpgCharacterForwardAxis;
+  bounds?: WasdMovementBounds;
+  groundHeightAt: (x: number, z: number) => number;
+  canMoveTo: (next: Three.Vector3, previous: Three.Vector3) => boolean;
+}>;
+
+export type MmorpgCharacterControllerSnapshot = Readonly<{
+  action: MmorpgCharacterAction;
+  blocked: boolean;
+  position: Three.Vector3;
+  quaternion: Three.Quaternion;
+  velocity: Three.Vector3;
 }>;
 
 export type WasdMouseLookControllerOptions = Readonly<{
@@ -137,6 +213,28 @@ export const defaultWasdMouseLookControllerOptions = (
   groundHeightAt: () => 0,
 });
 
+export const defaultThirdPersonFollowCameraOptions: ResolvedThirdPersonFollowCameraOptions =
+  {
+    offset: [0, 3.2, 6.2],
+    lookAtOffset: [0, 1.25, -2.2],
+    smoothing: 0.01,
+    minGroundClearance: 1.25,
+    groundHeightAt: () => Number.NEGATIVE_INFINITY,
+  };
+
+export const defaultMmorpgCharacterControllerOptions: ResolvedMmorpgCharacterControllerOptions =
+  {
+    acceleration: 18,
+    damping: 14,
+    walkSpeed: 3.8,
+    runSpeed: 7.2,
+    backwardSpeedMultiplier: 0.55,
+    turnSpeed: Math.PI * 2.2,
+    forwardAxis: "negativeZ",
+    groundHeightAt: () => 0,
+    canMoveTo: () => true,
+  };
+
 export const resolveWasdMouseLookControllerOptions = (
   inputTarget: HTMLElement | Window,
   options: WasdMouseLookControllerOptions = {},
@@ -147,6 +245,31 @@ export const resolveWasdMouseLookControllerOptions = (
   groundHeightAt:
     options.groundHeightAt ??
     defaultWasdMouseLookControllerOptions(inputTarget).groundHeightAt,
+});
+
+export const resolveThirdPersonFollowCameraOptions = (
+  options: ThirdPersonFollowCameraOptions = {},
+): ResolvedThirdPersonFollowCameraOptions => ({
+  ...defaultThirdPersonFollowCameraOptions,
+  ...options,
+  offset: options.offset ?? defaultThirdPersonFollowCameraOptions.offset,
+  lookAtOffset:
+    options.lookAtOffset ?? defaultThirdPersonFollowCameraOptions.lookAtOffset,
+  groundHeightAt:
+    options.groundHeightAt ??
+    defaultThirdPersonFollowCameraOptions.groundHeightAt,
+});
+
+export const resolveMmorpgCharacterControllerOptions = (
+  options: MmorpgCharacterControllerOptions = {},
+): ResolvedMmorpgCharacterControllerOptions => ({
+  ...defaultMmorpgCharacterControllerOptions,
+  ...options,
+  groundHeightAt:
+    options.groundHeightAt ??
+    defaultMmorpgCharacterControllerOptions.groundHeightAt,
+  canMoveTo:
+    options.canMoveTo ?? defaultMmorpgCharacterControllerOptions.canMoveTo,
 });
 
 export const keyCodeToWasdAction = (code: string): WasdAction | undefined => {
@@ -200,6 +323,13 @@ export const setWasdKeyState = (
 
 const yawForward = new Three.Vector3();
 const yawRight = new Three.Vector3();
+const thirdPersonOffset = new Three.Vector3();
+const thirdPersonLookAt = new Three.Vector3();
+const characterForward = new Three.Vector3();
+const characterNextPosition = new Three.Vector3();
+const characterPreviousPosition = new Three.Vector3();
+const characterTurnAxis = new Three.Vector3(0, 1, 0);
+const characterTurnDelta = new Three.Quaternion();
 const mouseLookEuler = new Three.Euler(0, 0, 0, "YXZ");
 
 export const wasdMouseMovementFromEvent = (
@@ -282,6 +412,196 @@ export const clampWasdPosition = (
   position.x = Three.MathUtils.clamp(position.x, bounds.minX, bounds.maxX);
   position.z = Three.MathUtils.clamp(position.z, bounds.minZ, bounds.maxZ);
   return position;
+};
+
+export const thirdPersonIdealOffset = (
+  target: ThirdPersonCameraTarget,
+  options: ResolvedThirdPersonFollowCameraOptions,
+): Three.Vector3 => {
+  thirdPersonOffset
+    .set(options.offset[0], options.offset[1], options.offset[2])
+    .applyQuaternion(target.quaternion)
+    .add(target.position);
+  thirdPersonOffset.y = Math.max(
+    thirdPersonOffset.y,
+    options.groundHeightAt(thirdPersonOffset.x, thirdPersonOffset.z) +
+      options.minGroundClearance,
+  );
+  return thirdPersonOffset.clone();
+};
+
+export const thirdPersonIdealLookAt = (
+  target: ThirdPersonCameraTarget,
+  options: ResolvedThirdPersonFollowCameraOptions,
+): Three.Vector3 => {
+  thirdPersonLookAt
+    .set(
+      options.lookAtOffset[0],
+      options.lookAtOffset[1],
+      options.lookAtOffset[2],
+    )
+    .applyQuaternion(target.quaternion)
+    .add(target.position);
+  return thirdPersonLookAt.clone();
+};
+
+export const thirdPersonFollowSmoothingFactor = (
+  delta: number,
+  smoothing: number,
+): number => 1 - Math.pow(Three.MathUtils.clamp(smoothing, 0.0001, 1), delta);
+
+export const createThirdPersonFollowCameraState = (
+  camera: Three.Camera,
+  target: ThirdPersonCameraTarget,
+  options: ThirdPersonFollowCameraOptions = {},
+): ThirdPersonFollowCameraState => {
+  const resolved = resolveThirdPersonFollowCameraOptions(options);
+  const currentPosition = thirdPersonIdealOffset(target, resolved);
+  const currentLookAt = thirdPersonIdealLookAt(target, resolved);
+  camera.position.copy(currentPosition);
+  camera.lookAt(currentLookAt);
+  camera.updateMatrixWorld();
+  return { currentLookAt, currentPosition };
+};
+
+export const updateThirdPersonFollowCamera = (
+  camera: Three.Camera,
+  target: ThirdPersonCameraTarget,
+  state: ThirdPersonFollowCameraState,
+  delta: number,
+  options: ThirdPersonFollowCameraOptions = {},
+): ThirdPersonFollowCameraState => {
+  const resolved = resolveThirdPersonFollowCameraOptions(options);
+  const factor = thirdPersonFollowSmoothingFactor(delta, resolved.smoothing);
+  state.currentPosition.lerp(thirdPersonIdealOffset(target, resolved), factor);
+  state.currentLookAt.lerp(thirdPersonIdealLookAt(target, resolved), factor);
+  camera.position.copy(state.currentPosition);
+  camera.lookAt(state.currentLookAt);
+  camera.updateMatrixWorld();
+  return state;
+};
+
+export const createThirdPersonFollowCamera = (
+  camera: Three.Camera,
+  target: ThirdPersonCameraTarget,
+  options: ThirdPersonFollowCameraOptions = {},
+): ThirdPersonFollowCameraHandle => {
+  const resolved = resolveThirdPersonFollowCameraOptions(options);
+  const state = createThirdPersonFollowCameraState(camera, target, resolved);
+  const snap = Effect.sync(() => {
+    state.currentPosition.copy(thirdPersonIdealOffset(target, resolved));
+    state.currentLookAt.copy(thirdPersonIdealLookAt(target, resolved));
+    camera.position.copy(state.currentPosition);
+    camera.lookAt(state.currentLookAt);
+    camera.updateMatrixWorld();
+  });
+  return {
+    state,
+    snap,
+    update: (delta: number) =>
+      Effect.sync(() => {
+        updateThirdPersonFollowCamera(camera, target, state, delta, resolved);
+      }),
+  };
+};
+
+export const defaultMmorpgCharacterControllerState =
+  (): MmorpgCharacterControllerState => ({
+    action: "idle",
+    velocity: new Three.Vector3(),
+  });
+
+export const mmorpgCharacterActionForKeyboard = (
+  keyboard: WasdKeyboardState,
+): MmorpgCharacterAction => {
+  if (!keyboard.forward && !keyboard.backward) return "idle";
+  return keyboard.sprint && keyboard.forward ? "run" : "walk";
+};
+
+export const mmorpgCharacterForwardDirection = (
+  object: Three.Object3D,
+  axis: MmorpgCharacterForwardAxis = "negativeZ",
+): Three.Vector3 => {
+  characterForward.set(0, 0, axis === "negativeZ" ? -1 : 1);
+  characterForward.applyQuaternion(object.quaternion);
+  characterForward.y = 0;
+  if (characterForward.lengthSq() === 0) {
+    characterForward.set(0, 0, axis === "negativeZ" ? -1 : 1);
+  }
+  return characterForward.normalize().clone();
+};
+
+export const updateMmorpgCharacterController = (
+  object: Three.Object3D,
+  keyboard: WasdKeyboardState,
+  state: MmorpgCharacterControllerState,
+  delta: number,
+  options: MmorpgCharacterControllerOptions = {},
+): MmorpgCharacterControllerSnapshot => {
+  const resolved = resolveMmorpgCharacterControllerOptions(options);
+  const safeDelta = Math.max(0, Math.min(delta, 0.1));
+  const turnInput =
+    (keyboard.left && !keyboard.right ? 1 : 0) +
+    (keyboard.right && !keyboard.left ? -1 : 0);
+  if (turnInput !== 0 && safeDelta > 0) {
+    characterTurnDelta.setFromAxisAngle(
+      characterTurnAxis,
+      turnInput * resolved.turnSpeed * safeDelta,
+    );
+    object.quaternion.multiply(characterTurnDelta).normalize();
+  }
+
+  const targetAction = mmorpgCharacterActionForKeyboard(keyboard);
+  const targetSpeed =
+    targetAction === "idle"
+      ? 0
+      : targetAction === "run"
+        ? resolved.runSpeed
+        : resolved.walkSpeed;
+  const directionSign = keyboard.backward && !keyboard.forward ? -1 : 1;
+  const speedMultiplier =
+    directionSign < 0 ? resolved.backwardSpeedMultiplier : 1;
+  const targetVelocityZ =
+    targetAction === "idle" ? 0 : directionSign * targetSpeed * speedMultiplier;
+  const factor =
+    targetAction === "idle"
+      ? 1 - Math.exp(-resolved.damping * safeDelta)
+      : 1 - Math.exp(-resolved.acceleration * safeDelta);
+  state.velocity.z = Three.MathUtils.lerp(
+    state.velocity.z,
+    targetVelocityZ,
+    factor,
+  );
+  if (Math.abs(state.velocity.z) < 0.000001) state.velocity.z = 0;
+  state.action = targetAction;
+
+  characterPreviousPosition.copy(object.position);
+  characterNextPosition.copy(object.position);
+  const forward = mmorpgCharacterForwardDirection(object, resolved.forwardAxis);
+  characterNextPosition.addScaledVector(forward, state.velocity.z * safeDelta);
+  clampWasdPosition(characterNextPosition, resolved.bounds);
+  characterNextPosition.y = resolved.groundHeightAt(
+    characterNextPosition.x,
+    characterNextPosition.z,
+  );
+  const blocked = !resolved.canMoveTo(
+    characterNextPosition,
+    characterPreviousPosition,
+  );
+  if (blocked) {
+    state.velocity.z = 0;
+  } else {
+    object.position.copy(characterNextPosition);
+    object.updateMatrixWorld();
+  }
+
+  return {
+    action: state.action,
+    blocked,
+    position: object.position.clone(),
+    quaternion: object.quaternion.clone(),
+    velocity: state.velocity.clone(),
+  };
 };
 
 export const integrateWasdVelocity = (

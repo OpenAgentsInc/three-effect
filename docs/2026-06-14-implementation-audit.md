@@ -513,6 +513,55 @@ used as references. The implementation keeps the runtime contract small enough
 for downstream scenes such as the Tassadar run page to compose a 2.5D walk mode
 without forking parallel controller logic.
 
+## Follow-up pass: MMORPG camera and character controller harvest (2026-06-17)
+
+The first `Quick_3D_MMORPG` harvest now lives in `playerControllerPrimitives.ts`
+as React-free camera/player-controller building blocks that can be shared by
+OpenAgents surfaces before any model-rendering code is ported:
+
+- `createThirdPersonFollowCamera`, `createThirdPersonFollowCameraState`, and
+  `updateThirdPersonFollowCamera` mirror the reference follow-camera pattern:
+  compute an ideal offset/look-at point from a target transform, clamp the
+  camera above the terrain if a ground sampler is provided, and smooth toward
+  the target with the same `1 - smoothing^delta` style interpolation.
+- `updateMmorpgCharacterController` mirrors the reference character movement
+  contract without depending on its entity system: `A`/`D` yaw the controlled
+  object, `W`/`S` move along the object's local forward axis, `Shift` selects
+  run speed, damping eases idle deceleration, `groundHeightAt` pins the
+  controller to terrain, and `canMoveTo` lets consumers supply collision or
+  blocked-cell policy.
+- `mmorpgCharacterActionForKeyboard` gives downstream renderers a small action
+  signal (`idle`, `walk`, `run`) that can drive an animation mixer later
+  without coupling core movement to any specific GLB/FBX asset.
+
+The code intentionally ports the behavior shape, not the reference app's ECS,
+network layer, or asset paths.
+
+## Follow-up pass: Quick model-rendering primitive harvest (2026-06-17)
+
+The first model-rendering harvest now lives in `assetPrimitives.ts`, drawing
+from the Quick static/animated GLTF components, render component, and loader
+controller:
+
+- `applyModelRenderOptions` applies the reusable render policy from the
+  reference components: scale/position/quaternion, material texture assignment
+  by material-name match, optional bounding boxes, cast/receive shadow flags,
+  visibility, frustum-culling policy, and caller hooks for object/material
+  customization.
+- `createGltfModelInstance` clones a loaded GLTF scene, optionally using
+  `SkeletonUtils.clone` for skinned characters, creates an `AnimationMixer`,
+  registers stable named actions from GLTF clips, exposes a crossfade-aware
+  `play(name)` action, and returns an `update(delta)` handle for the render
+  loop.
+- `disposeModelInstanceResources` is explicit and opt-in because many loaded
+  GLTF clones share geometry/material objects with the source asset. Consumers
+  must only dispose resources they own.
+
+Still intentionally not ported: the Quick ECS message bus, hard-coded asset
+paths, FBX/OBJ loader catalogs, and network entity interpolation. Those should
+land as separate primitives only when an OpenAgents scene has a real model or
+network state source to bind.
+
 ## Follow-up pass: training run perspective walk mode (2026-06-17)
 
 `mountTrainingRunVisualization` now supports an additive `perspective_walk`
@@ -527,6 +576,13 @@ shared `createWasdMouseLookController` handle, updates it inside the existing
 render loop, and uses center-reticle raycasting while pointer lock is active.
 Pointer-based selection remains active when pointer lock is inactive, and the
 selected node/entity event shape is unchanged.
+
+Pointer-lock entry now follows a selection-first contract. On an unlocked
+canvas click, the scene raycasts the click against real node/entity hit
+targets; a hit emits the existing node-selected callback and does not request
+pointer lock. Only an empty left-click requests pointer lock. While locked,
+left pointer-down raycasts from the center reticle so visible nodes can still
+open their info without exiting the world.
 
 This pass deliberately does not add synthetic data motion. The added movement
 is camera/user interaction. Existing animated beams, bursts, or structural

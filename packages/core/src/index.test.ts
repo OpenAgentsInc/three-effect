@@ -6,6 +6,7 @@ import {
   applyCameraShake,
   applyInstanceTransforms,
   applyMouseLookDelta,
+  applyModelRenderOptions,
   animationProgressFromScroll,
   applyMaskMaterial,
   applyBillboard,
@@ -27,6 +28,7 @@ import {
   createFbo,
   createImagePlane,
   createImagePlaneMaterial,
+  createGltfModelInstance,
   createInstanceColorArray,
   createInstanceMatrix,
   createLine2,
@@ -58,6 +60,7 @@ import {
   defaultScrollMetrics,
   defaultSpinningCubeOptions,
   defaultTrainingRunNodes,
+  disposeModelInstanceResources,
   dampValue,
   dreiQuadraticBezierMidpoint,
   fitCameraToBox,
@@ -71,6 +74,7 @@ import {
   MokshaPlaneMaterial,
   pmndrsMokshaSourceRefs,
   pmndrsAdvancedMaterialPrimitiveSourceRefs,
+  pmndrsAssetPrimitiveSourceRefs,
   pmndrsBezierNodesSourceRefs,
   pmndrsAnimationPrimitiveSourceRefs,
   pmndrsCommonPrimitiveCounts,
@@ -110,6 +114,7 @@ import {
   trainingRunEntitySelection,
   trainingRunMotionHasEvidence,
   trainingRunMotionSourceRefs,
+  trainingRunPointerClickIntent,
   trainingRunVisualizationOptionsFromSnapshot,
   updateScrollMetrics,
   useMaskMaterialProps,
@@ -148,15 +153,28 @@ import {
   createPayoutBurst,
   defaultTextLabelOptions,
   defaultWasdKeyboardState,
+  createThirdPersonFollowCamera,
+  createThirdPersonFollowCameraState,
+  defaultMmorpgCharacterControllerOptions,
+  defaultMmorpgCharacterControllerState,
   integrateWasdVelocity,
   keyCodeToWasdAction,
+  mmorpgCharacterActionForKeyboard,
+  mmorpgCharacterForwardDirection,
   pmndrsEntityPoolPrimitiveSourceRefs,
   pmndrsFlowEffectPrimitiveSourceRefs,
   pmndrsPlayerControllerPrimitiveSourceRefs,
   pmndrsPresenceBindingPrimitiveSourceRefs,
   pmndrsTextLabelPrimitiveSourceRefs,
+  resolveMmorpgCharacterControllerOptions,
+  resolveThirdPersonFollowCameraOptions,
   resolveTextLabelOptions,
   setWasdKeyState,
+  thirdPersonFollowSmoothingFactor,
+  thirdPersonIdealLookAt,
+  thirdPersonIdealOffset,
+  updateMmorpgCharacterController,
+  updateThirdPersonFollowCamera,
   wasdDesiredDirection,
   wasdMouseMovementFromEvent,
 } from "./index";
@@ -417,6 +435,9 @@ describe("instance, motion, shader, and asset primitives", () => {
   });
 
   test("collects GLTF-style object maps from loaded scenes", () => {
+    expect(pmndrsAssetPrimitiveSourceRefs).toContain(
+      "projects/repos/Quick_3D_MMORPG/client/src/render-component.js",
+    );
     const material = new Three.MeshBasicMaterial();
     material.name = "primary";
     const geometry = new Three.BoxGeometry();
@@ -429,6 +450,81 @@ describe("instance, motion, shader, and asset primitives", () => {
     expect(map.nodes.box).toBe(mesh);
     expect(map.materials.primary).toBe(material);
     expect(firstMeshGeometry(scene)).toBe(geometry);
+  });
+
+  test("applies Quick-style model render policy to a loaded object", () => {
+    const material = new Three.MeshBasicMaterial();
+    material.name = "body.primary";
+    const geometry = new Three.BoxGeometry();
+    const mesh = new Three.Mesh(geometry, material);
+    const root = new Three.Group();
+    const texture = new Three.Texture();
+    root.add(mesh);
+
+    applyModelRenderOptions(root, {
+      castShadow: true,
+      computeBoundingBox: true,
+      frustumCulled: false,
+      materialTextures: { body: texture },
+      position: [1, 2, 3],
+      receiveShadow: true,
+      scale: 2,
+      visible: true,
+    });
+
+    expect(root.position.toArray()).toEqual([1, 2, 3]);
+    expect(root.scale.x).toBe(2);
+    expect(mesh.castShadow).toBe(true);
+    expect(mesh.receiveShadow).toBe(true);
+    expect(mesh.frustumCulled).toBe(false);
+    expect(geometry.boundingBox).toBeInstanceOf(Three.Box3);
+    expect(material.map).toBe(texture);
+  });
+
+  test("creates a GLTF model instance with mixer actions and disposable resources", () => {
+    const material = new Three.MeshBasicMaterial();
+    const geometry = new Three.BoxGeometry();
+    const mesh = new Three.Mesh(geometry, material);
+    const root = new Three.Group();
+    root.add(mesh);
+    const clip = new Three.AnimationClip("idle", 1, [
+      new Three.VectorKeyframeTrack(".position", [0, 1], [0, 0, 0, 1, 0, 0]),
+    ]);
+    const handle = createGltfModelInstance(
+      { animations: [clip], scene: root } as Parameters<
+        typeof createGltfModelInstance
+      >[0],
+      {
+        actionNames: ["idle"],
+        playAction: "idle",
+        scale: [1, 2, 1],
+      },
+    );
+
+    expect(handle.object).not.toBe(root);
+    expect(handle.object.scale.y).toBe(2);
+    expect(handle.actions.idle).toBeInstanceOf(Three.AnimationAction);
+    expect(Effect.runSync(handle.play("missing"))).toBe(false);
+    expect(Effect.runSync(handle.play("idle"))).toBe(true);
+    Effect.runSync(handle.update(0.1));
+    Effect.runSync(handle.dispose);
+  });
+
+  test("disposes model instance resources when the caller owns them", () => {
+    const material = new Three.MeshBasicMaterial();
+    const geometry = new Three.BoxGeometry();
+    let materialDisposed = false;
+    let geometryDisposed = false;
+    material.addEventListener("dispose", () => {
+      materialDisposed = true;
+    });
+    geometry.addEventListener("dispose", () => {
+      geometryDisposed = true;
+    });
+    const mesh = new Three.Mesh(geometry, material);
+    disposeModelInstanceResources(mesh);
+    expect(materialDisposed).toBe(true);
+    expect(geometryDisposed).toBe(true);
   });
 });
 
@@ -1082,6 +1178,48 @@ describe("training run visualization", () => {
     ).toBe(onNodeClick);
   });
 
+  test("selects scene hits before requesting perspective-walk pointer lock", () => {
+    const selection = {
+      detail: "6 pylons seen",
+      id: "registered",
+      label: "registered",
+      role: "lifecycle" as const,
+      status: "queued" as const,
+    };
+
+    expect(
+      trainingRunPointerClickIntent({
+        button: 0,
+        pointerLocked: false,
+        selection,
+        walkControllerEnabled: true,
+      }),
+    ).toBe("select");
+    expect(
+      trainingRunPointerClickIntent({
+        button: 0,
+        pointerLocked: false,
+        walkControllerEnabled: true,
+      }),
+    ).toBe("lock");
+    expect(
+      trainingRunPointerClickIntent({
+        button: 0,
+        pointerLocked: true,
+        selection,
+        walkControllerEnabled: true,
+      }),
+    ).toBe("select");
+    expect(
+      trainingRunPointerClickIntent({
+        button: 2,
+        pointerLocked: false,
+        selection,
+        walkControllerEnabled: true,
+      }),
+    ).toBe("none");
+  });
+
   test("connects the lifecycle through active and sync reentry", () => {
     const edges = createTrainingRunEdges(defaultTrainingRunNodes);
     expect(edges.map((edge) => [edge.sourceId, edge.targetId])).toContainEqual([
@@ -1457,6 +1595,12 @@ describe("player controller primitives", () => {
     expect(pmndrsPlayerControllerPrimitiveSourceRefs).toContain(
       "projects/repos/Quick_3D_MMORPG/client/src/player-entity.js",
     );
+    expect(pmndrsPlayerControllerPrimitiveSourceRefs).toContain(
+      "projects/repos/Quick_3D_MMORPG/client/src/player-state.js",
+    );
+    expect(pmndrsPlayerControllerPrimitiveSourceRefs).toContain(
+      "projects/repos/Quick_3D_MMORPG/client/src/third-person-camera.js",
+    );
   });
 
   test("maps keyboard codes into stable WASD actions", () => {
@@ -1584,6 +1728,155 @@ describe("player controller primitives", () => {
     });
     expect(position.x).toBe(3);
     expect(position.z).toBe(-4);
+  });
+
+  test("computes Quick-style third-person camera offset and look target", () => {
+    const target = {
+      position: new Three.Vector3(10, 0, -2),
+      quaternion: new Three.Quaternion().setFromAxisAngle(
+        new Three.Vector3(0, 1, 0),
+        Math.PI / 2,
+      ),
+    };
+    const options = resolveThirdPersonFollowCameraOptions({
+      offset: [0, 3, 6],
+      lookAtOffset: [0, 1, -2],
+      minGroundClearance: 2,
+      groundHeightAt: () => 4,
+    });
+
+    const offset = thirdPersonIdealOffset(target, options);
+    const lookAt = thirdPersonIdealLookAt(target, options);
+    expect(offset.x).toBeCloseTo(16);
+    expect(offset.y).toBeCloseTo(6);
+    expect(offset.z).toBeCloseTo(-2);
+    expect(lookAt.x).toBeCloseTo(8);
+    expect(lookAt.y).toBeCloseTo(1);
+    expect(lookAt.z).toBeCloseTo(-2);
+    expect(thirdPersonFollowSmoothingFactor(0, options.smoothing)).toBe(0);
+    expect(thirdPersonFollowSmoothingFactor(1, 0.01)).toBeCloseTo(0.99);
+  });
+
+  test("updates a third-person follow camera with smoothing", () => {
+    const camera = new Three.PerspectiveCamera();
+    const target = {
+      position: new Three.Vector3(0, 0, 0),
+      quaternion: new Three.Quaternion(),
+    };
+    const state = createThirdPersonFollowCameraState(camera, target, {
+      offset: [0, 2, 4],
+      lookAtOffset: [0, 1, -1],
+    });
+    expect(camera.position.z).toBeCloseTo(4);
+
+    target.position.set(0, 0, -4);
+    updateThirdPersonFollowCamera(camera, target, state, 1, {
+      offset: [0, 2, 4],
+      lookAtOffset: [0, 1, -1],
+      smoothing: 0.01,
+    });
+    expect(camera.position.z).toBeCloseTo(0.04);
+    expect(camera.quaternion.length()).toBeCloseTo(1);
+
+    const handle = createThirdPersonFollowCamera(camera, target, {
+      offset: [0, 2, 4],
+      lookAtOffset: [0, 1, -1],
+    });
+    Effect.runSync(handle.snap);
+    expect(handle.state.currentPosition.z).toBeCloseTo(0);
+  });
+
+  test("derives MMORPG walk/run/idle actions from keyboard state", () => {
+    expect(mmorpgCharacterActionForKeyboard(defaultWasdKeyboardState())).toBe(
+      "idle",
+    );
+    expect(
+      mmorpgCharacterActionForKeyboard({
+        ...defaultWasdKeyboardState(),
+        forward: true,
+      }),
+    ).toBe("walk");
+    expect(
+      mmorpgCharacterActionForKeyboard({
+        ...defaultWasdKeyboardState(),
+        forward: true,
+        sprint: true,
+      }),
+    ).toBe("run");
+  });
+
+  test("moves a Quick-style character by turning the object and walking forward", () => {
+    const object = new Three.Object3D();
+    const state = defaultMmorpgCharacterControllerState();
+    const keyboard = {
+      ...defaultWasdKeyboardState(),
+      forward: true,
+      left: true,
+    };
+    const snapshot = updateMmorpgCharacterController(
+      object,
+      keyboard,
+      state,
+      0.1,
+      {
+        acceleration: 100,
+        walkSpeed: 4,
+        turnSpeed: Math.PI,
+      },
+    );
+
+    expect(snapshot.action).toBe("walk");
+    expect(snapshot.blocked).toBe(false);
+    expect(snapshot.velocity.z).toBeGreaterThan(0);
+    expect(object.position.length()).toBeGreaterThan(0);
+    expect(object.quaternion.angleTo(new Three.Quaternion())).toBeGreaterThan(0);
+
+    const forward = mmorpgCharacterForwardDirection(object);
+    expect(forward.length()).toBeCloseTo(1);
+  });
+
+  test("keeps Quick-style character movement bounded and collision-aware", () => {
+    const object = new Three.Object3D();
+    const state = defaultMmorpgCharacterControllerState();
+    const keyboard = {
+      ...defaultWasdKeyboardState(),
+      forward: true,
+    };
+    const options = resolveMmorpgCharacterControllerOptions({
+      acceleration: defaultMmorpgCharacterControllerOptions.acceleration,
+      bounds: { minX: -1, maxX: 1, minZ: -0.2, maxZ: 0.2 },
+      canMoveTo: (next) => next.z > -0.1,
+      groundHeightAt: () => 2,
+      walkSpeed: 100,
+    });
+
+    const blocked = updateMmorpgCharacterController(
+      object,
+      keyboard,
+      state,
+      0.1,
+      options,
+    );
+    expect(blocked.blocked).toBe(true);
+    expect(object.position.z).toBe(0);
+    expect(blocked.velocity.z).toBe(0);
+
+    const allowed = updateMmorpgCharacterController(
+      object,
+      {
+        ...defaultWasdKeyboardState(),
+        backward: true,
+      },
+      state,
+      0.1,
+      {
+        ...options,
+        canMoveTo: () => true,
+      },
+    );
+    expect(allowed.blocked).toBe(false);
+    expect(object.position.y).toBe(2);
+    expect(object.position.z).toBeLessThanOrEqual(0.2);
   });
 });
 

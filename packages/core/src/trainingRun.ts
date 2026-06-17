@@ -194,6 +194,15 @@ export type TrainingRunCameraMode = "orthographic_map" | "perspective_walk";
 
 export type TrainingRunControllerMode = "none" | "wasd_mouselook";
 
+export type TrainingRunPointerClickIntent = "lock" | "none" | "select";
+
+export type TrainingRunPointerClickDecisionInput = Readonly<{
+  button: number;
+  pointerLocked: boolean;
+  selection?: TrainingRunNodeSelection;
+  walkControllerEnabled: boolean;
+}>;
+
 export type TrainingRunEntitySelection = Pick<
   TrainingRunEntityDefinition,
   "id" | "label" | "position" | "status"
@@ -558,6 +567,17 @@ export const resolveTrainingRunVisualizationOptions = (
   return options.onNodeClick === undefined
     ? resolved
     : { ...resolved, onNodeClick: options.onNodeClick };
+};
+
+export const trainingRunPointerClickIntent = ({
+  button,
+  pointerLocked,
+  selection,
+  walkControllerEnabled,
+}: TrainingRunPointerClickDecisionInput): TrainingRunPointerClickIntent => {
+  if (button !== 0) return "none";
+  if (selection !== undefined) return "select";
+  return walkControllerEnabled && !pointerLocked ? "lock" : "none";
 };
 
 const finiteNonNegative = (value: number | undefined): number =>
@@ -2305,25 +2325,54 @@ export const mountTrainingRunVisualization = (
         canvas.style.cursor = "default";
       };
 
+      const emitSelection = (
+        selection: TrainingRunNodeSelection | undefined,
+      ): boolean => {
+        if (selection === undefined) return false;
+        resolved.onNodeClick?.(selection);
+        return true;
+      };
+
       const handlePointerDown = (event: PointerEvent) => {
-        if (pointerLockActive()) {
+        if (!pointerLockActive()) return;
+        const selection = selectionAtPointer(event);
+        const intent = trainingRunPointerClickIntent({
+          button: event.button,
+          pointerLocked: true,
+          selection,
+          walkControllerEnabled: walkController !== undefined,
+        });
+        if (intent === "select") {
           event.preventDefault();
+          emitSelection(selection);
+          return;
         }
+        event.preventDefault();
       };
 
       const handleClick = (event: MouseEvent) => {
-        if (
-          walkController !== undefined &&
-          !pointerLockActive() &&
-          event.button === 0
-        ) {
+        const pointerLocked = pointerLockActive();
+        if (pointerLocked) {
+          event.preventDefault();
+          return;
+        }
+        const selection = selectionAtPointer(event);
+        const intent = trainingRunPointerClickIntent({
+          button: event.button,
+          pointerLocked,
+          selection,
+          walkControllerEnabled: walkController !== undefined,
+        });
+        if (intent === "select") {
+          event.preventDefault();
+          emitSelection(selection);
+          return;
+        }
+        if (intent === "lock" && walkController !== undefined) {
           event.preventDefault();
           Effect.runSync(walkController.lock);
           return;
         }
-        const selection = selectionAtPointer(event);
-        if (selection === undefined) return;
-        resolved.onNodeClick?.(selection);
       };
 
       canvas.addEventListener("pointermove", handlePointerMove);
