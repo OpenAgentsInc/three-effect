@@ -20,6 +20,7 @@ import {
   createMmoEntityDescriptionCache,
   createMmoEntityTransformInterpolator,
   createAnimationController,
+  createAnimationStateMachine,
   createBezierNodeConnections,
   createContactShadowResources,
   createConditionalEdgesGeometry,
@@ -162,6 +163,8 @@ import {
   defaultMmorpgCharacterControllerState,
   integrateWasdVelocity,
   keyCodeToWasdAction,
+  animationActionPhaseRatio,
+  findAnimationActionByLabels,
   mmoEntityLiveness,
   mmorpgCharacterActionForKeyboard,
   mmorpgCharacterForwardDirection,
@@ -171,6 +174,7 @@ import {
   pmndrsPresenceBindingPrimitiveSourceRefs,
   pmndrsTextLabelPrimitiveSourceRefs,
   quickMmorpgEntityPrimitiveSourceRefs,
+  quickMmorpgAnimationPrimitiveSourceRefs,
   resolveMmorpgCharacterControllerOptions,
   normalizeMmoEntityTransformSnapshot,
   resolveThirdPersonFollowCameraOptions,
@@ -564,6 +568,65 @@ describe("interaction and animation primitives", () => {
     expect(root.position.x).toBeGreaterThan(0);
     animationProgressFromScroll(action!, clip, 0.25);
     expect(action!.time).toBeCloseTo(0.25);
+    controller.dispose();
+  });
+
+  test("drives Quick-style animation states with phase preservation and one-shot completion", () => {
+    expect(quickMmorpgAnimationPrimitiveSourceRefs).toContain(
+      "projects/repos/Quick_3D_MMORPG/client/src/player-state.js",
+    );
+
+    const root = new Three.Object3D();
+    const idle = new Three.AnimationClip("Idle", 1, [
+      new Three.VectorKeyframeTrack(".position", [0, 1], [0, 0, 0, 0, 0, 0]),
+    ]);
+    const walk = new Three.AnimationClip("Walk", 2, [
+      new Three.VectorKeyframeTrack(".position", [0, 2], [0, 0, 0, 2, 0, 0]),
+    ]);
+    const run = new Three.AnimationClip("Run", 1, [
+      new Three.VectorKeyframeTrack(".position", [0, 1], [0, 0, 0, 4, 0, 0]),
+    ]);
+    const attack = new Three.AnimationClip("Attack", 0.1, [
+      new Three.VectorKeyframeTrack(".scale", [0, 0.1], [1, 1, 1, 1.2, 1.2, 1.2]),
+    ]);
+    const controller = createAnimationController(root, [idle, walk, run, attack]);
+
+    const idleAction = controller.action("Idle");
+    expect(idleAction).toBeDefined();
+    expect(findAnimationActionByLabels(controller, ["idle"])).toBe(idleAction!);
+
+    const fsm = createAnimationStateMachine(
+      controller,
+      [
+        { name: "idle", labels: ["Idle"], canMove: true },
+        { name: "walk", labels: ["Walk"], canMove: true, locomotion: true },
+        { name: "run", labels: ["Run"], canMove: true, locomotion: true },
+        {
+          name: "attack",
+          labels: ["Attack"],
+          canMove: false,
+          oneShot: true,
+          onComplete: "idle",
+          fadeSeconds: 0,
+        },
+      ],
+      "idle",
+      { defaultFadeSeconds: 0 },
+    );
+
+    expect(fsm.current()).toMatchObject({ state: "idle", canMove: true });
+    expect(fsm.transition("walk")).toBe(true);
+    const walkAction = fsm.action()!;
+    walkAction.time = 1;
+    expect(animationActionPhaseRatio(walkAction)).toBeCloseTo(0.5);
+    expect(fsm.transition("run")).toBe(true);
+    expect(fsm.action()?.time).toBeCloseTo(0.5);
+
+    expect(fsm.transition("attack")).toBe(true);
+    expect(fsm.current()).toMatchObject({ state: "attack", canMove: false });
+    fsm.update(0.2);
+    expect(fsm.current().state).toBe("idle");
+    fsm.dispose();
     controller.dispose();
   });
 });

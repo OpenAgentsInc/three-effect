@@ -134,8 +134,10 @@ This pass pulled the reusable, React-free layer into `@openagentsinc/three-effec
     mesh/sphere/box picking, and minimum-distance layout relaxation for dense
     world nodes.
 - `animationPrimitives`
-  - GLTF-style animation mixer/action controllers and scroll-driven clip
-    progress.
+  - GLTF-style animation mixer/action controllers, scroll-driven clip
+    progress, and Quick MMORPG-inspired animation state machines with
+    crossfade policy, phase-preserving locomotion, one-shot completion, and
+    `canMove` metadata.
 - `geometryPrimitives`
   - Drei `useAspect` math, rounded boxes, font loading, and text geometry.
 - `imagePrimitives`
