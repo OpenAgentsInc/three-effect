@@ -300,6 +300,13 @@ The ported React-free primitive modules are:
 - `controlsPrimitives`
   - OrbitControls creation and disposal through Effect.
   - Option application and target focusing helpers.
+- `playerControllerPrimitives`
+  - WASD + pointer-lock mouselook controller creation and disposal through
+    Effect.
+  - Stable keyboard action mapping for WASD, arrow keys, sprint, rise, and
+    fall.
+  - Camera-yaw-relative desired movement, velocity integration, optional
+    movement bounds, and ground-height snapping.
 - `interactionPrimitives`
   - Pointer NDC conversion.
   - Raycasting helpers.
@@ -486,6 +493,22 @@ Reference: `projects/repos/drei/src/{core,web}/*Controls.tsx`.
 Note: `@types/three` 0.184 does not declare `FirstPersonControls.activeLook`,
 so that field was left out of the typed option surface to keep downstream
 `strict` + `noUncheckedIndexedAccess` typecheck clean.
+
+## Follow-up pass: first-person player controller (2026-06-17)
+
+This increment adds a compositional player controller for scenes that need
+WASD + mouselook navigation without pulling in React, Drei, or app-local input
+glue. It is intentionally lower-level than a game engine entity controller:
+`createWasdMouseLookController` owns pointer lock, keyboard state, velocity
+integration, movement clamping, ground-height sampling, lock/unlock actions,
+and disposal, while the caller still owns the world mesh, collision policy,
+HUD affordance, and data-specific scene semantics.
+
+The primitive cites the pmndrs/Drei `PointerLockControls` and `KeyboardControls`
+wrappers plus the local `Quick_3D_MMORPG` player input/entity/camera examples
+used as references. The implementation keeps the runtime contract small enough
+for downstream scenes such as the Tassadar run page to compose a 2.5D walk mode
+without forking parallel controller logic.
 
 ### `helperPrimitives.ts`
 

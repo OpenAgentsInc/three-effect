@@ -139,15 +139,22 @@ import {
   lutColorAt,
   pmndrsMathPrimitiveSourceRefs,
   bindEntityPresence,
+  clampWasdPosition,
   createEntityPool,
   createFlowBeam,
   createPayoutBurst,
   defaultTextLabelOptions,
+  defaultWasdKeyboardState,
+  integrateWasdVelocity,
+  keyCodeToWasdAction,
   pmndrsEntityPoolPrimitiveSourceRefs,
   pmndrsFlowEffectPrimitiveSourceRefs,
+  pmndrsPlayerControllerPrimitiveSourceRefs,
   pmndrsPresenceBindingPrimitiveSourceRefs,
   pmndrsTextLabelPrimitiveSourceRefs,
   resolveTextLabelOptions,
+  setWasdKeyState,
+  wasdDesiredDirection,
 } from "./index";
 
 import { FirstPersonControls } from "three/examples/jsm/controls/FirstPersonControls.js";
@@ -1338,6 +1345,100 @@ describe("extra controls primitives", () => {
   test("applyTransformControlsOptions only mutates provided fields", () => {
     const noop = applyTransformControlsOptions;
     expect(typeof noop).toBe("function");
+  });
+});
+
+describe("player controller primitives", () => {
+  test("cites the controller references that motivated the primitive", () => {
+    expect(pmndrsPlayerControllerPrimitiveSourceRefs).toContain(
+      "projects/repos/drei/src/core/PointerLockControls.tsx",
+    );
+    expect(pmndrsPlayerControllerPrimitiveSourceRefs).toContain(
+      "projects/repos/Quick_3D_MMORPG/client/src/player-entity.js",
+    );
+  });
+
+  test("maps keyboard codes into stable WASD actions", () => {
+    expect(keyCodeToWasdAction("KeyW")).toBe("forward");
+    expect(keyCodeToWasdAction("ArrowDown")).toBe("backward");
+    expect(keyCodeToWasdAction("KeyA")).toBe("left");
+    expect(keyCodeToWasdAction("ShiftRight")).toBe("sprint");
+    expect(keyCodeToWasdAction("Escape")).toBeUndefined();
+
+    const state = defaultWasdKeyboardState();
+    expect(setWasdKeyState(state, "KeyW", true)).toBe(true);
+    expect(state.forward).toBe(true);
+    expect(setWasdKeyState(state, "KeyW", false)).toBe(true);
+    expect(state.forward).toBe(false);
+    expect(setWasdKeyState(state, "Escape", true)).toBe(false);
+  });
+
+  test("computes camera-yaw-relative desired movement", () => {
+    const camera = new Three.PerspectiveCamera();
+    camera.rotation.y = Math.PI / 2;
+    camera.updateMatrixWorld();
+
+    const state = {
+      ...defaultWasdKeyboardState(),
+      forward: true,
+    };
+    const direction = wasdDesiredDirection(camera, state);
+    expect(direction.x).toBeCloseTo(-1);
+    expect(direction.z).toBeCloseTo(0);
+
+    const strafeState = {
+      ...defaultWasdKeyboardState(),
+      right: true,
+    };
+    const strafe = wasdDesiredDirection(camera, strafeState);
+    expect(strafe.x).toBeCloseTo(0);
+    expect(strafe.z).toBeCloseTo(-1);
+  });
+
+  test("integrates velocity with acceleration and damping", () => {
+    const velocity = new Three.Vector3();
+    const forward = new Three.Vector3(0, 0, -1);
+    integrateWasdVelocity(
+      velocity,
+      forward,
+      0.016,
+      {
+        acceleration: 18,
+        damping: 12,
+        movementSpeed: 4,
+        sprintMultiplier: 2,
+      },
+      true,
+    );
+    expect(velocity.z).toBeLessThan(0);
+    expect(Math.abs(velocity.z)).toBeLessThanOrEqual(8);
+
+    const beforeDamping = Math.abs(velocity.z);
+    integrateWasdVelocity(
+      velocity,
+      new Three.Vector3(),
+      0.016,
+      {
+        acceleration: 18,
+        damping: 12,
+        movementSpeed: 4,
+        sprintMultiplier: 2,
+      },
+      false,
+    );
+    expect(Math.abs(velocity.z)).toBeLessThan(beforeDamping);
+  });
+
+  test("clamps movement positions to walk bounds", () => {
+    const position = new Three.Vector3(20, 2, -20);
+    clampWasdPosition(position, {
+      minX: -3,
+      maxX: 3,
+      minZ: -4,
+      maxZ: 4,
+    });
+    expect(position.x).toBe(3);
+    expect(position.z).toBe(-4);
   });
 });
 

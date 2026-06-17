@@ -114,6 +114,11 @@ This pass pulled the reusable, React-free layer into `@openagentsinc/three-effec
     `PointerLockControls`, and `TransformControls`. Each handle exposes typed
     option applicators, `update`/`lock`/`attach` actions where relevant, and a
     scoped `dispose`.
+- `playerControllerPrimitives`
+  - A React-free WASD + pointer-lock mouselook controller that composes
+    `PointerLockControls` with camera-yaw-relative movement, sprint, optional
+    walk bounds, ground-height sampling, keyboard state helpers, and a scoped
+    `dispose`.
 - `helperPrimitives`
   - React-free factories for the scene debug/gizmo helpers R3F exposes as
     intrinsic elements and Drei wraps as `<Grid>`, `<GizmoHelper>`, and
@@ -166,6 +171,13 @@ debug-gizmo surface that React Three Fiber and Drei expose. `MapControls`,
 in `extraControlsPrimitives`, and the full builtin/addon helper set (grids,
 axes, bounds, camera, skeleton, light helpers, vertex normals) is available as
 disposable factories in `helperPrimitives`.
+
+The first player-controller primitive builds on those controls for
+first-person navigation. `createWasdMouseLookController` is intentionally a
+small low-level handle: downstream scenes provide their own world geometry,
+auth/data policy, pointer-lock affordance, movement bounds, and HUD, while the
+shared library owns keyboard state, velocity integration, mouselook lock state,
+and cleanup.
 
 Full CameraControls parity, Troika text layout, HDR preset catalogs, and
 opinionated postprocessing chains remain out of core. The new modules provide
