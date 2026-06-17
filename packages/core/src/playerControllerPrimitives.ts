@@ -360,9 +360,9 @@ export const createWasdMouseLookController = (
           movementX,
           movementY,
           pitch,
-          reason,
           source,
           yaw,
+          ...(reason === undefined ? {} : { reason }),
         };
         if (typeof resolved.debug === "function") {
           resolved.debug(snapshot);
