@@ -129,6 +129,10 @@ This pass pulled the reusable, React-free layer into `@openagentsinc/three-effec
 - `interactionPrimitives`
   - pointer normalization, raycasting, cursor controllers, and intersection
     visibility helpers.
+- `spatialPrimitives`
+  - Quick MMORPG-inspired typed spatial hash grids, hit target registries for
+    mesh/sphere/box picking, and minimum-distance layout relaxation for dense
+    world nodes.
 - `animationPrimitives`
   - GLTF-style animation mixer/action controllers and scroll-driven clip
     progress.

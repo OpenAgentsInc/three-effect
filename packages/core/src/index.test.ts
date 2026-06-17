@@ -45,6 +45,7 @@ import {
   createShaderMaterial,
   createSky,
   createSparkleAttributes,
+  HitTargetRegistry,
   createStarfieldAttributes,
   createTransmissionMaterial,
   createTrainingRunEdges,
@@ -170,6 +171,10 @@ import {
   resolveThirdPersonFollowCameraOptions,
   resolveTextLabelOptions,
   setWasdKeyState,
+  quickMmorpgSpatialPrimitiveSourceRefs,
+  raycastHitTargetRegistry,
+  relaxMinimumDistanceLayout,
+  SpatialHashGrid,
   thirdPersonFollowSmoothingFactor,
   thirdPersonIdealLookAt,
   thirdPersonIdealOffset,
@@ -553,6 +558,100 @@ describe("interaction and animation primitives", () => {
     animationProgressFromScroll(action!, clip, 0.25);
     expect(action!.time).toBeCloseTo(0.25);
     controller.dispose();
+  });
+});
+
+describe("spatial primitives", () => {
+  test("indexes, updates, dedupes, and removes spatial hash grid clients", () => {
+    expect(quickMmorpgSpatialPrimitiveSourceRefs).toContain(
+      "projects/repos/Quick_3D_MMORPG/client/shared/spatial-hash-grid.mjs",
+    );
+
+    const grid = new SpatialHashGrid<string>({
+      bounds: { minX: -100, minY: -100, maxX: 100, maxY: 100 },
+      cellsX: 10,
+      cellsY: 10,
+    });
+
+    grid.insert({
+      id: "a",
+      value: "alpha",
+      position: { x: 0, y: 0 },
+      size: { width: 40, height: 40 },
+    });
+    grid.insert({
+      id: "b",
+      value: "beta",
+      position: { x: 80, y: 80 },
+      size: { width: 10, height: 10 },
+    });
+
+    expect(
+      grid.findNear({ x: 0, y: 0 }, { width: 20, height: 20 }).map(client => client.id),
+    ).toEqual(["a"]);
+
+    grid.update("b", { position: { x: 8, y: 0 } });
+    expect(
+      grid.findNear({ x: 0, y: 0 }, { width: 30, height: 30 }).map(client => client.id).sort(),
+    ).toEqual(["a", "b"]);
+
+    const deduped = grid.findNear(
+      { x: 0, y: 0 },
+      { width: 80, height: 80 },
+    )
+    expect(deduped.filter(client => client.id === "a")).toHaveLength(1);
+    expect(grid.remove("a")).toBe(true);
+    expect(
+      grid.findNear({ x: 0, y: 0 }, { width: 30, height: 30 }).map(client => client.id),
+    ).toEqual(["b"]);
+  });
+
+  test("raycasts registered sphere and box hit targets in distance order", () => {
+    const registry = new HitTargetRegistry<string>();
+    registry.register({
+      id: "far",
+      value: "sphere",
+      kind: "sphere",
+      sphere: new Three.Sphere(new Three.Vector3(0, 0, -5), 1),
+    });
+    registry.register({
+      id: "near",
+      value: "box",
+      kind: "box",
+      box: new Three.Box3(
+        new Three.Vector3(-1, -1, -3),
+        new Three.Vector3(1, 1, -2),
+      ),
+    });
+
+    const raycaster = new Three.Raycaster(
+      new Three.Vector3(0, 0, 0),
+      new Three.Vector3(0, 0, -1),
+    );
+    const hits = raycastHitTargetRegistry(raycaster, registry);
+
+    expect(hits.map(hit => hit.target.id)).toEqual(["near", "far"]);
+    expect(hits[0]?.distance).toBeCloseTo(2);
+    expect(registry.remove("near")).toBe(true);
+    expect(raycastHitTargetRegistry(raycaster, registry).map(hit => hit.target.id)).toEqual([
+      "far",
+    ]);
+  });
+
+  test("relaxes overlapping layout nodes to a minimum distance", () => {
+    const result = relaxMinimumDistanceLayout(
+      [
+        { id: "a", position: new Three.Vector2(0, 0) },
+        { id: "b", position: new Three.Vector2(0, 0) },
+      ],
+      { minDistance: 2, iterations: 4, strength: 1 },
+    );
+
+    const a = result.find(node => node.id === "a")?.position;
+    const b = result.find(node => node.id === "b")?.position;
+    expect(a).toBeDefined();
+    expect(b).toBeDefined();
+    expect(a!.distanceTo(b!)).toBeGreaterThanOrEqual(1.99);
   });
 });
 
