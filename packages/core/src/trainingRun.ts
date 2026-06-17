@@ -9,6 +9,10 @@ import {
   type WasdMouseLookControllerOptions,
 } from "./playerControllerPrimitives";
 import { bindEntityPresence } from "./presenceBindingPrimitives";
+import {
+  HitTargetRegistry,
+  raycastHitTargetRegistry,
+} from "./spatialPrimitives";
 import { createTextLabel, type TextLabelHandle } from "./textLabelPrimitives";
 
 export class TrainingRunMountError extends Data.TaggedError(
@@ -1670,10 +1674,7 @@ export const mountTrainingRunVisualization = (
       scene.add(root);
       const raycaster = new Three.Raycaster();
       const pointer = new Three.Vector2();
-      const clickTargets: Array<{
-        mesh: Three.Mesh<Three.CircleGeometry, Three.MeshBasicMaterial>;
-        node: TrainingRunNodeDefinition;
-      }> = [];
+      const hitTargets = new HitTargetRegistry<TrainingRunNodeSelection>();
 
       const grid = new Three.Group();
       for (let x = -4; x <= 4; x += 1) {
@@ -1801,7 +1802,13 @@ export const mountTrainingRunVisualization = (
           const hitTarget = makeCircle(0.34, statusColor, 0.001);
           hitTarget.position.z = 0.62;
           group.add(hitTarget);
-          clickTargets.push({ mesh: hitTarget, node });
+          hitTargets.register({
+            id: `node:${node.id}`,
+            kind: "mesh",
+            object: hitTarget,
+            recursive: false,
+            value: nodeSelection(node),
+          });
 
           group.add(
             makeLine(
@@ -1848,7 +1855,13 @@ export const mountTrainingRunVisualization = (
         const hitTarget = makeCircle(radius * 0.92, statusColor, 0.001);
         hitTarget.position.z = 0.62;
         group.add(hitTarget);
-        clickTargets.push({ mesh: hitTarget, node });
+        hitTargets.register({
+          id: `node:${node.id}`,
+          kind: "mesh",
+          object: hitTarget,
+          recursive: false,
+          value: nodeSelection(node),
+        });
         group.add(makeCircle(radius * 0.32, statusColor, 0.95));
 
         const label = makeTextSprite(node.label, {
@@ -2141,10 +2154,6 @@ export const mountTrainingRunVisualization = (
         resolved.entities,
       );
       const visualEntities = uniqueTrainingRunEntities(resolved.entities);
-      const entityClickTargets: Array<{
-        mesh: Three.Mesh<Three.CircleGeometry, Three.MeshBasicMaterial>;
-        entity: TrainingRunEntityDefinition;
-      }> = [];
       const entityLabels: TextLabelHandle[] = [];
       const flowBeams: Array<{ update: (deltaSeconds: number) => void }> = [];
       const beamDisposers: Array<() => void> = [];
@@ -2190,7 +2199,13 @@ export const mountTrainingRunVisualization = (
           const hitTarget = makeCircle(0.16, color, 0.001);
           hitTarget.position.set(position[0], position[1], 0.7);
           root.add(hitTarget);
-          entityClickTargets.push({ mesh: hitTarget, entity });
+          hitTargets.register({
+            id: `entity:${entity.id}`,
+            kind: "mesh",
+            object: hitTarget,
+            recursive: false,
+            value: trainingRunEntitySelection(entity),
+          });
 
           if (entity.label !== undefined) {
             const label = createTextLabel({
@@ -2296,20 +2311,7 @@ export const mountTrainingRunVisualization = (
           pointer.y = -(((event.clientY - rect.top) / rect.height) * 2 - 1);
         }
         raycaster.setFromCamera(pointer, camera);
-        const targets: Three.Object3D[] = [
-          ...clickTargets.map((target) => target.mesh),
-          ...entityClickTargets.map((target) => target.mesh),
-        ];
-        const hit = raycaster.intersectObjects(targets, false)[0]?.object;
-        if (hit === undefined) return undefined;
-        const node = clickTargets.find((target) => target.mesh === hit)?.node;
-        if (node !== undefined) return nodeSelection(node);
-        const entity = entityClickTargets.find(
-          (target) => target.mesh === hit,
-        )?.entity;
-        return entity === undefined
-          ? undefined
-          : trainingRunEntitySelection(entity);
+        return raycastHitTargetRegistry(raycaster, hitTargets)[0]?.target.value;
       };
 
       const handlePointerMove = (event: PointerEvent) => {
