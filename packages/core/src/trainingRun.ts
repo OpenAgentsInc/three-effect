@@ -9,7 +9,7 @@ import {
   type WasdMouseLookControllerOptions,
 } from "./playerControllerPrimitives";
 import { bindEntityPresence } from "./presenceBindingPrimitives";
-import { createTextLabel } from "./textLabelPrimitives";
+import { createTextLabel, type TextLabelHandle } from "./textLabelPrimitives";
 
 export class TrainingRunMountError extends Data.TaggedError(
   "TrainingRunMountError",
@@ -2062,7 +2062,7 @@ export const mountTrainingRunVisualization = (
         mesh: Three.Mesh<Three.CircleGeometry, Three.MeshBasicMaterial>;
         entity: TrainingRunEntityDefinition;
       }> = [];
-      const entityLabels: Array<{ dispose: () => void }> = [];
+      const entityLabels: TextLabelHandle[] = [];
       const flowBeams: Array<{ update: (deltaSeconds: number) => void }> = [];
       const beamDisposers: Array<() => void> = [];
       type BurstHandle = ReturnType<typeof createPayoutBurst>;
@@ -2116,8 +2116,9 @@ export const mountTrainingRunVisualization = (
               fontSize: 36,
               worldHeight: 0.2,
               position: [position[0], position[1] - 0.26, 0.55],
-              billboard: false,
+              billboard: true,
             });
+            label.faceCamera(camera);
             root.add(label.object3D);
             entityLabels.push(label);
           }
@@ -2293,6 +2294,9 @@ export const mountTrainingRunVisualization = (
         }
         for (const beam of flowBeams) {
           beam.update(delta);
+        }
+        for (const label of entityLabels) {
+          label.faceCamera(camera);
         }
         for (const slot of burstSlots) {
           slot.handle.update(delta);

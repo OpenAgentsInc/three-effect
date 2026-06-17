@@ -1248,6 +1248,16 @@ describe("training run visualization", () => {
 });
 
 describe("training run entity layer", () => {
+  test("keeps entity labels camera-facing for perspective walk mode", async () => {
+    const source = await Bun.file(
+      new URL("./trainingRun.ts", import.meta.url),
+    ).text();
+    expect(source).toContain("const entityLabels: TextLabelHandle[] = []");
+    expect(source).not.toContain("billboard: false");
+    expect(source).toContain("label.faceCamera(camera);");
+    expect(source).toContain("for (const label of entityLabels)");
+  });
+
   test("defaults the entity layer to honest-empty arrays", () => {
     const resolved = resolveTrainingRunVisualizationOptions();
     expect(resolved.entities).toEqual([]);
