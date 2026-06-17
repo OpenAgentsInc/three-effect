@@ -80,7 +80,7 @@ export type GltfModelInstanceOptions = ModelRenderOptions &
 export type GltfModelInstanceHandle = Readonly<{
   object: Three.Object3D
   clips: readonly Three.AnimationClip[]
-  mixer?: Three.AnimationMixer
+  mixer: Three.AnimationMixer | undefined
   actions: Readonly<Record<string, Three.AnimationAction>>
   update: (delta: number) => Effect.Effect<void>
   play: (name: string, fadeDuration?: number) => Effect.Effect<boolean>

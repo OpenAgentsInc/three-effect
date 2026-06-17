@@ -199,7 +199,7 @@ export type TrainingRunPointerClickIntent = "lock" | "none" | "select";
 export type TrainingRunPointerClickDecisionInput = Readonly<{
   button: number;
   pointerLocked: boolean;
-  selection?: TrainingRunNodeSelection;
+  selection?: TrainingRunNodeSelection | undefined;
   walkControllerEnabled: boolean;
 }>;
 
