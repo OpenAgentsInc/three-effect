@@ -2242,6 +2242,15 @@ export const mountTrainingRunVisualization = (
       };
 
       const handlePointerDown = (event: PointerEvent) => {
+        if (
+          walkController !== undefined &&
+          !pointerLockActive() &&
+          event.button === 0
+        ) {
+          event.preventDefault();
+          Effect.runSync(walkController.lock);
+          return;
+        }
         const selection = selectionAtPointer(event);
         if (selection === undefined) return;
         resolved.onNodeClick?.(selection);

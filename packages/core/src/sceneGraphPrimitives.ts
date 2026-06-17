@@ -135,7 +135,13 @@ export const applyBillboard = (
   options: Readonly<{ lockX?: boolean; lockY?: boolean; lockZ?: boolean }> = {},
 ): void => {
   const previous = object.rotation.clone()
-  object.quaternion.copy(camera.quaternion)
+  const cameraWorldQuaternion = camera.getWorldQuaternion(new Three.Quaternion())
+  if (object.parent === null) {
+    object.quaternion.copy(cameraWorldQuaternion)
+  } else {
+    const parentWorldQuaternion = object.parent.getWorldQuaternion(new Three.Quaternion())
+    object.quaternion.copy(parentWorldQuaternion.invert().multiply(cameraWorldQuaternion))
+  }
   if (options.lockX) object.rotation.x = previous.x
   if (options.lockY) object.rotation.y = previous.y
   if (options.lockZ) object.rotation.z = previous.z

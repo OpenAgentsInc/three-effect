@@ -716,6 +716,23 @@ describe("render and scene graph primitives", () => {
     const object = new Three.Object3D();
     applyBillboard(object, camera);
     expect(object.quaternion.equals(camera.quaternion)).toBe(true);
+
+    const parent = new Three.Group();
+    parent.rotation.x = -Math.PI / 2;
+    const child = new Three.Object3D();
+    parent.add(child);
+    applyBillboard(child, camera);
+    parent.updateMatrixWorld(true);
+    camera.updateMatrixWorld(true);
+    const childWorldQuaternion = child.getWorldQuaternion(
+      new Three.Quaternion(),
+    );
+    const cameraWorldQuaternion = camera.getWorldQuaternion(
+      new Three.Quaternion(),
+    );
+    expect(childWorldQuaternion.angleTo(cameraWorldQuaternion)).toBeLessThan(
+      0.000001,
+    );
   });
 });
 
