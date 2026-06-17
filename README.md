@@ -166,6 +166,10 @@ This pass pulled the reusable, React-free layer into `@openagentsinc/three-effec
 - `mediaParticlePrimitives`
   - loading progress tracking, video textures, positional audio, deterministic
     star/sparkle attributes, and Points construction.
+- `mmoEntityPrimitives`
+  - Quick MMORPG-inspired transform-row normalization, position/quaternion
+    interpolation, stale/despawn liveness helpers, and entity description
+    caches for SpacetimeDB-style world row streams.
 
 The follow-up controls/helpers pass closed the remaining gap between
 three-effect's single `OrbitControls` binding and the broader controls and

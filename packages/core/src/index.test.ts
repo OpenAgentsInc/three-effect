@@ -17,6 +17,8 @@ import {
   cloneObject3D,
   collectGltfObjectMap,
   computeCenterOffset,
+  createMmoEntityDescriptionCache,
+  createMmoEntityTransformInterpolator,
   createAnimationController,
   createBezierNodeConnections,
   createContactShadowResources,
@@ -160,6 +162,7 @@ import {
   defaultMmorpgCharacterControllerState,
   integrateWasdVelocity,
   keyCodeToWasdAction,
+  mmoEntityLiveness,
   mmorpgCharacterActionForKeyboard,
   mmorpgCharacterForwardDirection,
   pmndrsEntityPoolPrimitiveSourceRefs,
@@ -167,10 +170,14 @@ import {
   pmndrsPlayerControllerPrimitiveSourceRefs,
   pmndrsPresenceBindingPrimitiveSourceRefs,
   pmndrsTextLabelPrimitiveSourceRefs,
+  quickMmorpgEntityPrimitiveSourceRefs,
   resolveMmorpgCharacterControllerOptions,
+  normalizeMmoEntityTransformSnapshot,
   resolveThirdPersonFollowCameraOptions,
   resolveTextLabelOptions,
   setWasdKeyState,
+  updateMmoEntityInterpolationState,
+  createMmoEntityInterpolationState,
   quickMmorpgSpatialPrimitiveSourceRefs,
   raycastHitTargetRegistry,
   relaxMinimumDistanceLayout,
@@ -652,6 +659,103 @@ describe("spatial primitives", () => {
     expect(a).toBeDefined();
     expect(b).toBeDefined();
     expect(a!.distanceTo(b!)).toBeGreaterThanOrEqual(1.99);
+  });
+});
+
+describe("mmo entity primitives", () => {
+  test("normalizes transform rows and interpolates position plus quaternion", () => {
+    expect(quickMmorpgEntityPrimitiveSourceRefs).toContain(
+      "projects/repos/Quick_3D_MMORPG/client/src/network-entity-controller.js",
+    );
+
+    const initial = normalizeMmoEntityTransformSnapshot({
+      id: "agent-1",
+      state: "idle",
+      position: [0, 0, 0],
+      quaternion: [0, 0, 0, 1],
+      updatedAtMs: 100,
+      description: { label: "Agent 1" },
+    });
+    const state = createMmoEntityInterpolationState(initial);
+
+    const target = normalizeMmoEntityTransformSnapshot({
+      id: "agent-1",
+      state: "walk",
+      position: [10, 0, 0],
+      quaternion: new Three.Quaternion().setFromAxisAngle(
+        new Three.Vector3(0, 1, 0),
+        Math.PI,
+      ),
+      updatedAtMs: 200,
+    });
+
+    updateMmoEntityInterpolationState(state, 0, { interpolateMs: 100 });
+    expect(state.currentPosition.x).toBe(0);
+    state.previousPosition.copy(state.currentPosition);
+    state.previousQuaternion.copy(state.currentQuaternion);
+    state.targetPosition.copy(target.position);
+    state.targetQuaternion.copy(target.quaternion);
+    state.elapsedMs = 0;
+    state.updatedAtMs = target.updatedAtMs;
+    state.state = target.state;
+
+    const halfway = updateMmoEntityInterpolationState(state, 50, {
+      interpolateMs: 100,
+    });
+    expect(halfway.position.x).toBeCloseTo(5);
+    expect(halfway.state).toBe("walk");
+    expect(halfway.quaternion.y).toBeCloseTo(Math.SQRT1_2);
+
+    const complete = updateMmoEntityInterpolationState(state, 50, {
+      interpolateMs: 100,
+    });
+    expect(complete.position.x).toBeCloseTo(10);
+  });
+
+  test("interpolator applies snapshots, resets, and reports liveness", () => {
+    const interpolator = createMmoEntityTransformInterpolator(
+      normalizeMmoEntityTransformSnapshot({
+        id: "remote",
+        position: [0, 0, 0],
+        updatedAtMs: 1_000,
+      }),
+      { interpolateMs: 100, staleAfterMs: 500, despawnAfterMs: 1_000 },
+    );
+
+    interpolator.apply(
+      normalizeMmoEntityTransformSnapshot({
+        id: "remote",
+        position: [0, 0, 10],
+        updatedAtMs: 1_100,
+      }),
+    );
+
+    expect(interpolator.update(50).position.z).toBeCloseTo(5);
+    expect(interpolator.liveness(1_200)).toBe("fresh");
+    expect(interpolator.liveness(1_700)).toBe("stale");
+    expect(interpolator.liveness(2_100)).toBe("despawn");
+
+    interpolator.reset(
+      normalizeMmoEntityTransformSnapshot({
+        id: "remote",
+        position: [4, 0, 0],
+        updatedAtMs: 2_200,
+      }),
+    );
+    expect(interpolator.sample().position.x).toBe(4);
+    expect(mmoEntityLiveness(100, 1_000, { staleAfterMs: 300, despawnAfterMs: 800 })).toBe(
+      "despawn",
+    );
+  });
+
+  test("tracks missing descriptions in a stable cache", () => {
+    const cache = createMmoEntityDescriptionCache<{ label: string }>();
+    expect(cache.missing(["a", "b"])).toEqual(["a", "b"]);
+    cache.upsert("a", { label: "Alpha" });
+    expect(cache.get("a")).toEqual({ label: "Alpha" });
+    expect(cache.missing(["a", "b"])).toEqual(["b"]);
+    expect(cache.remove("a")).toBe(true);
+    expect(cache.get("a")).toBeUndefined();
   });
 });
 
