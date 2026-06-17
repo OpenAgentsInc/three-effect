@@ -203,10 +203,11 @@ export const createAnimationStateMachine = (
 ): AnimationFsmHandle => {
   const resolved = { ...defaultAnimationFsmOptions, ...options }
   const definitions = new Map(states.map(state => [state.name, state]))
-  let currentState = definitions.get(initialStateName) ?? states[0]
-  if (currentState === undefined) {
+  const initialState = definitions.get(initialStateName) ?? states[0]
+  if (initialState === undefined) {
     throw new Error("createAnimationStateMachine: at least one state is required")
   }
+  let currentState: AnimationFsmStateDefinition = initialState
   let currentAction: Three.AnimationAction | undefined
 
   const transition = (name: string): boolean => {

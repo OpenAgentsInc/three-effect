@@ -181,14 +181,18 @@ export const createEquipmentAttachmentManager = <TValue = unknown>(
         return undefined
       }
       detach(id)
-      const handle = attachObjectToBone({
+      const position = transform.position ?? slot.position
+      const quaternion = transform.quaternion ?? slot.quaternion
+      const scale = transform.scale ?? slot.scale
+      const attachmentOptions: BoneAttachmentOptions = {
         root,
         object,
         boneNames: slot.boneNames,
-        position: transform.position ?? slot.position,
-        quaternion: transform.quaternion ?? slot.quaternion,
-        scale: transform.scale ?? slot.scale,
-      })
+        ...(position === undefined ? {} : { position }),
+        ...(quaternion === undefined ? {} : { quaternion }),
+        ...(scale === undefined ? {} : { scale }),
+      }
+      const handle = attachObjectToBone(attachmentOptions)
       if (handle === undefined) {
         return undefined
       }

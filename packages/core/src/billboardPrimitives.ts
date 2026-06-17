@@ -238,9 +238,9 @@ export const createEntityBillboardOverlay = (
 
   return {
     group,
-    name,
-    speech,
-    status,
+    ...(name === undefined ? {} : { name }),
+    ...(speech === undefined ? {} : { speech }),
+    ...(status === undefined ? {} : { status }),
     faceCamera: camera => {
       name?.faceCamera(camera)
       speech?.faceCamera(camera)

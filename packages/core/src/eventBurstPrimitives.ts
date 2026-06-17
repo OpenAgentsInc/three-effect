@@ -219,12 +219,18 @@ export const createEvidenceBackedEventBurst = (
   options: EvidenceBackedEventBurstOptions,
 ): EvidenceBackedEventBurstResult => {
   const evidence: EventBurstEvidence = {
-    motionId: options.motionId,
-    motionKind: options.motionKind,
-    sourceRefs: options.sourceRefs,
-    generatedAt: options.generatedAt,
-    expiresAt: options.expiresAt,
-    simulated: options.simulated,
+    ...(options.motionId === undefined ? {} : { motionId: options.motionId }),
+    ...(options.motionKind === undefined
+      ? {}
+      : { motionKind: options.motionKind }),
+    ...(options.sourceRefs === undefined
+      ? {}
+      : { sourceRefs: options.sourceRefs }),
+    ...(options.generatedAt === undefined
+      ? {}
+      : { generatedAt: options.generatedAt }),
+    ...(options.expiresAt === undefined ? {} : { expiresAt: options.expiresAt }),
+    ...(options.simulated === undefined ? {} : { simulated: options.simulated }),
   }
   if (!eventBurstCanRender(evidence, options.evidenceMode ?? "optional")) {
     return {
