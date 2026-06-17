@@ -158,6 +158,7 @@ import {
   resolveTextLabelOptions,
   setWasdKeyState,
   wasdDesiredDirection,
+  wasdMouseMovementFromEvent,
 } from "./index";
 
 import { FirstPersonControls } from "three/examples/jsm/controls/FirstPersonControls.js";
@@ -1493,6 +1494,25 @@ describe("player controller primitives", () => {
     const strafe = wasdDesiredDirection(camera, strafeState);
     expect(strafe.x).toBeCloseTo(0);
     expect(strafe.z).toBeCloseTo(-1);
+  });
+
+  test("reads standard and browser-prefixed mouse movement deltas", () => {
+    expect(
+      wasdMouseMovementFromEvent(
+        { movementX: 3, movementY: -2 } as MouseEvent,
+      ),
+    ).toEqual([3, -2]);
+
+    const prefixed = {
+      movementX: 0,
+      movementY: 0,
+    } as MouseEvent & {
+      webkitMovementX: number;
+      webkitMovementY: number;
+    };
+    Object.defineProperty(prefixed, "webkitMovementX", { value: 7 });
+    Object.defineProperty(prefixed, "webkitMovementY", { value: -6 });
+    expect(wasdMouseMovementFromEvent(prefixed)).toEqual([7, -6]);
   });
 
   test("applies explicit pointer-lock mouse deltas to camera yaw and pitch", () => {

@@ -34,6 +34,17 @@ export type WasdKeyboardState = Readonly<Record<WasdAction, boolean>>;
 
 export type MutableWasdKeyboardState = Record<WasdAction, boolean>;
 
+export type WasdMouseLookDebugSnapshot = Readonly<{
+  event: "lock" | "unlock" | "mousemove";
+  applied: boolean;
+  locked: boolean;
+  movementX: number;
+  movementY: number;
+  pitch: number;
+  source: "controller" | "fallback" | "state" | "stock";
+  yaw: number;
+}>;
+
 export type WasdMovementBounds = Readonly<{
   minX: number;
   maxX: number;
@@ -52,6 +63,7 @@ export type WasdMouseLookControllerOptions = Readonly<{
   acceleration?: number;
   damping?: number;
   pointerSensitivity?: number;
+  debug?: boolean | ((snapshot: WasdMouseLookDebugSnapshot) => void);
   pitchMin?: number;
   pitchMax?: number;
   bounds?: WasdMovementBounds;
@@ -70,6 +82,7 @@ export type ResolvedWasdMouseLookControllerOptions = Readonly<{
   acceleration: number;
   damping: number;
   pointerSensitivity: number;
+  debug: boolean | ((snapshot: WasdMouseLookDebugSnapshot) => void);
   pitchMin: number;
   pitchMax: number;
   bounds?: WasdMovementBounds;
@@ -111,6 +124,7 @@ export const defaultWasdMouseLookControllerOptions = (
   acceleration: 18,
   damping: 12,
   pointerSensitivity: 0.002,
+  debug: false,
   pitchMin: -Math.PI / 2 + 0.05,
   pitchMax: Math.PI / 2 - 0.05,
   groundHeightAt: () => 0,
@@ -181,6 +195,26 @@ const yawForward = new Three.Vector3();
 const yawRight = new Three.Vector3();
 const mouseLookEuler = new Three.Euler(0, 0, 0, "YXZ");
 
+export const wasdMouseMovementFromEvent = (
+  event: MouseEvent | PointerEvent,
+): readonly [number, number] => [
+  event.movementX ||
+    (event as MouseEvent & { webkitMovementX?: number }).webkitMovementX ||
+    (event as MouseEvent & { mozMovementX?: number }).mozMovementX ||
+    0,
+  event.movementY ||
+    (event as MouseEvent & { webkitMovementY?: number }).webkitMovementY ||
+    (event as MouseEvent & { mozMovementY?: number }).mozMovementY ||
+    0,
+];
+
+const cameraYawPitch = (
+  camera: Three.PerspectiveCamera,
+): readonly [number, number] => {
+  mouseLookEuler.setFromQuaternion(camera.quaternion);
+  return [mouseLookEuler.y, mouseLookEuler.x];
+};
+
 export const applyMouseLookDelta = (
   camera: Three.PerspectiveCamera,
   movementX: number,
@@ -203,6 +237,12 @@ export const applyMouseLookDelta = (
   camera.updateMatrixWorld();
   return camera;
 };
+
+const pointerLockActive = (
+  controls: PointerLockControls,
+  domElement: HTMLElement,
+): boolean =>
+  controls.isLocked || domElement.ownerDocument.pointerLockElement === domElement;
 
 export const wasdDesiredDirection = (
   camera: Three.Camera,
@@ -295,9 +335,43 @@ export const createWasdMouseLookController = (
         initialPosition[1],
         initialPosition[2],
       );
+      const lastCameraQuaternion = camera.quaternion.clone();
+      let debugEventCount = 0;
 
       const removers: Array<() => void> = [];
       const keyTarget = resolved.inputTarget;
+      const emitDebug = (
+        event: WasdMouseLookDebugSnapshot["event"],
+        source: WasdMouseLookDebugSnapshot["source"],
+        movementX: number,
+        movementY: number,
+        applied: boolean,
+      ) => {
+        if (resolved.debug === false) return;
+        const [yaw, pitch] = cameraYawPitch(camera);
+        const snapshot: WasdMouseLookDebugSnapshot = {
+          event,
+          applied,
+          locked: pointerLockActive(pointerLockHandle.controls, domElement),
+          movementX,
+          movementY,
+          pitch,
+          source,
+          yaw,
+        };
+        if (typeof resolved.debug === "function") {
+          resolved.debug(snapshot);
+        } else if (typeof console !== "undefined") {
+          debugEventCount += 1;
+          if (
+            event !== "mousemove" ||
+            debugEventCount <= 40 ||
+            debugEventCount % 60 === 0
+          ) {
+            console.debug("[three-effect:wasd_mouselook]", snapshot);
+          }
+        }
+      };
       const onKeyDown = (event: KeyboardEvent) => {
         if (!resolved.enabled || isEditableInputTarget(event.target)) return;
         if (setWasdKeyState(keyboard, event.code, true)) event.preventDefault();
@@ -317,22 +391,27 @@ export const createWasdMouseLookController = (
       });
 
       const onMouseLook = (event: MouseEvent | PointerEvent) => {
-        if (!resolved.enabled || !pointerLockHandle.controls.isLocked) return;
-        const movementX = event.movementX;
-        const movementY = event.movementY;
-        if (movementX === 0 && movementY === 0) return;
+        if (
+          !resolved.enabled ||
+          !pointerLockActive(pointerLockHandle.controls, domElement)
+        ) {
+          return;
+        }
+        const [movementX, movementY] = wasdMouseMovementFromEvent(event);
+        if (movementX === 0 && movementY === 0) {
+          emitDebug("mousemove", "controller", movementX, movementY, false);
+          return;
+        }
         event.preventDefault();
         applyMouseLookDelta(camera, movementX, movementY, resolved);
+        lastCameraQuaternion.copy(camera.quaternion);
+        emitDebug("mousemove", "controller", movementX, movementY, true);
       };
       domElement.ownerDocument.addEventListener("mousemove", onMouseLook, {
         passive: false,
       });
-      domElement.ownerDocument.addEventListener("pointermove", onMouseLook, {
-        passive: false,
-      });
       removers.push(() => {
         domElement.ownerDocument.removeEventListener("mousemove", onMouseLook);
-        domElement.ownerDocument.removeEventListener("pointermove", onMouseLook);
       });
 
       if (resolved.lockSelector !== undefined) {
@@ -348,8 +427,15 @@ export const createWasdMouseLookController = (
       }
 
       if (resolved.onLockChange !== undefined) {
-        const onLock = () => resolved.onLockChange?.(true);
-        const onUnlock = () => resolved.onLockChange?.(false);
+        const onLock = () => {
+          lastCameraQuaternion.copy(camera.quaternion);
+          emitDebug("lock", "state", 0, 0, false);
+          resolved.onLockChange?.(true);
+        };
+        const onUnlock = () => {
+          emitDebug("unlock", "state", 0, 0, false);
+          resolved.onLockChange?.(false);
+        };
         pointerLockHandle.controls.addEventListener("lock", onLock);
         pointerLockHandle.controls.addEventListener("unlock", onUnlock);
         removers.push(() => {
@@ -365,6 +451,7 @@ export const createWasdMouseLookController = (
         update: (delta: number) =>
           Effect.sync(() => {
             if (disposed || !resolved.enabled) return;
+            lastCameraQuaternion.copy(camera.quaternion);
             const desired = wasdDesiredDirection(camera, keyboard);
             integrateWasdVelocity(
               velocity,
