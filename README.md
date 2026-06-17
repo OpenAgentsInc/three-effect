@@ -176,6 +176,10 @@ This pass pulled the reusable, React-free layer into `@openagentsinc/three-effec
 - `mediaParticlePrimitives`
   - loading progress tracking, video textures, positional audio, deterministic
     star/sparkle attributes, and Points construction.
+- `eventBurstPrimitives`
+  - Quick MMORPG-inspired linear splines for alpha/size/color, deterministic
+    point-sprite event emitters, and strict evidence-backed event burst
+    creation for proof/receipt/settlement/chat effects.
 - `mmoEntityPrimitives`
   - Quick MMORPG-inspired transform-row normalization, position/quaternion
     interpolation, stale/despawn liveness helpers, and entity description

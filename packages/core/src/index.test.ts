@@ -157,8 +157,12 @@ import {
   bindEntityPresence,
   clampWasdPosition,
   createEntityPool,
+  createColorSpline,
+  createEvidenceBackedEventBurst,
   createFlowBeam,
+  createNumberSpline,
   createPayoutBurst,
+  createSplineParticleEmitter,
   defaultTextLabelOptions,
   defaultWasdKeyboardState,
   createThirdPersonFollowCamera,
@@ -180,7 +184,9 @@ import {
   quickMmorpgAttachmentPrimitiveSourceRefs,
   quickMmorpgBillboardPrimitiveSourceRefs,
   quickMmorpgEntityPrimitiveSourceRefs,
+  quickMmorpgEventBurstPrimitiveSourceRefs,
   resolveBillboardStatusBarOptions,
+  eventBurstCanRender,
   quickMmorpgAnimationPrimitiveSourceRefs,
   resolveMmorpgCharacterControllerOptions,
   normalizeMmoEntityTransformSnapshot,
@@ -930,6 +936,70 @@ describe("billboard primitives", () => {
       disposed = true;
     });
     handle.dispose();
+    expect(disposed).toBe(true);
+  });
+});
+
+describe("event burst primitives", () => {
+  test("samples number and color splines deterministically", () => {
+    expect(quickMmorpgEventBurstPrimitiveSourceRefs).toContain(
+      "projects/repos/Quick_3D_MMORPG/client/src/particle-system.js",
+    );
+    const alpha = createNumberSpline([[0, 1], [1, 0]]);
+    expect(alpha.sample(0.25)).toBeCloseTo(0.75);
+
+    const color = createColorSpline([[0, 0xff0000], [1, 0x0000ff]]);
+    expect(color.sample(0.5).r).toBeCloseTo(0.5);
+    expect(color.sample(0.5).b).toBeCloseTo(0.5);
+  });
+
+  test("requires evidence before creating strict animated bursts", () => {
+    expect(eventBurstCanRender({}, "required")).toBe(false);
+    expect(
+      eventBurstCanRender({ sourceRefs: ["proof:verification:1"] }, "required"),
+    ).toBe(true);
+    const blocked = createEvidenceBackedEventBurst({
+      at: [0, 0, 0],
+      evidenceMode: "required",
+    });
+    expect(blocked.rendered).toBe(false);
+
+    const rendered = createEvidenceBackedEventBurst({
+      at: [0, 0, 0],
+      evidenceMode: "required",
+      sourceRefs: ["proof:verification:1"],
+      count: 4,
+      durationMs: 100,
+    });
+    expect(rendered.rendered).toBe(true);
+    if (rendered.rendered) {
+      rendered.handle.dispose();
+    }
+  });
+
+  test("updates and disposes spline particle emitters", () => {
+    const emitter = createSplineParticleEmitter({
+      at: [1, 2, 3],
+      count: 4,
+      durationMs: 100,
+      seed: 10,
+      alpha: createNumberSpline([[0, 1], [1, 0]]),
+      size: createNumberSpline([[0, 0.2], [1, 0.01]]),
+      color: createColorSpline([[0, 0xffffff], [1, 0x00ff00]]),
+    });
+    const positions = (
+      emitter.object3D.geometry.getAttribute("position") as Three.BufferAttribute
+    ).array as Float32Array;
+    expect([positions[0], positions[1], positions[2]]).toEqual([1, 2, 3]);
+    expect(emitter.update(50)).toBe(true);
+    expect(emitter.progress()).toBeCloseTo(0.5);
+    expect(emitter.update(50)).toBe(false);
+    expect(emitter.done()).toBe(true);
+    let disposed = false;
+    emitter.object3D.geometry.addEventListener("dispose", () => {
+      disposed = true;
+    });
+    emitter.dispose();
     expect(disposed).toBe(true);
   });
 });
