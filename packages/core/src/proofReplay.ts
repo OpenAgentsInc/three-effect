@@ -80,6 +80,7 @@ export type ProofReplayVisualizationOptions = Readonly<{
   durationSecond?: number;
   events?: readonly ProofReplayEventDefinition[];
   flows?: readonly ProofReplayFlowDefinition[];
+  labels?: boolean;
   pixelRatio?: number;
   stages?: readonly ProofReplayStageDefinition[];
   title?: string;
@@ -92,6 +93,7 @@ export type ResolvedProofReplayVisualizationOptions = Readonly<{
   durationSecond: number;
   events: readonly ProofReplayEventDefinition[];
   flows: readonly ProofReplayFlowDefinition[];
+  labels: boolean;
   pixelRatio: number;
   stages: readonly ProofReplayStageDefinition[];
   title: string;
@@ -124,6 +126,7 @@ export const defaultProofReplayVisualizationOptions: ResolvedProofReplayVisualiz
   durationSecond: 60,
   events: [],
   flows: [],
+  labels: true,
   pixelRatio: 2,
   stages: [],
   title: "Proof replay",
@@ -138,6 +141,7 @@ export const resolveProofReplayVisualizationOptions = (
   camera: options.camera ?? defaultProofReplayVisualizationOptions.camera,
   events: options.events ?? defaultProofReplayVisualizationOptions.events,
   flows: options.flows ?? defaultProofReplayVisualizationOptions.flows,
+  labels: options.labels ?? defaultProofReplayVisualizationOptions.labels,
   stages: options.stages ?? defaultProofReplayVisualizationOptions.stages,
 });
 
@@ -445,32 +449,36 @@ export const mountProofReplayVisualization = (
         const object = makeStageObject(stage);
         stageObjects.set(stage.id, object);
         root.add(object);
-        const label = createTextLabel({
-          text: stage.label,
-          color: "#f1efe8",
-          fontSize: stage.kind.includes("run_core") ? 42 : 32,
-          position: [object.position.x, object.position.y + 0.92, object.position.z],
-          worldHeight: stage.kind.includes("run_core") ? 0.34 : 0.24,
-          billboard: true,
-        });
-        root.add(label.object3D);
-        labels.push(label);
+        if (resolved.labels) {
+          const label = createTextLabel({
+            text: stage.label,
+            color: "#f1efe8",
+            fontSize: stage.kind.includes("run_core") ? 34 : 26,
+            position: [object.position.x, object.position.y + 0.92, object.position.z],
+            worldHeight: stage.kind.includes("run_core") ? 0.22 : 0.16,
+            billboard: true,
+          });
+          root.add(label.object3D);
+          labels.push(label);
+        }
       }
 
       for (const actor of resolved.actors) {
         const object = makeActorObject(actor);
         actorObjects.set(actor.id, object);
         root.add(object);
-        const label = createTextLabel({
-          text: actorLabelText(actor),
-          color: "#e5e7eb",
-          fontSize: 34,
-          position: [object.position.x, object.position.y + 0.84, object.position.z],
-          worldHeight: 0.22,
-          billboard: true,
-        });
-        root.add(label.object3D);
-        labels.push(label);
+        if (resolved.labels) {
+          const label = createTextLabel({
+            text: actorLabelText(actor),
+            color: "#e5e7eb",
+            fontSize: 28,
+            position: [object.position.x, object.position.y + 0.84, object.position.z],
+            worldHeight: 0.14,
+            billboard: true,
+          });
+          root.add(label.object3D);
+          labels.push(label);
+        }
       }
 
       const structuralBeams: FlowBeamHandle[] = [];
