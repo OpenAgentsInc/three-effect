@@ -64,6 +64,8 @@ import {
   defaultMokshaDiamonds,
   defaultMokshaOptions,
   defaultMokshaParagraphs,
+  defaultProofReplayCameraPose,
+  defaultProofReplayVisualizationOptions,
   defaultQuadraticBezierMidpoint,
   defaultScrollMetrics,
   defaultSpinningCubeOptions,
@@ -189,9 +191,11 @@ import {
   eventBurstCanRender,
   quickMmorpgAnimationPrimitiveSourceRefs,
   resolveMmorpgCharacterControllerOptions,
+  resolveProofReplayVisualizationOptions,
   normalizeMmoEntityTransformSnapshot,
   resolveThirdPersonFollowCameraOptions,
   resolveTextLabelOptions,
+  proofReplayCameraPoseWithOverride,
   setWasdKeyState,
   updateMmoEntityInterpolationState,
   createMmoEntityInterpolationState,
@@ -1851,6 +1855,29 @@ describe("training run visualization", () => {
     expect(
       options.nodes?.find((node) => node.id === "settlement")?.detail,
     ).toBe("3 pending");
+  });
+});
+
+describe("proof replay visualization", () => {
+  test("keeps a perspective camera snapshot with stable defaults", () => {
+    expect(resolveProofReplayVisualizationOptions()).toMatchObject({
+      ...defaultProofReplayVisualizationOptions,
+      camera: defaultProofReplayCameraPose,
+    });
+  });
+
+  test("applies caller camera overrides without mutating the base pose", () => {
+    const base = defaultProofReplayCameraPose;
+    const pose = proofReplayCameraPoseWithOverride(base, {
+      fov: 38,
+      position: { x: 3, y: 2, z: 8 },
+      target: [1, 0, -1],
+    });
+
+    expect(pose.fov).toBe(38);
+    expect(pose.position).toEqual({ x: 3, y: 2, z: 8 });
+    expect(pose.target).toEqual([1, 0, -1]);
+    expect(base.position).toEqual([0, 7.8, 10.5]);
   });
 });
 
