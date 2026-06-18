@@ -222,21 +222,6 @@ const disposeObject = (object: Three.Object3D): void => {
   });
 };
 
-const makeLine = (
-  points: readonly Three.Vector3[],
-  color: number,
-  opacity = 0.28,
-): Three.Line<Three.BufferGeometry, Three.LineBasicMaterial> => {
-  const geometry = new Three.BufferGeometry().setFromPoints([...points]);
-  const material = new Three.LineBasicMaterial({
-    color,
-    transparent: true,
-    opacity,
-    depthWrite: false,
-  });
-  return new Three.Line(geometry, material);
-};
-
 const makeHalo = (
   radius: number,
   color: number,
@@ -333,16 +318,6 @@ const applyCameraPose = (
   }
   camera.updateProjectionMatrix();
   camera.updateMatrixWorld();
-};
-
-const updateLabel = (
-  label: TextLabelHandle,
-  camera: Three.Camera,
-  position: Three.Vector3,
-  offsetY: number,
-): void => {
-  label.object3D.position.set(position.x, position.y + offsetY, position.z);
-  label.faceCamera(camera);
 };
 
 const anchorForId = (

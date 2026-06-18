@@ -333,9 +333,9 @@ const pushNormal = (
   z: number,
 ) => {
   const base = vertexIndex * 3
-  normals[base] += x
-  normals[base + 1] += y
-  normals[base + 2] += z
+  normals[base] = (normals[base] ?? 0) + x
+  normals[base + 1] = (normals[base + 1] ?? 0) + y
+  normals[base + 2] = (normals[base + 2] ?? 0) + z
 }
 
 const vertexPosition = (
