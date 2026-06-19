@@ -4,6 +4,7 @@ import type { Attribute, Html } from "foldkit/html"
 
 import {
   mountBezierNodes,
+  mountHudGallery,
   mountMokshaExperience,
   mountSpinningCube,
   mountTrainingRunVisualization,
@@ -16,6 +17,7 @@ export const bezierNodesTagName = "oa-bezier-nodes"
 export const mokshaTagName = "oa-moksha"
 export const spinningCubeTagName = "oa-spinning-cube"
 export const trainingRunTagName = "oa-training-run"
+export const hudGalleryTagName = "oa-hud-gallery"
 
 const bezierNodesElement = defineCustomElement({
   tag: bezierNodesTagName,
@@ -25,6 +27,12 @@ const bezierNodesElement = defineCustomElement({
 
 const spinningCubeElement = defineCustomElement({
   tag: spinningCubeTagName,
+  properties: {},
+  events: {},
+})
+
+const hudGalleryElement = defineCustomElement({
+  tag: hudGalleryTagName,
   properties: {},
   events: {},
 })
@@ -330,6 +338,47 @@ const makeTrainingRunElement = (): CustomElementConstructor => {
   }
 }
 
+const makeHudGalleryElement = (): CustomElementConstructor => {
+  return class HudGalleryElement extends HTMLElement {
+    #dispose: Effect.Effect<void> | null = null
+
+    connectedCallback(): void {
+      if (this.#dispose !== null) return
+
+      const shadow = this.shadowRoot ?? this.attachShadow({ mode: "open" })
+      shadow.replaceChildren()
+
+      const style = document.createElement("style")
+      style.textContent = `
+        :host {
+          display: block;
+          min-height: 340px;
+          overflow: hidden;
+          background: #0b0d12;
+        }
+        .mount {
+          width: 100%;
+          height: 100%;
+          min-height: inherit;
+        }
+      `
+
+      const mount = document.createElement("div")
+      mount.className = "mount"
+      shadow.append(style, mount)
+
+      const handle = Effect.runSync(mountHudGallery(mount))
+      this.#dispose = handle.dispose
+    }
+
+    disconnectedCallback(): void {
+      if (this.#dispose === null) return
+      Effect.runSync(this.#dispose)
+      this.#dispose = null
+    }
+  }
+}
+
 export const registerBezierNodesElement = (): void => {
   if (typeof customElements === "undefined") return
   if (typeof HTMLElement === "undefined") return
@@ -356,6 +405,13 @@ export const registerTrainingRunElement = (): void => {
   if (typeof HTMLElement === "undefined") return
   if (customElements.get(trainingRunTagName) !== undefined) return
   customElements.define(trainingRunTagName, makeTrainingRunElement())
+}
+
+export const registerHudGalleryElement = (): void => {
+  if (typeof customElements === "undefined") return
+  if (typeof HTMLElement === "undefined") return
+  if (customElements.get(hudGalleryTagName) !== undefined) return
+  customElements.define(hudGalleryTagName, makeHudGalleryElement())
 }
 
 export const bezierNodesView = <Message>(
@@ -403,4 +459,12 @@ export const trainingRunView = <Message>(
       : [...resolvedAttributes, element.Visualization(visualization)],
     [],
   )
+}
+
+export const hudGalleryView = <Message>(
+  attributes: ReadonlyArray<Attribute<Message>> = [],
+): Html => {
+  registerHudGalleryElement()
+  const element = hudGalleryElement.withMessage<Message>()
+  return element(attributes, [])
 }

@@ -247,6 +247,74 @@ bun run build:demo:training
 open examples/training-run/index.html
 ```
 
+## HUD Kit (Arwes-style sci-fi HUD primitives)
+
+`@openagentsinc/three-effect/core` ships a reusable, React-free kit of
+Arwes-style sci-fi HUD primitives in `packages/core/src/hudPrimitives.ts`,
+plus a one-canvas gallery scene in `packages/core/src/hudGallery.ts`. The
+visual language is ported from the Arwes React/DOM/SVG library
+(`projects/repos/arwes`) and the archived OpenAgents WGPUI `hud` crate
+(System 4 in `docs/launch/2026-06-19-previous-hud-systems-audit.md` in the
+`openagents` repo) into Three.js geometry — no React, no `motion`, no
+`@arwes/*` runtime dependency. This is the HUD H2 (#5500) deliverable that
+H4 skins the desktop shell/hotbar/panes with.
+
+Primitives (each is a pure factory returning a disposable `{ group | mesh |
+points | lineSegments | line, ...mutators, dispose }` handle):
+
+- `createHudFrameCorners` / `createHudFrameLines` / `createHudFrameUnderline`
+  — Arwes `FrameCorners` / `FrameLines` / `FrameUnderline`, with a
+  `setProgress()` draw-reveal (the deterministic replacement for Arwes'
+  `animateDraw` stroke-dashing) and `setColor()`.
+- `createHudStatusLight` — an LED core + additive halo with optional pulse.
+- `createHudMeter` — a threshold-colored gauge (`hudMeterStatusAt`).
+- `createHudDotGrid` / `createHudGridLines` / `createHudScanlines` — the
+  dot-grid, grid-line, and scrolling-scanline background surfaces.
+- `createHudIlluminator` — the Arwes `Illuminator` pointer-follow glow as an
+  additive radial-gradient plane (DOM-free fallback for headless use).
+- `createHudSeparator` — a faint rule line.
+- `createHudLabel` — crisp 3D HUD text, built on the existing
+  `createTextLabel` (canvas-texture-on-a-plane, no troika/SDF dependency).
+- `createHudAnimator` — a pure, time-stepped port of the Arwes Animator state
+  machine (`entered/entering/exiting/exited`) with `parallel | stagger |
+  sequence` managers; drives any primitive's `setProgress`.
+
+Theme: `HUD_STATUS_COLORS` (white-on-black, cyan primary) + `hudStatusColor`.
+
+```ts
+import { hudGalleryView } from "@openagentsinc/three-effect/foldkit"
+
+// Foldkit: registers the <oa-hud-gallery> custom element on first use.
+const gallery = hudGalleryView<Message>()
+```
+
+```ts
+import {
+  createHudFrameCorners,
+  createHudMeter,
+  createHudStatusLight,
+} from "@openagentsinc/three-effect/core"
+
+const frame = createHudFrameCorners({ width: 2, height: 1.2 })
+scene.add(frame.group)
+const meter = createHudMeter({ value: 0.82 })
+scene.add(meter.group)
+const light = createHudStatusLight({ status: "success", pulseHz: 1 })
+scene.add(light.group)
+// ...and `frame.dispose()` / `meter.dispose()` / `light.dispose()` to release.
+```
+
+The tracked visual smoke lives at `examples/hud-gallery/`:
+
+```sh
+bun run build:demo:hud
+open examples/hud-gallery/index.html
+```
+
+Unit coverage (no WebGL/DOM required) is in `packages/core/src/hud.test.ts`:
+animator state machine, frame/line/underline layout math, meter thresholds,
+dot/grid positions, and Three handle construction + disposal.
+
 ## Bezier Nodes Demo
 
 The tracked visual smoke for the pmndrs Bezier/nodes port lives at

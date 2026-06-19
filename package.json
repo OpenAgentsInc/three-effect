@@ -38,7 +38,8 @@
     "build:demo:training": "bun build examples/training-run/src/main.ts --outdir examples/training-run/dist --target browser",
     "test": "bun test",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "verify": "bun run typecheck && bun test"
+    "verify": "bun run typecheck && bun test",
+    "build:demo:hud": "bun build examples/hud-gallery/src/main.ts --outdir examples/hud-gallery/dist --target browser"
   },
   "keywords": [
     "three",
