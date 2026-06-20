@@ -1,6 +1,6 @@
 {
   "name": "@openagentsinc/three-effect",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Effect and Foldkit bindings for resource-scoped Three.js scenes",
   "license": "Apache-2.0",
   "type": "module",
