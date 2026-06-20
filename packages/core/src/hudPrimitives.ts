@@ -453,13 +453,16 @@ const buildFrame = (
       const p = hudClamp01(
         typeof progress === "number" ? progress : (progress[index] ?? 1),
       )
-      const [a, b] = endpoints[index]
+      const segment = endpoints[index]
+      if (!segment) return
+      const [a, b] = segment
       const tip = a.clone().lerp(b, p)
       line.geometry.setFromPoints([
         new Three.Vector3(a.x, a.y, resolved.z),
         new Three.Vector3(tip.x, tip.y, resolved.z),
       ])
-      line.geometry.attributes.position.needsUpdate = true
+      const positionAttr = line.geometry.attributes.position
+      if (positionAttr) positionAttr.needsUpdate = true
     })
   }
 
@@ -514,7 +517,10 @@ export const createHudFrameUnderline = (
   )
   const segments: Array<readonly [Three.Vector2, Three.Vector2]> = []
   for (let i = 0; i < loop.length - 1; i += 1) {
-    segments.push([loop[i], loop[i + 1]] as const)
+    const a = loop[i]
+    const b = loop[i + 1]
+    if (!a || !b) continue
+    segments.push([a, b] as const)
   }
   return buildFrame(options, segments)
 }
@@ -913,7 +919,8 @@ export const createHudScanlines = (
   return {
     mesh,
     update: (elapsedSeconds: number) => {
-      material.uniforms.uTime.value = elapsedSeconds
+      const uTime = material.uniforms.uTime
+      if (uTime) uTime.value = elapsedSeconds
     },
     dispose: () => {
       geometry.dispose()
@@ -1097,12 +1104,13 @@ export const createHudLabel = (options: HudLabelOptions): TextLabelHandle =>
     worldHeight: options.worldHeight ?? 0.16,
     anchorX: options.anchorX ?? "left",
     billboard: false,
-    position:
-      options.position === undefined
-        ? undefined
-        : [
+    ...(options.position === undefined
+      ? {}
+      : {
+          position: [
             options.position.x ?? 0,
             options.position.y ?? 0,
             options.position.z ?? 0,
-          ],
+          ] as [number, number, number],
+        }),
   })
