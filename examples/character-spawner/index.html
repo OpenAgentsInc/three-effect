@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>three-effect character spawner demo</title>
+    <style>
+      html,
+      body,
+      #scene {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: #080a0f;
+      }
+
+      #scene {
+        position: fixed;
+        inset: 0;
+      }
+
+      .hud {
+        position: fixed;
+        left: 18px;
+        bottom: 16px;
+        max-width: 420px;
+        color: #f5f7fb;
+        font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+        text-shadow: 0 1px 8px rgba(0, 0, 0, 0.75);
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="scene"></div>
+    <div class="hud">
+      WASD moves local avatar. Shift runs. Cyan agent is interpolated remote state.
+      <br />
+      Nearby agents: <span id="nearby-count">0</span>
+    </div>
+    <script type="module" src="./dist/main.js"></script>
+  </body>
+</html>
