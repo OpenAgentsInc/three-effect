@@ -184,6 +184,24 @@ This pass pulled the reusable, React-free layer into `@openagentsinc/three-effec
   - Quick MMORPG-inspired transform-row normalization, position/quaternion
     interpolation, stale/despawn liveness helpers, and entity description
     caches for SpacetimeDB-style world row streams.
+- `characterSpawnerPrimitives`
+  - `createCharacterSpawner()` one-call factory composing GLB animation FSM
+    (idle/walk/run/spawn), the WASD character controller, third-person follow
+    camera, and floating nameplate into a single controllable (local) or
+    interpolated (remote) entity handle for the agent MMORPG. (#5731)
+- `agentAvatarPrimitives`
+  - `createAgentAvatar()` stylized identity-tinted crystal glyph plus
+    `createAgentWarpInEffect()`, a Protoss-style warp-in spawn FX built on the
+    evidence-backed event burst. (#5732)
+- `resourceBarPrimitives`
+  - `createResourceBar()` world-anchored, camera-facing mana/health/earnings
+    bar driven by a `[0,1]` value with per-kind color thresholds; the labeled,
+    threshold-aware sibling of `createBillboardStatusBar`. (#5733)
+- `entityRegistryPrimitives`
+  - `createEntityRegistry()` thin register/lookup-by-id store with a per-frame
+    update tick and optional `SpatialHashGrid` proximity integration — just
+    enough glue to compose the primitives without porting the actor-model ECS.
+    (#5734)
 
 The follow-up controls/helpers pass closed the remaining gap between
 three-effect's single `OrbitControls` binding and the broader controls and
