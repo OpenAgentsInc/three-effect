@@ -132,6 +132,47 @@ const trainingStaticOptionsSignature = (
   return stableOptionsSignature(staticOptions)
 }
 
+const TRAINING_REBUILD_DEBOUNCE_MS = 250
+const TRAINING_ACTIVE_POSE_GRACE_MS = 450
+
+const activeTrainingPose = (
+  pose: TrainingRunLocalPoseSnapshot | undefined,
+  now = Date.now(),
+): boolean =>
+  pose !== undefined &&
+  (pose.action === "walk" ||
+    pose.action === "run" ||
+    pose.action === "jump") &&
+  now - (pose.capturedAtMs ?? 0) < TRAINING_ACTIVE_POSE_GRACE_MS
+
+const recordTrainingHostDiagnostic = (
+  event: string,
+  detail: Record<string, unknown> = {},
+): void => {
+  const host = globalThis as typeof globalThis & {
+    __OA_VERSE_SCENE_LOGS?: Array<{
+      at: string
+      event: string
+      detail: Record<string, unknown>
+    }>
+  }
+  const entry = {
+    at: new Date().toISOString(),
+    event,
+    detail,
+  }
+  if (Array.isArray(host.__OA_VERSE_SCENE_LOGS)) {
+    host.__OA_VERSE_SCENE_LOGS.push(entry)
+    if (host.__OA_VERSE_SCENE_LOGS.length > 300) {
+      host.__OA_VERSE_SCENE_LOGS.splice(
+        0,
+        host.__OA_VERSE_SCENE_LOGS.length - 300,
+      )
+    }
+  }
+  console.info("[verse-scene]", event, detail)
+}
+
 const dispatchTrainingNodeSelected = (
   element: HTMLElement,
   node: TrainingRunNodeSelection,
@@ -358,7 +399,9 @@ const makeTrainingRunElement = (): CustomElementConstructor => {
   return class TrainingRunElement extends HTMLElement {
     #handle: TrainingRunVisualizationHandle | null = null
     #mount: HTMLDivElement | null = null
+    #pendingRemount: ReturnType<typeof setTimeout> | null = null
     #preservedLocalPose: TrainingRunLocalPoseSnapshot | undefined
+    #latestLocalPose: TrainingRunLocalPoseSnapshot | undefined
     #visualization: TrainingRunVisualizationOptions = {}
     #visualizationSignature = stableOptionsSignature(this.#visualization)
     #visualizationStaticSignature = trainingStaticOptionsSignature(
@@ -384,7 +427,7 @@ const makeTrainingRunElement = (): CustomElementConstructor => {
         if (remoteOnly && this.#handle !== null) {
           this.#handle.updateRemoteAvatars(visualization.remoteAvatars ?? [])
         } else {
-          this.#remount()
+          this.#scheduleRemount("visualization.changed")
         }
       }
     }
@@ -407,6 +450,8 @@ const makeTrainingRunElement = (): CustomElementConstructor => {
           width: 100%;
           height: 100%;
           min-height: inherit;
+          position: relative;
+          overflow: hidden;
         }
       `
 
@@ -419,9 +464,17 @@ const makeTrainingRunElement = (): CustomElementConstructor => {
     }
 
     disconnectedCallback(): void {
+      this.#clearPendingRemount()
       this.#unmount()
       this.#mount = null
       this.#preservedLocalPose = undefined
+      this.#latestLocalPose = undefined
+    }
+
+    #clearPendingRemount(): void {
+      if (this.#pendingRemount === null) return
+      clearTimeout(this.#pendingRemount)
+      this.#pendingRemount = null
     }
 
     #unmount(): void {
@@ -430,28 +483,75 @@ const makeTrainingRunElement = (): CustomElementConstructor => {
       this.#handle = null
     }
 
-    #remount(): void {
+    #scheduleRemount(reason: string): void {
+      this.#clearPendingRemount()
+      this.#pendingRemount = setTimeout(() => {
+        this.#pendingRemount = null
+        const pose = this.#latestLocalPose ?? this.#handle?.captureLocalPose()
+        if (activeTrainingPose(pose)) {
+          this.#latestLocalPose = pose
+          recordTrainingHostDiagnostic("verse-host.remount.deferred", {
+            reason,
+            action: pose?.action ?? "unknown",
+          })
+          this.#scheduleRemount(`${reason}.active`)
+          return
+        }
+        this.#remount(reason)
+      }, TRAINING_REBUILD_DEBOUNCE_MS)
+      recordTrainingHostDiagnostic("verse-host.remount.scheduled", {
+        reason,
+      })
+    }
+
+    #remount(reason = "direct"): void {
       if (this.#mount === null) return
+      this.#clearPendingRemount()
+      const previous = this.#handle
       this.#preservedLocalPose =
         this.#handle?.captureLocalPose() ?? this.#preservedLocalPose
-      this.#unmount()
+      this.#latestLocalPose = this.#preservedLocalPose
       const visualization = trainingRunVisualizationOptionsWithLocalPose(
         this.#visualization,
         this.#preservedLocalPose,
       )
+      const staging = document.createElement("div")
       const handle = Effect.runSync(
-        mountTrainingRunVisualization(this.#mount, {
+        mountTrainingRunVisualization(staging, {
           ...visualization,
           onNodeClick: node => dispatchTrainingNodeSelected(this, node),
           onWorldItemProximityChange: item =>
             dispatchTrainingWorldItemProximityChanged(this, item),
           onPresenceZoneChange: zone =>
             dispatchTrainingPresenceZoneChanged(this, zone),
-          onLocalPoseChange: pose =>
-            dispatchTrainingLocalPoseChanged(this, pose),
+          onLocalPoseChange: pose => {
+            this.#latestLocalPose = pose
+            dispatchTrainingLocalPoseChanged(this, pose)
+          },
         }),
       )
+      handle.canvas.style.position = "absolute"
+      handle.canvas.style.inset = "0"
+      handle.canvas.style.width = "100%"
+      handle.canvas.style.height = "100%"
+      this.#mount.append(handle.canvas)
       this.#handle = handle
+      recordTrainingHostDiagnostic("verse-host.remount.mounted", {
+        hadPrevious: previous !== null,
+        reason,
+      })
+      if (previous !== null) {
+        requestAnimationFrame(() => {
+          if (this.#handle !== handle) {
+            Effect.runSync(handle.dispose)
+            return
+          }
+          Effect.runSync(previous.dispose)
+          recordTrainingHostDiagnostic("verse-host.remount.swapped", {
+            reason,
+          })
+        })
+      }
     }
   }
 }
