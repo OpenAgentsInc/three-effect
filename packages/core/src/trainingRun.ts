@@ -5,6 +5,13 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { createEntityPool } from "./entityPoolPrimitives";
 import { createFlowBeam, createPayoutBurst } from "./flowEffectPrimitives";
 import {
+  createMmoEntityTransformInterpolator,
+  normalizeMmoEntityTransformSnapshot,
+  type MmoEntityInterpolationOptions,
+  type MmoEntityTransformInput,
+  type MmoEntityTransformInterpolator,
+} from "./mmoEntityPrimitives";
+import {
   createThreePlayerController,
   createWasdMouseLookController,
   type ThreePlayerControllerAvatarAction,
@@ -259,6 +266,31 @@ export type TrainingRunEntitySelection = Pick<
   "id" | "label" | "position" | "status"
 >;
 
+export type TrainingRunRemoteAvatarAnimation = Extract<
+  ThreePlayerControllerAvatarAction,
+  "idle" | "run" | "walk"
+>;
+
+export type TrainingRunRemoteAvatarLabelVisibility =
+  | "auto"
+  | "hidden"
+  | "visible";
+
+export type TrainingRunRemoteAvatarDefinition = Readonly<{
+  id: string;
+  label: string;
+  position: TrainingRunVector;
+  yaw?: number;
+  animation?: TrainingRunRemoteAvatarAnimation;
+  updatedAtMs?: number;
+  stale?: boolean;
+  color?: string;
+  avatarKind?: string;
+  actorRef?: string;
+  modelUrl?: string;
+  labelVisibility?: TrainingRunRemoteAvatarLabelVisibility;
+}>;
+
 export type TrainingRunVisualizationOptions = Readonly<{
   backgroundColor?: number;
   cameraMode?: TrainingRunCameraMode;
@@ -271,6 +303,8 @@ export type TrainingRunVisualizationOptions = Readonly<{
   operatorSignals?: readonly TrainingRunOperatorSignalDefinition[];
   promiseSignals?: readonly TrainingRunPromiseSignalDefinition[];
   entities?: readonly TrainingRunEntityDefinition[];
+  remoteAvatars?: readonly TrainingRunRemoteAvatarDefinition[];
+  remoteAvatarInterpolation?: MmoEntityInterpolationOptions;
   beams?: readonly TrainingRunBeamDefinition[];
   bursts?: readonly TrainingRunBurstDefinition[];
   motionPolicy?: TrainingRunMotionPolicy;
@@ -364,6 +398,8 @@ export type ResolvedTrainingRunVisualizationOptions = Readonly<{
   operatorSignals: readonly TrainingRunOperatorSignalDefinition[];
   promiseSignals: readonly TrainingRunPromiseSignalDefinition[];
   entities: readonly TrainingRunEntityDefinition[];
+  remoteAvatars: readonly TrainingRunRemoteAvatarDefinition[];
+  remoteAvatarInterpolation: MmoEntityInterpolationOptions;
   beams: readonly TrainingRunBeamDefinition[];
   bursts: readonly TrainingRunBurstDefinition[];
   motionPolicy: Required<TrainingRunMotionPolicy>;
@@ -383,6 +419,9 @@ export type TrainingRunVisualizationHandle = Readonly<{
   element: HTMLElement;
   canvas: HTMLCanvasElement;
   captureLocalPose: () => TrainingRunLocalPoseSnapshot | undefined;
+  updateRemoteAvatars: (
+    avatars: readonly TrainingRunRemoteAvatarDefinition[],
+  ) => void;
   selectNextTarget: (direction?: 1 | -1) => TrainingRunNodeSelection | undefined;
   resize: Effect.Effect<void>;
   dispose: Effect.Effect<void>;
@@ -585,6 +624,12 @@ export const defaultTrainingRunVisualizationOptions: ResolvedTrainingRunVisualiz
     operatorSignals: defaultTrainingRunOperatorSignals,
     promiseSignals: defaultTrainingRunPromiseSignals,
     entities: [],
+    remoteAvatars: [],
+    remoteAvatarInterpolation: {
+      despawnAfterMs: 12_000,
+      interpolateMs: 180,
+      staleAfterMs: 6_000,
+    },
     beams: [],
     bursts: [],
     motionPolicy: {
@@ -651,6 +696,13 @@ export const resolveTrainingRunVisualizationOptions = (
       defaultTrainingRunVisualizationOptions.promiseSignals,
     entities:
       options.entities ?? defaultTrainingRunVisualizationOptions.entities,
+    remoteAvatars:
+      options.remoteAvatars ??
+      defaultTrainingRunVisualizationOptions.remoteAvatars,
+    remoteAvatarInterpolation: {
+      ...defaultTrainingRunVisualizationOptions.remoteAvatarInterpolation,
+      ...(options.remoteAvatarInterpolation ?? {}),
+    },
     beams: options.beams ?? defaultTrainingRunVisualizationOptions.beams,
     bursts: options.bursts ?? defaultTrainingRunVisualizationOptions.bursts,
     motionPolicy: resolveTrainingRunMotionPolicy(options.motionPolicy),
@@ -1351,6 +1403,47 @@ export const trainingRunEntityNodeStatus = (
 
 const colorForEntityStatus = (status: string): number =>
   colorForStatus(trainingRunEntityNodeStatus(status));
+
+export const trainingRunRemoteAvatarSelection = (
+  avatar: TrainingRunRemoteAvatarDefinition,
+): TrainingRunNodeSelection => ({
+  detail: avatar.stale === true ? "remote avatar stale" : "remote avatar",
+  id: `remote-avatar:${avatar.id}`,
+  label: avatar.label,
+  role: "run",
+  status: avatar.stale === true ? "queued" : "active",
+});
+
+export const colorForRemoteAvatar = (
+  avatar: Pick<TrainingRunRemoteAvatarDefinition, "color" | "stale">,
+): number => {
+  const color = avatar.color?.trim();
+  if (color !== undefined && /^#[0-9a-f]{6}$/iu.test(color)) {
+    return Number.parseInt(color.slice(1), 16);
+  }
+  return avatar.stale === true ? 0x9ca3af : 0x8ef6ff;
+};
+
+const remoteAvatarQuaternion = (yaw: number | undefined): Three.Quaternion => {
+  const quaternion = new Three.Quaternion();
+  const safeYaw = typeof yaw === "number" && Number.isFinite(yaw) ? yaw : 0;
+  quaternion.setFromAxisAngle(
+    new Three.Vector3(0, 1, 0),
+    safeYaw,
+  );
+  return quaternion;
+};
+
+const remoteAvatarTransformInput = (
+  avatar: TrainingRunRemoteAvatarDefinition,
+): MmoEntityTransformInput<TrainingRunRemoteAvatarDefinition> => ({
+  id: avatar.id,
+  position: avatar.position,
+  quaternion: remoteAvatarQuaternion(avatar.yaw),
+  state: avatar.animation ?? "idle",
+  updatedAtMs: avatar.updatedAtMs ?? Date.now(),
+  description: avatar,
+});
 
 /**
  * Project an entity into a `TrainingRunNodeSelection` for the shared
@@ -2739,6 +2832,7 @@ export const mountTrainingRunVisualization = (
         localPosition: TrainingRunVector;
       }> = [];
       let selectedTargetId: string | null = null;
+      let disposed = false;
 
       const grid = new Three.Group();
       for (let x = -4; x <= 4; x += 1) {
@@ -2834,6 +2928,29 @@ export const mountTrainingRunVisualization = (
         });
       };
 
+      const registerWorldKeyboardTarget = (
+        worldPosition: Three.Vector3,
+        selection: TrainingRunNodeSelection,
+        color: number,
+      ): void => {
+        const localPosition = worldPosition.clone();
+        root.updateMatrixWorld(true);
+        root.worldToLocal(localPosition);
+        keyboardTargets.push({
+          candidate: {
+            id: selection.id,
+            position: [worldPosition.x, worldPosition.y, worldPosition.z],
+            selection,
+          },
+          color,
+          localPosition: [
+            localPosition.x,
+            localPosition.y,
+            localPosition.z,
+          ],
+        });
+      };
+
       const setSelectedTarget = (
         target:
           | Readonly<{
@@ -2886,6 +3003,180 @@ export const mountTrainingRunVisualization = (
         selectedTargetHighlight.visible = true;
         return target.candidate.selection;
       };
+
+      type RemoteAvatarRuntime = {
+        definition: TrainingRunRemoteAvatarDefinition;
+        handle: ThreePlayerAvatarAnimationHandle;
+        hitTarget: Three.Object3D;
+        interpolator: MmoEntityTransformInterpolator<TrainingRunRemoteAvatarDefinition>;
+        color: number;
+      };
+
+      const remoteAvatarTargetPrefix = "remote-avatar:";
+      const remoteAvatars = new Map<string, RemoteAvatarRuntime>();
+
+      const setRemoteAvatarOpacity = (
+        object: Three.Object3D,
+        factor: number,
+      ): void => {
+        const opacityFactor = Math.max(0, Math.min(1, factor));
+        object.traverse((child) => {
+          const mesh = child as Three.Mesh<
+            Three.BufferGeometry,
+            Three.Material | Three.Material[]
+          >;
+          if (!mesh.isMesh) return;
+          const materials = Array.isArray(mesh.material)
+            ? mesh.material
+            : [mesh.material];
+          for (const material of materials) {
+            const baseOpacity =
+              typeof material.userData["remoteAvatarBaseOpacity"] === "number"
+                ? (material.userData["remoteAvatarBaseOpacity"] as number)
+                : material.opacity;
+            material.userData["remoteAvatarBaseOpacity"] = baseOpacity;
+            material.opacity = baseOpacity * opacityFactor;
+            material.transparent = material.transparent || material.opacity < 1;
+            if (material.opacity < 1) material.depthWrite = false;
+          }
+        });
+      };
+
+      const disposeRemoteAvatar = (avatarId: string): void => {
+        const entry = remoteAvatars.get(avatarId);
+        if (entry === undefined) return;
+        remoteAvatars.delete(avatarId);
+        hitTargets.remove(`${remoteAvatarTargetPrefix}${avatarId}`);
+        entry.handle.group.removeFromParent();
+        disposeObject(entry.handle.group);
+      };
+
+      const syncRemoteAvatarKeyboardTargets = (): void => {
+        for (let index = keyboardTargets.length - 1; index >= 0; index -= 1) {
+          if (
+            keyboardTargets[index]?.candidate.id.startsWith(
+              remoteAvatarTargetPrefix,
+            ) === true
+          ) {
+            keyboardTargets.splice(index, 1);
+          }
+        }
+        for (const entry of remoteAvatars.values()) {
+          if (!entry.handle.group.visible) continue;
+          registerWorldKeyboardTarget(
+            entry.handle.group.position.clone(),
+            trainingRunRemoteAvatarSelection(entry.definition),
+            entry.color,
+          );
+        }
+      };
+
+      const createRemoteAvatar = (
+        definition: TrainingRunRemoteAvatarDefinition,
+      ): RemoteAvatarRuntime => {
+        const color = colorForRemoteAvatar(definition);
+        const handle = makeThreePlayerAvatar(
+          definition.modelUrl ?? defaultThreePlayerAvatarModelUrl,
+        );
+        handle.group.name = `${remoteAvatarTargetPrefix}${definition.id}`;
+        handle.group.userData["remoteAvatarId"] = definition.id;
+        handle.group.userData["remoteAvatarKind"] =
+          definition.avatarKind ?? "agent";
+        const accentRing = makeRing(0.54, color, 0.32);
+        accentRing.rotation.x = Math.PI / 2;
+        accentRing.position.y = 0.035;
+        handle.group.add(accentRing);
+        const hitTarget = new Three.Mesh(
+          new Three.SphereGeometry(0.72, 12, 8),
+          translucentBasicMaterial(color, 0.001),
+        );
+        hitTarget.name = `${remoteAvatarTargetPrefix}${definition.id}:hit`;
+        hitTarget.position.y = 0.92;
+        handle.group.add(hitTarget);
+
+        const interpolator = createMmoEntityTransformInterpolator(
+          normalizeMmoEntityTransformSnapshot(
+            remoteAvatarTransformInput(definition),
+          ),
+          resolved.remoteAvatarInterpolation,
+        );
+        const selection = trainingRunRemoteAvatarSelection(definition);
+        hitTargets.register({
+          id: `${remoteAvatarTargetPrefix}${definition.id}`,
+          kind: "mesh",
+          object: hitTarget,
+          recursive: false,
+          value: selection,
+        });
+        handle.playAction(definition.animation ?? "idle");
+        scene.add(handle.group);
+        return {
+          color,
+          definition,
+          handle,
+          hitTarget,
+          interpolator,
+        };
+      };
+
+      const updateRemoteAvatars = (
+        avatars: readonly TrainingRunRemoteAvatarDefinition[],
+      ): void => {
+        if (disposed) return;
+        const activeIds = new Set(avatars.map((avatar) => avatar.id));
+        for (const avatarId of [...remoteAvatars.keys()]) {
+          if (!activeIds.has(avatarId)) disposeRemoteAvatar(avatarId);
+        }
+        for (const avatar of avatars) {
+          const snapshot = normalizeMmoEntityTransformSnapshot(
+            remoteAvatarTransformInput(avatar),
+          );
+          const existing = remoteAvatars.get(avatar.id);
+          if (existing === undefined) {
+            const entry = createRemoteAvatar(avatar);
+            entry.interpolator.reset(snapshot);
+            remoteAvatars.set(avatar.id, entry);
+            continue;
+          }
+          existing.definition = avatar;
+          existing.color = colorForRemoteAvatar(avatar);
+          existing.interpolator.apply(snapshot);
+          existing.handle.playAction(avatar.animation ?? "idle");
+          hitTargets.register({
+            id: `${remoteAvatarTargetPrefix}${avatar.id}`,
+            kind: "mesh",
+            object: existing.hitTarget,
+            recursive: false,
+            value: trainingRunRemoteAvatarSelection(avatar),
+          });
+        }
+        syncRemoteAvatarKeyboardTargets();
+      };
+
+      const updateRemoteAvatarFrames = (delta: number): void => {
+        for (const [avatarId, entry] of [...remoteAvatars.entries()]) {
+          const liveness = entry.interpolator.liveness(Date.now());
+          if (liveness === "despawn") {
+            disposeRemoteAvatar(avatarId);
+            continue;
+          }
+          const sample = entry.interpolator.update(delta * 1000);
+          entry.handle.group.position.copy(sample.position);
+          entry.handle.group.quaternion.copy(sample.quaternion);
+          entry.handle.group.visible = true;
+          const stale = entry.definition.stale === true || liveness === "stale";
+          setRemoteAvatarOpacity(entry.handle.group, stale ? 0.35 : 1);
+          entry.handle.playAction(
+            sample.state === "run" || sample.state === "walk"
+              ? sample.state
+              : "idle",
+          );
+          entry.handle.update(delta);
+        }
+        syncRemoteAvatarKeyboardTargets();
+      };
+
+      updateRemoteAvatars(resolved.remoteAvatars);
 
       const edges = createTrainingRunEdges(resolved.nodes);
       const nodeStatusById = new Map(
@@ -3827,7 +4118,6 @@ export const mountTrainingRunVisualization = (
       canvas.addEventListener("click", handleClick);
       window.addEventListener("keydown", handleKeyDown, { capture: true });
 
-      let disposed = false;
       let frame = 0;
       let lastTime = 0;
 
@@ -3903,6 +4193,7 @@ export const mountTrainingRunVisualization = (
         if (threePlayerController !== undefined) {
           Effect.runSync(threePlayerController.update(delta));
         }
+        updateRemoteAvatarFrames(delta);
         emitLocalPose(time);
         updatePresenceZone();
         threePlayerAvatar?.update(delta);
@@ -3936,6 +4227,9 @@ export const mountTrainingRunVisualization = (
         if (threePlayerController !== undefined) {
           Effect.runSync(threePlayerController.dispose);
         }
+        for (const avatarId of [...remoteAvatars.keys()]) {
+          disposeRemoteAvatar(avatarId);
+        }
         for (const label of entityLabels) label.dispose();
         for (const slot of burstSlots) slot.handle.dispose();
         for (const disposeBeam of beamDisposers) disposeBeam();
@@ -3950,6 +4244,7 @@ export const mountTrainingRunVisualization = (
         element,
         canvas,
         captureLocalPose,
+        updateRemoteAvatars,
         selectNextTarget,
         resize: Effect.sync(resize),
         dispose,

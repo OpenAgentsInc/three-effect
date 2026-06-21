@@ -103,6 +103,14 @@ const stableOptionsSignature = (value: unknown): string => {
   }
 }
 
+const trainingStaticOptionsSignature = (
+  value: TrainingRunVisualizationOptions,
+): string => {
+  const staticOptions: Record<string, unknown> = { ...value }
+  delete staticOptions["remoteAvatars"]
+  return stableOptionsSignature(staticOptions)
+}
+
 const dispatchTrainingNodeSelected = (
   element: HTMLElement,
   node: TrainingRunNodeSelection,
@@ -314,6 +322,9 @@ const makeTrainingRunElement = (): CustomElementConstructor => {
     #preservedLocalPose: TrainingRunLocalPoseSnapshot | undefined
     #visualization: TrainingRunVisualizationOptions = {}
     #visualizationSignature = stableOptionsSignature(this.#visualization)
+    #visualizationStaticSignature = trainingStaticOptionsSignature(
+      this.#visualization,
+    )
 
     get visualization(): TrainingRunVisualizationOptions {
       return this.#visualization
@@ -323,11 +334,19 @@ const makeTrainingRunElement = (): CustomElementConstructor => {
       const visualization = trainingOptionsFromUnknown(value)
       const signature = stableOptionsSignature(visualization)
       if (signature === this.#visualizationSignature) return
+      const staticSignature = trainingStaticOptionsSignature(visualization)
+      const remoteOnly =
+        staticSignature === this.#visualizationStaticSignature
 
       this.#visualization = visualization
       this.#visualizationSignature = signature
+      this.#visualizationStaticSignature = staticSignature
       if (this.isConnected && this.#mount !== null) {
-        this.#remount()
+        if (remoteOnly && this.#handle !== null) {
+          this.#handle.updateRemoteAvatars(visualization.remoteAvatars ?? [])
+        } else {
+          this.#remount()
+        }
       }
     }
 

@@ -137,6 +137,7 @@ import {
   summarizeTrainingRunVisualization,
   resolveTrainingRunEntityPositions,
   uniqueTrainingRunEntities,
+  colorForRemoteAvatar,
   trainingRunEntityMinimumDistance,
   trainingRunEntityNodeStatus,
   trainingRunEntityRingPosition,
@@ -147,6 +148,7 @@ import {
   trainingRunMotionSourceRefs,
   trainingRunPointerClickIntent,
   trainingRunSelectionIsPylon,
+  trainingRunRemoteAvatarSelection,
   trainingRunVisualizationOptionsWithLocalPose,
   trainingRunWorldLabelVisibleForSelection,
   trainingRunVisualizationOptionsFromSnapshot,
@@ -2385,8 +2387,63 @@ describe("training run entity layer", () => {
   test("defaults the entity layer to honest-empty arrays", () => {
     const resolved = resolveTrainingRunVisualizationOptions();
     expect(resolved.entities).toEqual([]);
+    expect(resolved.remoteAvatars).toEqual([]);
+    expect(resolved.remoteAvatarInterpolation).toMatchObject({
+      despawnAfterMs: 12_000,
+      interpolateMs: 180,
+      staleAfterMs: 6_000,
+    });
     expect(resolved.beams).toEqual([]);
     expect(resolved.bursts).toEqual([]);
+  });
+
+  test("passes remote avatar render instances through resolution", () => {
+    const remoteAvatars = [
+      {
+        animation: "walk",
+        color: "#f5b73a",
+        id: "avatar.alpha",
+        label: "Alpha",
+        position: [1, 0, -2],
+        updatedAtMs: 1_200,
+        yaw: 0.75,
+      },
+    ] as const;
+
+    const resolved = resolveTrainingRunVisualizationOptions({
+      remoteAvatarInterpolation: { interpolateMs: 240 },
+      remoteAvatars,
+    });
+
+    expect(resolved.remoteAvatars).toEqual(remoteAvatars);
+    expect(resolved.remoteAvatarInterpolation).toMatchObject({
+      despawnAfterMs: 12_000,
+      interpolateMs: 240,
+      staleAfterMs: 6_000,
+    });
+  });
+
+  test("projects remote avatar selection and colors without permanent labels", () => {
+    const fresh = {
+      color: "#f5b73a",
+      id: "avatar.alpha",
+      label: "Alpha",
+      position: [0, 0, 0],
+    } as const;
+    const stale = { ...fresh, stale: true };
+
+    expect(trainingRunRemoteAvatarSelection(fresh)).toEqual({
+      detail: "remote avatar",
+      id: "remote-avatar:avatar.alpha",
+      label: "Alpha",
+      role: "run",
+      status: "active",
+    });
+    expect(trainingRunRemoteAvatarSelection(stale).status).toBe("queued");
+    expect(colorForRemoteAvatar(fresh)).toBe(0xf5b73a);
+    expect(colorForRemoteAvatar({ color: "not-a-hex", stale: true })).toBe(
+      0x9ca3af,
+    );
   });
 
   test("passes provided entity layer arrays through resolution", () => {
