@@ -1749,8 +1749,8 @@ describe("training run visualization", () => {
     const parcels = metaverseStreetParcelPositions(3);
 
     expect(parcels).toHaveLength(6);
-    expect(metaverseStreetLayout.farZ).toBeLessThan(-25);
-    expect(metaverseStreetLayout.nearZ).toBeGreaterThan(2);
+    expect(metaverseStreetLayout.farZ).toBeLessThan(-100);
+    expect(metaverseStreetLayout.nearZ).toBeGreaterThan(100);
     expect(metaverseStreetLayout.tassadarLotX).toBeGreaterThan(
       metaverseStreetLayout.shoulderX,
     );
@@ -1759,8 +1759,8 @@ describe("training run visualization", () => {
         metaverseStreetLayout.tassadarSceneScale * 3,
     );
     expect(metaverseStreetLayout.tassadarSceneScale).toBeGreaterThan(1.4);
-    expect(parcels[0]).toMatchObject({ x: -18.2, y: 0, z: -27.3 });
-    expect(parcels[1]).toMatchObject({ x: 18.2, y: 0, z: -27.3 });
+    expect(parcels[0]).toMatchObject({ x: -18.2, y: 0, z: -136 });
+    expect(parcels[1]).toMatchObject({ x: 18.2, y: 0, z: -136 });
     expect(parcels[2]?.z).toBeGreaterThan(parcels[0]!.z);
   });
 
