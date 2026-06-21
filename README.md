@@ -33,6 +33,10 @@ scope for now.
       windows, seal/staleness, verification, receipts, rungs, contributor dots,
       animated flow connectors, contributor orbit tracks, and loss-curve
       feedback with 2D chart scaffolding.
+    - reusable training-world item primitives, starting with bulletin boards
+      that render concise text on the board surface and emit proximity events
+      so host apps can open richer overlays without baking product copy into
+      the renderer.
     - a React-free port of the pmndrs Moksha scrollytelling demo with
       orthographic scroll parallax, shader-distorted image planes, the Moonget
       display font, refraction diamonds, stripes, startup fade, and narrative

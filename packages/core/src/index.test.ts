@@ -94,8 +94,12 @@ import {
   metaverseStreetSourceRefs,
   metaverseStreetStoryHeight,
   makeTrainingRunPylonLandmark,
+  makeTrainingRunBulletinBoard,
+  nearestTrainingRunWorldItem,
   trainingRunPerspectiveSunDirection,
   trainingRunHeadLabelPositionForObject,
+  trainingRunWorldItemNodeSelection,
+  trainingRunWorldItemSelection,
   MokshaPlaneMaterial,
   cycleTrainingRunCameraTarget,
   cycleTrainingRunTarget,
@@ -2122,6 +2126,68 @@ describe("training run visualization", () => {
     ).toBe(onNodeClick);
   });
 
+  test("preserves world-item options and proximity callbacks", () => {
+    const onWorldItemProximityChange = () => {};
+    const item = {
+      id: "bulletin.tassadar",
+      kind: "bulletin_board" as const,
+      label: "Tassadar board",
+      detail: "Five pylons are active.",
+      position: [2, 0, 0.4] as const,
+      sourceRefs: [" run.tassadar ", "", "route:/api/public/tassadar-run-summary"],
+    };
+
+    const resolved = resolveTrainingRunVisualizationOptions({
+      worldItems: [item],
+      onWorldItemProximityChange,
+    });
+
+    expect(resolved.worldItems).toEqual([item]);
+    expect(resolved.onWorldItemProximityChange).toBe(
+      onWorldItemProximityChange,
+    );
+    expect(trainingRunWorldItemSelection(item)).toEqual({
+      detail: "Five pylons are active.",
+      id: "bulletin.tassadar",
+      kind: "bulletin_board",
+      label: "Tassadar board",
+      status: "active",
+      sourceRefs: ["run.tassadar", "route:/api/public/tassadar-run-summary"],
+    });
+    expect(trainingRunWorldItemNodeSelection(item)).toEqual({
+      detail: "Five pylons are active.",
+      id: "world-item:bulletin.tassadar",
+      label: "Tassadar board",
+      role: "run",
+      status: "active",
+    });
+  });
+
+  test("finds the nearest bulletin board only inside its interaction radius", () => {
+    const near = {
+      id: "bulletin.near",
+      kind: "bulletin_board" as const,
+      label: "Near board",
+      detail: "Near detail",
+      position: [1, 0, 0] as const,
+      interactionRadius: 1.25,
+    };
+    const far = {
+      id: "bulletin.far",
+      kind: "bulletin_board" as const,
+      label: "Far board",
+      detail: "Far detail",
+      position: [4, 0, 0] as const,
+      interactionRadius: 1,
+    };
+
+    expect(nearestTrainingRunWorldItem([far, near], [0, 0, 0])?.id).toBe(
+      "bulletin.near",
+    );
+    expect(nearestTrainingRunWorldItem([far], [0, 0, 0])).toBeNull();
+    expect(typeof makeTrainingRunBulletinBoard).toBe("function");
+  });
+
   test("selects scene hits before requesting perspective-walk pointer lock", () => {
     const selection = {
       detail: "6 pylons seen",
@@ -2378,8 +2444,12 @@ describe("training run entity layer", () => {
     const source = await Bun.file(
       new URL("./trainingRun.ts", import.meta.url),
     ).text();
+    const entityLabelBlock = source.slice(
+      source.indexOf("const entityLabels: TextLabelHandle[] = []"),
+      source.indexOf("for (const beam of resolved.beams)"),
+    );
     expect(source).toContain("const entityLabels: TextLabelHandle[] = []");
-    expect(source).not.toContain("billboard: false");
+    expect(entityLabelBlock).not.toContain("billboard: false");
     expect(source).toContain("label.faceCamera(camera);");
     expect(source).toContain("for (const label of entityLabels)");
   });

@@ -16,6 +16,7 @@ import {
   type TrainingRunPresenceZone,
   type TrainingRunVisualizationHandle,
   type TrainingRunVisualizationOptions,
+  type TrainingRunWorldItemSelection,
 } from "@openagentsinc/three-effect/core"
 
 export const bezierNodesTagName = "oa-bezier-nodes"
@@ -73,6 +74,26 @@ const trainingRunElement = defineCustomElement({
     }),
     "presence-zone-changed": S.Struct({
       zone: S.NullOr(S.Literal("tassadar_area")),
+    }),
+    "world-item-proximity-changed": S.Struct({
+      item: S.NullOr(
+        S.Struct({
+          detail: S.String,
+          id: S.String,
+          kind: S.Literal("bulletin_board"),
+          label: S.String,
+          status: S.Literals([
+            "planned",
+            "queued",
+            "sync",
+            "active",
+            "sealed",
+            "verified",
+            "blocked",
+          ]),
+          sourceRefs: S.Array(S.String),
+        }),
+      ),
     }),
     "local-pose-changed": S.Struct({
       controller: S.Literals(["third_person_character", "wasd_mouselook"]),
@@ -138,6 +159,24 @@ const dispatchTrainingPresenceZoneChanged = (
       bubbles: true,
       composed: true,
       detail: { zone },
+    }),
+  )
+}
+
+const dispatchTrainingWorldItemProximityChanged = (
+  element: HTMLElement,
+  item: TrainingRunWorldItemSelection | null,
+): void => {
+  if (item === null) {
+    element.removeAttribute("data-world-item")
+  } else {
+    element.setAttribute("data-world-item", item.id)
+  }
+  element.dispatchEvent(
+    new CustomEvent("world-item-proximity-changed", {
+      bubbles: true,
+      composed: true,
+      detail: { item },
     }),
   )
 }
@@ -404,6 +443,8 @@ const makeTrainingRunElement = (): CustomElementConstructor => {
         mountTrainingRunVisualization(this.#mount, {
           ...visualization,
           onNodeClick: node => dispatchTrainingNodeSelected(this, node),
+          onWorldItemProximityChange: item =>
+            dispatchTrainingWorldItemProximityChanged(this, item),
           onPresenceZoneChange: zone =>
             dispatchTrainingPresenceZoneChanged(this, zone),
           onLocalPoseChange: pose =>

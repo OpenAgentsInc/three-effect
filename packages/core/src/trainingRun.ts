@@ -291,6 +291,31 @@ export type TrainingRunRemoteAvatarDefinition = Readonly<{
   labelVisibility?: TrainingRunRemoteAvatarLabelVisibility;
 }>;
 
+export type TrainingRunWorldItemKind = "bulletin_board";
+
+export type TrainingRunWorldItemDefinition = Readonly<{
+  id: string;
+  kind: TrainingRunWorldItemKind;
+  label: string;
+  detail: string;
+  position: TrainingRunVector;
+  yaw?: number;
+  status?: TrainingRunNodeStatus;
+  interactionRadius?: number;
+  title?: string;
+  lines?: readonly string[];
+  sourceRefs?: readonly string[];
+}>;
+
+export type TrainingRunWorldItemSelection = Readonly<{
+  detail: string;
+  id: string;
+  kind: TrainingRunWorldItemKind;
+  label: string;
+  status: TrainingRunNodeStatus;
+  sourceRefs: readonly string[];
+}>;
+
 export type TrainingRunVisualizationOptions = Readonly<{
   backgroundColor?: number;
   cameraMode?: TrainingRunCameraMode;
@@ -303,6 +328,7 @@ export type TrainingRunVisualizationOptions = Readonly<{
   operatorSignals?: readonly TrainingRunOperatorSignalDefinition[];
   promiseSignals?: readonly TrainingRunPromiseSignalDefinition[];
   entities?: readonly TrainingRunEntityDefinition[];
+  worldItems?: readonly TrainingRunWorldItemDefinition[];
   remoteAvatars?: readonly TrainingRunRemoteAvatarDefinition[];
   remoteAvatarInterpolation?: MmoEntityInterpolationOptions;
   beams?: readonly TrainingRunBeamDefinition[];
@@ -319,6 +345,9 @@ export type TrainingRunVisualizationOptions = Readonly<{
   thirdPersonController?: ThreePlayerControllerOptions;
   walkController?: WasdMouseLookControllerOptions;
   onNodeClick?: (node: TrainingRunNodeSelection) => void;
+  onWorldItemProximityChange?: (
+    item: TrainingRunWorldItemSelection | null,
+  ) => void;
   onPresenceZoneChange?: (zone: TrainingRunPresenceZone | null) => void;
   onLocalPoseChange?: (pose: TrainingRunLocalPoseUpdate) => void;
   pulseSpeed?: number;
@@ -398,6 +427,7 @@ export type ResolvedTrainingRunVisualizationOptions = Readonly<{
   operatorSignals: readonly TrainingRunOperatorSignalDefinition[];
   promiseSignals: readonly TrainingRunPromiseSignalDefinition[];
   entities: readonly TrainingRunEntityDefinition[];
+  worldItems: readonly TrainingRunWorldItemDefinition[];
   remoteAvatars: readonly TrainingRunRemoteAvatarDefinition[];
   remoteAvatarInterpolation: MmoEntityInterpolationOptions;
   beams: readonly TrainingRunBeamDefinition[];
@@ -410,6 +440,9 @@ export type ResolvedTrainingRunVisualizationOptions = Readonly<{
   thirdPersonController: ThreePlayerControllerOptions;
   walkController: WasdMouseLookControllerOptions;
   onNodeClick?: (node: TrainingRunNodeSelection) => void;
+  onWorldItemProximityChange?: (
+    item: TrainingRunWorldItemSelection | null,
+  ) => void;
   onPresenceZoneChange?: (zone: TrainingRunPresenceZone | null) => void;
   onLocalPoseChange?: (pose: TrainingRunLocalPoseUpdate) => void;
   pulseSpeed: number;
@@ -624,6 +657,7 @@ export const defaultTrainingRunVisualizationOptions: ResolvedTrainingRunVisualiz
     operatorSignals: defaultTrainingRunOperatorSignals,
     promiseSignals: defaultTrainingRunPromiseSignals,
     entities: [],
+    worldItems: [],
     remoteAvatars: [],
     remoteAvatarInterpolation: {
       despawnAfterMs: 12_000,
@@ -696,6 +730,8 @@ export const resolveTrainingRunVisualizationOptions = (
       defaultTrainingRunVisualizationOptions.promiseSignals,
     entities:
       options.entities ?? defaultTrainingRunVisualizationOptions.entities,
+    worldItems:
+      options.worldItems ?? defaultTrainingRunVisualizationOptions.worldItems,
     remoteAvatars:
       options.remoteAvatars ??
       defaultTrainingRunVisualizationOptions.remoteAvatars,
@@ -731,6 +767,9 @@ export const resolveTrainingRunVisualizationOptions = (
     ...(options.onNodeClick === undefined
       ? {}
       : { onNodeClick: options.onNodeClick }),
+    ...(options.onWorldItemProximityChange === undefined
+      ? {}
+      : { onWorldItemProximityChange: options.onWorldItemProximityChange }),
     ...(options.onPresenceZoneChange === undefined
       ? {}
       : { onPresenceZoneChange: options.onPresenceZoneChange }),
@@ -1234,11 +1273,56 @@ const nodeSelection = (
   status: node.status,
 });
 
+export const trainingRunWorldItemSelection = (
+  item: TrainingRunWorldItemDefinition,
+): TrainingRunWorldItemSelection => ({
+  detail: item.detail,
+  id: item.id,
+  kind: item.kind,
+  label: item.label,
+  status: item.status ?? "active",
+  sourceRefs: (item.sourceRefs ?? [])
+    .map((ref) => ref.trim())
+    .filter((ref) => ref.length > 0),
+});
+
+export const trainingRunWorldItemNodeSelection = (
+  item: TrainingRunWorldItemDefinition,
+): TrainingRunNodeSelection => ({
+  detail: item.detail,
+  id: `world-item:${item.id}`,
+  label: item.label,
+  role: "run",
+  status: item.status ?? "active",
+});
+
 export type TrainingRunTargetCandidate = Readonly<{
   id: string;
   position: TrainingRunVector;
   selection: TrainingRunNodeSelection;
 }>;
+
+export const nearestTrainingRunWorldItem = (
+  items: readonly TrainingRunWorldItemDefinition[],
+  origin: TrainingRunVector,
+): TrainingRunWorldItemSelection | null => {
+  const originVector = vector(origin);
+  const nearest = items
+    .map((item) => {
+      const radius = Math.max(0, item.interactionRadius ?? 2.2);
+      const distance = vector(item.position).distanceTo(originVector);
+      return { distance, item, radius };
+    })
+    .filter(({ distance, radius }) => distance <= radius)
+    .sort((left, right) => {
+      if (left.distance !== right.distance) return left.distance - right.distance;
+      return left.item.id.localeCompare(right.item.id);
+    })[0];
+
+  return nearest === undefined
+    ? null
+    : trainingRunWorldItemSelection(nearest.item);
+};
 
 const projectedTarget = new Three.Vector3();
 
@@ -1693,6 +1777,126 @@ const translucentBasicMaterial = (
     depthWrite: false,
     side: Three.DoubleSide,
   });
+
+export const trainingRunBulletinBoardSourceRefs = [
+  "projects/repos/examples/demos/canvas-text/src/App.jsx",
+  "packages/core/src/textLabelPrimitives.ts",
+] as const;
+
+export const makeTrainingRunBulletinBoard = (
+  item: TrainingRunWorldItemDefinition,
+): Three.Group => {
+  const group = new Three.Group();
+  const width = 2.1;
+  const height = 1.25;
+  const thickness = 0.1;
+  const postHeight = 1.76;
+  const statusColor = colorForStatus(item.status ?? "active");
+  const yaw = typeof item.yaw === "number" && Number.isFinite(item.yaw)
+    ? item.yaw
+    : 0;
+
+  group.position.copy(vector(item.position));
+  group.rotation.z = yaw;
+  group.name = `training-run-world-item:${item.id}`;
+
+  const postMaterial = new Three.MeshStandardMaterial({
+    color: 0x5a4b3a,
+    metalness: 0.02,
+    roughness: 0.82,
+  });
+  for (const x of [-width / 2 + 0.16, width / 2 - 0.16]) {
+    const post = new Three.Mesh(
+      new Three.BoxGeometry(0.12, 0.12, postHeight),
+      postMaterial,
+    );
+    post.position.set(x, 0.04, postHeight / 2);
+    group.add(post);
+  }
+
+  const board = new Three.Mesh(
+    new Three.BoxGeometry(width, thickness, height),
+    new Three.MeshStandardMaterial({
+      color: 0x302a22,
+      emissive: 0x080604,
+      metalness: 0.04,
+      roughness: 0.74,
+    }),
+  );
+  board.position.set(0, 0, 1.17);
+  board.castShadow = true;
+  board.receiveShadow = true;
+  group.add(board);
+
+  const face = new Three.Mesh(
+    new Three.PlaneGeometry(width - 0.16, height - 0.14),
+    new Three.MeshBasicMaterial({
+      color: 0x181512,
+      opacity: 0.9,
+      transparent: true,
+      side: Three.DoubleSide,
+    }),
+  );
+  face.rotation.x = Math.PI / 2;
+  face.position.set(0, -thickness / 2 - 0.006, 1.17);
+  group.add(face);
+
+  const accent = new Three.Mesh(
+    new Three.BoxGeometry(width - 0.22, 0.012, 0.035),
+    new Three.MeshBasicMaterial({ color: statusColor }),
+  );
+  accent.position.set(0, -thickness / 2 - 0.014, 1.76);
+  group.add(accent);
+
+  const title = createTextLabel({
+    text: compactWorldLabel(item.title ?? item.label, 24),
+    color: "#f8fafc",
+    fontSize: 48,
+    fontWeight: 700,
+    worldHeight: 0.16,
+    billboard: false,
+    depthTest: true,
+    opacity: 0.96,
+  });
+  title.object3D.rotation.x = Math.PI / 2;
+  title.object3D.position.set(0, -thickness / 2 - 0.02, 1.48);
+  group.add(title.object3D);
+
+  const lines = (item.lines ?? [item.detail]).slice(0, 3);
+  for (const [index, line] of lines.entries()) {
+    const label = createTextLabel({
+      text: compactWorldLabel(line, 34),
+      color: "#d6d3c9",
+      fontSize: 34,
+      worldHeight: 0.105,
+      billboard: false,
+      depthTest: true,
+      opacity: 0.88,
+    });
+    label.object3D.rotation.x = Math.PI / 2;
+    label.object3D.position.set(
+      0,
+      -thickness / 2 - 0.021,
+      1.25 - index * 0.16,
+    );
+    group.add(label.object3D);
+  }
+
+  const footer = createTextLabel({
+    text: "walk up for details",
+    color: "#8ef6ff",
+    fontSize: 28,
+    worldHeight: 0.09,
+    billboard: false,
+    depthTest: true,
+    opacity: 0.82,
+  });
+  footer.object3D.rotation.x = Math.PI / 2;
+  footer.object3D.position.set(0, -thickness / 2 - 0.022, 0.78);
+  group.add(footer.object3D);
+
+  return group;
+};
 
 export const makeTrainingRunPylonLandmark = (
   color: number,
@@ -3178,6 +3382,39 @@ export const mountTrainingRunVisualization = (
 
       updateRemoteAvatars(resolved.remoteAvatars);
 
+      const worldItemTargets: Array<{
+        item: TrainingRunWorldItemDefinition;
+        selection: TrainingRunWorldItemSelection;
+        worldPosition: Three.Vector3;
+      }> = [];
+      for (const item of resolved.worldItems) {
+        if (item.kind !== "bulletin_board") continue;
+        const group = makeTrainingRunBulletinBoard(item);
+        root.add(group);
+        const selection = trainingRunWorldItemSelection(item);
+        const nodeTarget = trainingRunWorldItemNodeSelection(item);
+        const color = colorForStatus(item.status ?? "active");
+        const worldPosition = vector(item.position);
+        root.updateMatrixWorld(true);
+        root.localToWorld(worldPosition);
+        worldItemTargets.push({ item, selection, worldPosition });
+        registerKeyboardTarget(item.position, nodeTarget, color);
+
+        const hitTarget = new Three.Mesh(
+          new Three.BoxGeometry(2.25, 0.72, 1.62),
+          translucentBasicMaterial(color, 0.001),
+        );
+        hitTarget.position.set(0, -0.18, 1.15);
+        group.add(hitTarget);
+        hitTargets.register({
+          id: `world-item:${item.id}`,
+          kind: "mesh",
+          object: hitTarget,
+          recursive: false,
+          value: nodeTarget,
+        });
+      }
+
       const edges = createTrainingRunEdges(resolved.nodes);
       const nodeStatusById = new Map(
         resolved.nodes.map((node) => [node.id, node.status] as const),
@@ -3995,6 +4232,36 @@ export const mountTrainingRunVisualization = (
             : "tassadar_area",
         );
       };
+      let currentWorldItemProximityId: string | null | undefined;
+      const emitWorldItemProximity = (
+        selection: TrainingRunWorldItemSelection | null,
+      ): void => {
+        const nextId = selection?.id ?? null;
+        if (nextId === currentWorldItemProximityId) return;
+        currentWorldItemProximityId = nextId;
+        resolved.onWorldItemProximityChange?.(selection);
+      };
+      const updateWorldItemProximity = (): void => {
+        if (worldItemTargets.length === 0) {
+          emitWorldItemProximity(null);
+          return;
+        }
+        const origin = vector(targetOrigin());
+        const nearest = worldItemTargets
+          .map((target) => {
+            const radius = Math.max(0, target.item.interactionRadius ?? 2.2);
+            const distance = target.worldPosition.distanceTo(origin);
+            return { distance, radius, target };
+          })
+          .filter(({ distance, radius }) => distance <= radius)
+          .sort((left, right) => {
+            if (left.distance !== right.distance) {
+              return left.distance - right.distance;
+            }
+            return left.target.item.id.localeCompare(right.target.item.id);
+          })[0];
+        emitWorldItemProximity(nearest?.target.selection ?? null);
+      };
 
       const selectNextTarget = (
         direction: 1 | -1 = 1,
@@ -4196,6 +4463,7 @@ export const mountTrainingRunVisualization = (
         updateRemoteAvatarFrames(delta);
         emitLocalPose(time);
         updatePresenceZone();
+        updateWorldItemProximity();
         threePlayerAvatar?.update(delta);
         renderer.render(scene, camera);
         frame = requestAnimationFrame(render);
@@ -4209,6 +4477,7 @@ export const mountTrainingRunVisualization = (
       resize();
       observer?.observe(element);
       updatePresenceZone();
+      updateWorldItemProximity();
       frame = requestAnimationFrame(render);
 
       const dispose = Effect.sync(() => {
