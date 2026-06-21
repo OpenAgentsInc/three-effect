@@ -8,6 +8,7 @@ import {
   mountMokshaExperience,
   mountSpinningCube,
   mountTrainingRunVisualization,
+  trainingRunVisualizationRetainedStructuralSignature,
   trainingRunVisualizationOptionsWithLocalPose,
   type MokshaOptions,
   type TrainingRunLocalPoseSnapshot,
@@ -122,14 +123,6 @@ const stableOptionsSignature = (value: unknown): string => {
   } catch {
     return `${Date.now()}`
   }
-}
-
-const trainingStaticOptionsSignature = (
-  value: TrainingRunVisualizationOptions,
-): string => {
-  const staticOptions: Record<string, unknown> = { ...value }
-  delete staticOptions["remoteAvatars"]
-  return stableOptionsSignature(staticOptions)
 }
 
 const TRAINING_REBUILD_DEBOUNCE_MS = 250
@@ -402,7 +395,7 @@ const makeTrainingRunElement = (): CustomElementConstructor => {
     #latestLocalPose: TrainingRunLocalPoseSnapshot | undefined
     #visualization: TrainingRunVisualizationOptions = {}
     #visualizationSignature = stableOptionsSignature(this.#visualization)
-    #visualizationStaticSignature = trainingStaticOptionsSignature(
+    #visualizationStaticSignature = trainingRunVisualizationRetainedStructuralSignature(
       this.#visualization,
     )
 
@@ -414,16 +407,27 @@ const makeTrainingRunElement = (): CustomElementConstructor => {
       const visualization = trainingOptionsFromUnknown(value)
       const signature = stableOptionsSignature(visualization)
       if (signature === this.#visualizationSignature) return
-      const staticSignature = trainingStaticOptionsSignature(visualization)
-      const remoteOnly =
+      const staticSignature =
+        trainingRunVisualizationRetainedStructuralSignature(visualization)
+      const retainedUpdate =
         staticSignature === this.#visualizationStaticSignature
 
       this.#visualization = visualization
       this.#visualizationSignature = signature
       this.#visualizationStaticSignature = staticSignature
       if (this.isConnected && this.#mount !== null) {
-        if (remoteOnly && this.#handle !== null) {
-          this.#handle.updateRemoteAvatars(visualization.remoteAvatars ?? [])
+        if (retainedUpdate && this.#handle !== null) {
+          const updated = this.#handle.updateVisualization(
+            this.#visualizationWithEventHandlers(visualization),
+          )
+          if (updated) {
+            recordTrainingHostDiagnostic("verse-host.visualization.retained", {
+              remoteAvatars: visualization.remoteAvatars?.length ?? 0,
+              worldItems: visualization.worldItems?.length ?? 0,
+            })
+          } else {
+            this.#scheduleRemount("visualization.retained-rejected")
+          }
         } else {
           this.#scheduleRemount("visualization.changed")
         }
@@ -443,6 +447,10 @@ const makeTrainingRunElement = (): CustomElementConstructor => {
           min-height: 340px;
           overflow: hidden;
           background: #050505;
+          cursor: default;
+          touch-action: none;
+          user-select: none;
+          -webkit-user-select: none;
         }
         .mount {
           width: 100%;
@@ -450,6 +458,13 @@ const makeTrainingRunElement = (): CustomElementConstructor => {
           min-height: inherit;
           position: relative;
           overflow: hidden;
+        }
+        canvas {
+          display: block;
+          touch-action: none;
+          user-select: none;
+          -webkit-user-select: none;
+          outline: none;
         }
       `
 
@@ -504,6 +519,23 @@ const makeTrainingRunElement = (): CustomElementConstructor => {
       })
     }
 
+    #visualizationWithEventHandlers(
+      visualization: TrainingRunVisualizationOptions,
+    ): TrainingRunVisualizationOptions {
+      return {
+        ...visualization,
+        onNodeClick: node => dispatchTrainingNodeSelected(this, node),
+        onWorldItemProximityChange: item =>
+          dispatchTrainingWorldItemProximityChanged(this, item),
+        onPresenceZoneChange: zone =>
+          dispatchTrainingPresenceZoneChanged(this, zone),
+        onLocalPoseChange: pose => {
+          this.#latestLocalPose = pose
+          dispatchTrainingLocalPoseChanged(this, pose)
+        },
+      }
+    }
+
     #remount(reason = "direct"): void {
       if (this.#mount === null) return
       this.#clearPendingRemount()
@@ -524,18 +556,10 @@ const makeTrainingRunElement = (): CustomElementConstructor => {
       staging.style.pointerEvents = "none"
       this.#mount.append(staging)
       const handle = Effect.runSync(
-        mountTrainingRunVisualization(staging, {
-          ...visualization,
-          onNodeClick: node => dispatchTrainingNodeSelected(this, node),
-          onWorldItemProximityChange: item =>
-            dispatchTrainingWorldItemProximityChanged(this, item),
-          onPresenceZoneChange: zone =>
-            dispatchTrainingPresenceZoneChanged(this, zone),
-          onLocalPoseChange: pose => {
-            this.#latestLocalPose = pose
-            dispatchTrainingLocalPoseChanged(this, pose)
-          },
-        }),
+        mountTrainingRunVisualization(
+          staging,
+          this.#visualizationWithEventHandlers(visualization),
+        ),
       )
       handle.canvas.style.width = "100%"
       handle.canvas.style.height = "100%"

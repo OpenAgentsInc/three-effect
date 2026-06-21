@@ -153,9 +153,11 @@ import {
   trainingRunPointerClickIntent,
   trainingRunSelectionIsPylon,
   trainingRunRemoteAvatarSelection,
+  trainingRunVisualizationRetainedStructuralSignature,
   trainingRunVisualizationOptionsWithLocalPose,
   trainingRunWorldLabelVisibleForSelection,
   trainingRunVisualizationOptionsFromSnapshot,
+  canRetainTrainingRunVisualization,
   updateScrollMetrics,
   useMaskMaterialProps,
   viewportAtDistance,
@@ -2579,6 +2581,59 @@ describe("training run entity layer", () => {
     expect(resolved.entities).toEqual(entities);
     expect(resolved.beams).toEqual(beams);
     expect(resolved.bursts).toEqual(bursts);
+  });
+
+  test("retains the scene across transient local pose restore updates", () => {
+    const base = {
+      cameraMode: "perspective_walk",
+      controller: "third_person_character",
+      thirdPersonController: {
+        character: { walkSpeed: 3.8 },
+        initialPosition: [0, 0, 4.4],
+      },
+    } as const;
+    const moved = trainingRunVisualizationOptionsWithLocalPose(base, {
+      action: "walk",
+      capturedAtMs: 1_000,
+      controller: "third_person_character",
+      position: [2, 0, -5],
+      yaw: 0.75,
+    });
+
+    expect(trainingRunVisualizationRetainedStructuralSignature(base)).toBe(
+      trainingRunVisualizationRetainedStructuralSignature(moved),
+    );
+    expect(canRetainTrainingRunVisualization(base, moved)).toBe(true);
+  });
+
+  test("retains the scene across live world item copy changes", () => {
+    const loading = {
+      cameraMode: "perspective_walk",
+      controller: "third_person_character",
+      worldItems: [
+        {
+          detail: "Loading",
+          id: "verse:bulletin:tassadar-run",
+          kind: "bulletin_board",
+          label: "Tassadar Board",
+          lines: ["Loading Tassadar run"],
+          position: [-0.95, 1.78, 0.04],
+        },
+      ],
+    } as const;
+    const hydrated = {
+      ...loading,
+      worldItems: [
+        {
+          ...loading.worldItems[0],
+          detail: "Tassadar is active.",
+          label: "Tassadar Run Board",
+          lines: ["Status: active", "5 pylons, 2 active"],
+        },
+      ],
+    } as const;
+
+    expect(canRetainTrainingRunVisualization(loading, hydrated)).toBe(true);
   });
 
   test("lays out entities deterministically (no Math.random / time)", () => {

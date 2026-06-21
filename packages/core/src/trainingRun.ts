@@ -459,6 +459,7 @@ export type TrainingRunVisualizationHandle = Readonly<{
   element: HTMLElement;
   canvas: HTMLCanvasElement;
   captureLocalPose: () => TrainingRunLocalPoseSnapshot | undefined;
+  updateVisualization: (options: TrainingRunVisualizationOptions) => boolean;
   updateRemoteAvatars: (
     avatars: readonly TrainingRunRemoteAvatarDefinition[],
   ) => void;
@@ -812,6 +813,50 @@ export const trainingRunVisualizationOptionsWithLocalPose = (
     },
   };
 };
+
+const withoutInitialPose = (value: unknown): unknown => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return value;
+  }
+  const copy: Record<string, unknown> = { ...(value as Record<string, unknown>) };
+  delete copy["initialPosition"];
+  return copy;
+};
+
+const structuralJsonReplacer = (_key: string, value: unknown): unknown =>
+  typeof value === "function" ? "[function]" : value;
+
+export const trainingRunVisualizationRetainedStructuralSignature = (
+  options: TrainingRunVisualizationOptions = {},
+): string => {
+  const resolved = resolveTrainingRunVisualizationOptions(options);
+  return JSON.stringify(
+    {
+      backgroundColor: resolved.backgroundColor,
+      cameraMode: resolved.cameraMode,
+      controller: resolved.controller,
+      pixelRatio: resolved.pixelRatio,
+      motionPolicy: resolved.motionPolicy,
+      stageNodeGlyph: resolved.stageNodeGlyph,
+      sceneChrome: resolved.sceneChrome,
+      worldLabelDensity: resolved.worldLabelDensity,
+      keyboardTargeting: resolved.keyboardTargeting,
+      remoteAvatarInterpolation: resolved.remoteAvatarInterpolation,
+      thirdPersonController: withoutInitialPose(
+        resolved.thirdPersonController,
+      ),
+      walkController: withoutInitialPose(resolved.walkController),
+    },
+    structuralJsonReplacer,
+  );
+};
+
+export const canRetainTrainingRunVisualization = (
+  current: TrainingRunVisualizationOptions,
+  next: TrainingRunVisualizationOptions,
+): boolean =>
+  trainingRunVisualizationRetainedStructuralSignature(current) ===
+  trainingRunVisualizationRetainedStructuralSignature(next);
 
 export const trainingRunPointerClickIntent = ({
   button,
@@ -3040,7 +3085,7 @@ export const mountTrainingRunVisualization = (
 ): Effect.Effect<TrainingRunVisualizationHandle, TrainingRunMountError> =>
   Effect.try({
     try: () => {
-      const resolved = resolveTrainingRunVisualizationOptions(options);
+      let resolved = resolveTrainingRunVisualizationOptions(options);
       const animateStructuralEdges =
         resolved.motionPolicy.structuralEdges === "animated";
       const animateAmbient = resolved.motionPolicy.ambient === "animated";
@@ -3070,6 +3115,8 @@ export const mountTrainingRunVisualization = (
       canvas.style.display = "block";
       canvas.style.width = "100%";
       canvas.style.height = "100%";
+      canvas.style.touchAction = "none";
+      canvas.style.userSelect = "none";
       canvas.tabIndex = -1;
       element.replaceChildren(canvas);
 
@@ -3130,6 +3177,15 @@ export const mountTrainingRunVisualization = (
       }> = [];
       let selectedTargetId: string | null = null;
       let disposed = false;
+
+      const removeKeyboardTargets = (predicate: (id: string) => boolean): void => {
+        for (let index = keyboardTargets.length - 1; index >= 0; index -= 1) {
+          const id = keyboardTargets[index]?.candidate.id;
+          if (id !== undefined && predicate(id)) {
+            keyboardTargets.splice(index, 1);
+          }
+        }
+      };
 
       const grid = new Three.Group();
       for (let x = -4; x <= 4; x += 1) {
@@ -3349,15 +3405,7 @@ export const mountTrainingRunVisualization = (
       };
 
       const syncRemoteAvatarKeyboardTargets = (): void => {
-        for (let index = keyboardTargets.length - 1; index >= 0; index -= 1) {
-          if (
-            keyboardTargets[index]?.candidate.id.startsWith(
-              remoteAvatarTargetPrefix,
-            ) === true
-          ) {
-            keyboardTargets.splice(index, 1);
-          }
-        }
+        removeKeyboardTargets((id) => id.startsWith(remoteAvatarTargetPrefix));
         for (const entry of remoteAvatars.values()) {
           if (!entry.handle.group.visible) continue;
           registerWorldKeyboardTarget(
@@ -3475,13 +3523,53 @@ export const mountTrainingRunVisualization = (
 
       updateRemoteAvatars(resolved.remoteAvatars);
 
-      const worldItemTargets: Array<{
+      type WorldItemRuntime = {
+        group: Three.Group;
+        hitTarget: Three.Object3D;
         item: TrainingRunWorldItemDefinition;
+        nodeTarget: TrainingRunNodeSelection;
         selection: TrainingRunWorldItemSelection;
+        signature: string;
         worldPosition: Three.Vector3;
-      }> = [];
-      for (const item of resolved.worldItems) {
-        if (item.kind !== "bulletin_board") continue;
+      };
+
+      const worldItemTargetPrefix = "world-item:";
+      const worldItemTargets = new Map<string, WorldItemRuntime>();
+
+      const worldItemSignature = (
+        item: TrainingRunWorldItemDefinition,
+      ): string =>
+        JSON.stringify({
+          detail: item.detail,
+          id: item.id,
+          interactionRadius: item.interactionRadius,
+          kind: item.kind,
+          label: item.label,
+          lines: item.lines,
+          position: item.position,
+          sourceRefs: item.sourceRefs,
+          status: item.status,
+          title: item.title,
+          yaw: item.yaw,
+        });
+
+      const disposeWorldItem = (itemId: string): void => {
+        const runtime = worldItemTargets.get(itemId);
+        if (runtime === undefined) return;
+        worldItemTargets.delete(itemId);
+        hitTargets.remove(`${worldItemTargetPrefix}${itemId}`);
+        removeKeyboardTargets((id) => id === `${worldItemTargetPrefix}${itemId}`);
+        if (selectedTargetId === `${worldItemTargetPrefix}${itemId}`) {
+          setSelectedTarget(undefined);
+        }
+        runtime.group.removeFromParent();
+        disposeObject(runtime.group);
+      };
+
+      const createWorldItem = (
+        item: TrainingRunWorldItemDefinition,
+      ): WorldItemRuntime | undefined => {
+        if (item.kind !== "bulletin_board") return undefined;
         const group = makeTrainingRunBulletinBoard(item);
         root.add(group);
         const selection = trainingRunWorldItemSelection(item);
@@ -3490,7 +3578,6 @@ export const mountTrainingRunVisualization = (
         const worldPosition = vector(item.position);
         root.updateMatrixWorld(true);
         root.localToWorld(worldPosition);
-        worldItemTargets.push({ item, selection, worldPosition });
         registerKeyboardTarget(item.position, nodeTarget, color);
 
         const hitTarget = new Three.Mesh(
@@ -3500,13 +3587,47 @@ export const mountTrainingRunVisualization = (
         hitTarget.position.set(0, -0.2, 1.18);
         group.add(hitTarget);
         hitTargets.register({
-          id: `world-item:${item.id}`,
+          id: `${worldItemTargetPrefix}${item.id}`,
           kind: "mesh",
           object: hitTarget,
           recursive: false,
           value: nodeTarget,
         });
-      }
+        return {
+          group,
+          hitTarget,
+          item,
+          nodeTarget,
+          selection,
+          signature: worldItemSignature(item),
+          worldPosition,
+        };
+      };
+
+      const updateWorldItems = (
+        items: readonly TrainingRunWorldItemDefinition[],
+      ): void => {
+        if (disposed) return;
+        const bulletinItems = items.filter(
+          (item) => item.kind === "bulletin_board",
+        );
+        const activeIds = new Set(bulletinItems.map((item) => item.id));
+        for (const itemId of [...worldItemTargets.keys()]) {
+          if (!activeIds.has(itemId)) disposeWorldItem(itemId);
+        }
+        for (const item of bulletinItems) {
+          const signature = worldItemSignature(item);
+          const existing = worldItemTargets.get(item.id);
+          if (existing?.signature === signature) continue;
+          if (existing !== undefined) disposeWorldItem(item.id);
+          const runtime = createWorldItem(item);
+          if (runtime !== undefined) {
+            worldItemTargets.set(item.id, runtime);
+          }
+        }
+      };
+
+      updateWorldItems(resolved.worldItems);
 
       const edges = createTrainingRunEdges(resolved.nodes);
       const nodeStatusById = new Map(
@@ -4335,12 +4456,12 @@ export const mountTrainingRunVisualization = (
         resolved.onWorldItemProximityChange?.(selection);
       };
       const updateWorldItemProximity = (): void => {
-        if (worldItemTargets.length === 0) {
+        if (worldItemTargets.size === 0) {
           emitWorldItemProximity(null);
           return;
         }
         const origin = vector(targetOrigin());
-        const nearest = worldItemTargets
+        const nearest = [...worldItemTargets.values()]
           .map((target) => {
             const radius = Math.max(0, target.item.interactionRadius ?? 2.2);
             const distance = target.worldPosition.distanceTo(origin);
@@ -4354,6 +4475,22 @@ export const mountTrainingRunVisualization = (
             return left.target.item.id.localeCompare(right.target.item.id);
           })[0];
         emitWorldItemProximity(nearest?.target.selection ?? null);
+      };
+
+      const updateVisualization = (
+        options: TrainingRunVisualizationOptions,
+      ): boolean => {
+        if (disposed) return false;
+        if (!canRetainTrainingRunVisualization(resolved, options)) {
+          return false;
+        }
+        resolved = resolveTrainingRunVisualizationOptions(options);
+        updateRemoteAvatars(resolved.remoteAvatars);
+        updateWorldItems(resolved.worldItems);
+        currentWorldItemProximityId = undefined;
+        updatePresenceZone();
+        updateWorldItemProximity();
+        return true;
       };
 
       const selectNextTarget = (
@@ -4592,6 +4729,9 @@ export const mountTrainingRunVisualization = (
         for (const avatarId of [...remoteAvatars.keys()]) {
           disposeRemoteAvatar(avatarId);
         }
+        for (const itemId of [...worldItemTargets.keys()]) {
+          disposeWorldItem(itemId);
+        }
         for (const label of entityLabels) label.dispose();
         for (const slot of burstSlots) slot.handle.dispose();
         for (const disposeBeam of beamDisposers) disposeBeam();
@@ -4606,6 +4746,7 @@ export const mountTrainingRunVisualization = (
         element,
         canvas,
         captureLocalPose,
+        updateVisualization,
         updateRemoteAvatars,
         selectNextTarget,
         resize: Effect.sync(resize),
