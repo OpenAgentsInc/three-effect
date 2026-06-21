@@ -206,11 +206,15 @@ import {
   raycastHitTargetRegistry,
   relaxMinimumDistanceLayout,
   SpatialHashGrid,
+  thirdPersonCameraDistanceAfterWheel,
+  thirdPersonCameraOffsetAtDistance,
+  thirdPersonCameraOffsetDistance,
   thirdPersonFollowSmoothingFactor,
   thirdPersonIdealLookAt,
   thirdPersonIdealOffset,
   updateMmorpgCharacterController,
   updateThirdPersonFollowCamera,
+  wheelDeltaPixels,
   wasdDesiredDirection,
   wasdMouseMovementFromEvent,
 } from "./index";
@@ -2289,6 +2293,25 @@ describe("player controller primitives", () => {
     expect(thirdPersonFollowSmoothingFactor(1, 0.01)).toBeCloseTo(0.99);
   });
 
+  test("scales and clamps third-person follow camera wheel zoom", () => {
+    expect(thirdPersonCameraOffsetDistance([0, 3, 4])).toBe(5);
+    expect(thirdPersonCameraOffsetAtDistance([0, 3, 4], 10)).toEqual([
+      0, 6, 8,
+    ]);
+    expect(wheelDeltaPixels(2, 0)).toBe(2);
+    expect(wheelDeltaPixels(2, 1)).toBe(32);
+    expect(wheelDeltaPixels(2, 2)).toBe(320);
+
+    const options = resolveThirdPersonFollowCameraOptions({
+      minDistance: 2,
+      maxDistance: 8,
+      zoomSpeed: 0.01,
+    });
+    expect(thirdPersonCameraDistanceAfterWheel(5, 100, 0, options)).toBe(6);
+    expect(thirdPersonCameraDistanceAfterWheel(5, -1000, 0, options)).toBe(2);
+    expect(thirdPersonCameraDistanceAfterWheel(5, 1000, 0, options)).toBe(8);
+  });
+
   test("updates a third-person follow camera with smoothing", () => {
     const camera = new Three.PerspectiveCamera();
     const target = {
@@ -2316,6 +2339,15 @@ describe("player controller primitives", () => {
     });
     Effect.runSync(handle.snap);
     expect(handle.state.currentPosition.z).toBeCloseTo(0);
+
+    Effect.runSync(
+      handle.setOptions({
+        offset: [0, 2, 2],
+        lookAtOffset: [0, 1, -1],
+      }),
+    );
+    Effect.runSync(handle.snap);
+    expect(handle.state.currentPosition.z).toBeCloseTo(-2);
   });
 
   test("derives MMORPG walk/run/idle actions from keyboard state", () => {

@@ -73,6 +73,9 @@ export type ThirdPersonFollowCameraOptions = Readonly<{
   offset?: readonly [number, number, number];
   lookAtOffset?: readonly [number, number, number];
   smoothing?: number;
+  minDistance?: number;
+  maxDistance?: number;
+  zoomSpeed?: number;
   minGroundClearance?: number;
   groundHeightAt?: (x: number, z: number) => number;
 }>;
@@ -81,6 +84,9 @@ export type ResolvedThirdPersonFollowCameraOptions = Readonly<{
   offset: readonly [number, number, number];
   lookAtOffset: readonly [number, number, number];
   smoothing: number;
+  minDistance: number;
+  maxDistance: number;
+  zoomSpeed: number;
   minGroundClearance: number;
   groundHeightAt: (x: number, z: number) => number;
 }>;
@@ -94,6 +100,7 @@ export type ThirdPersonFollowCameraHandle = Readonly<{
   state: ThirdPersonFollowCameraState;
   update: (delta: number) => Effect.Effect<void>;
   snap: Effect.Effect<void>;
+  setOptions: (options: ThirdPersonFollowCameraOptions) => Effect.Effect<void>;
 }>;
 
 export type ThreePlayerControllerAvatarAction =
@@ -260,6 +267,9 @@ export const defaultThirdPersonFollowCameraOptions: ResolvedThirdPersonFollowCam
     offset: [0, 3.2, 6.2],
     lookAtOffset: [0, 1.25, -2.2],
     smoothing: 0.01,
+    minDistance: 2.2,
+    maxDistance: 9.5,
+    zoomSpeed: 0.004,
     minGroundClearance: 1.25,
     groundHeightAt: () => Number.NEGATIVE_INFINITY,
   };
@@ -287,6 +297,9 @@ export const defaultThreePlayerControllerOptions = (
     offset: [0, 2.4, 4.8],
     lookAtOffset: [0, 0.9, -1.5],
     smoothing: 0.035,
+    minDistance: 2.2,
+    maxDistance: 8.5,
+    zoomSpeed: 0.004,
   },
   character: {
     acceleration: 22,
@@ -512,6 +525,40 @@ export const clampWasdPosition = (
   return position;
 };
 
+export const thirdPersonCameraOffsetDistance = (
+  offset: readonly [number, number, number],
+): number => Math.hypot(offset[0], offset[1], offset[2]);
+
+export const thirdPersonCameraOffsetAtDistance = (
+  offset: readonly [number, number, number],
+  distance: number,
+): readonly [number, number, number] => {
+  const baseDistance = thirdPersonCameraOffsetDistance(offset);
+  if (baseDistance <= 0) return offset;
+  const scale = distance / baseDistance;
+  return [offset[0] * scale, offset[1] * scale, offset[2] * scale];
+};
+
+export const wheelDeltaPixels = (
+  deltaY: number,
+  deltaMode: number = 0,
+): number => deltaY * (deltaMode === 1 ? 16 : deltaMode === 2 ? 160 : 1);
+
+export const thirdPersonCameraDistanceAfterWheel = (
+  currentDistance: number,
+  deltaY: number,
+  deltaMode: number,
+  options: Pick<
+    ResolvedThirdPersonFollowCameraOptions,
+    "maxDistance" | "minDistance" | "zoomSpeed"
+  >,
+): number =>
+  Three.MathUtils.clamp(
+    currentDistance + wheelDeltaPixels(deltaY, deltaMode) * options.zoomSpeed,
+    options.minDistance,
+    options.maxDistance,
+  );
+
 export const thirdPersonIdealOffset = (
   target: ThirdPersonCameraTarget,
   options: ResolvedThirdPersonFollowCameraOptions,
@@ -584,7 +631,7 @@ export const createThirdPersonFollowCamera = (
   target: ThirdPersonCameraTarget,
   options: ThirdPersonFollowCameraOptions = {},
 ): ThirdPersonFollowCameraHandle => {
-  const resolved = resolveThirdPersonFollowCameraOptions(options);
+  let resolved = resolveThirdPersonFollowCameraOptions(options);
   const state = createThirdPersonFollowCameraState(camera, target, resolved);
   const snap = Effect.sync(() => {
     state.currentPosition.copy(thirdPersonIdealOffset(target, resolved));
@@ -596,6 +643,10 @@ export const createThirdPersonFollowCamera = (
   return {
     state,
     snap,
+    setOptions: (options: ThirdPersonFollowCameraOptions) =>
+      Effect.sync(() => {
+        resolved = resolveThirdPersonFollowCameraOptions(options);
+      }),
     update: (delta: number) =>
       Effect.sync(() => {
         updateThirdPersonFollowCamera(camera, target, state, delta, resolved);
@@ -1018,10 +1069,29 @@ export const createThreePlayerController = (
       );
       const keyboard = defaultWasdKeyboardState();
       const characterState = defaultMmorpgCharacterControllerState();
+      const cameraOptions = resolveThirdPersonFollowCameraOptions(
+        resolved.camera,
+      );
+      const cameraBaseOffset = cameraOptions.offset;
+      const cameraBaseDistance = thirdPersonCameraOffsetDistance(
+        cameraBaseOffset,
+      );
+      let cameraDistance = Three.MathUtils.clamp(
+        cameraBaseDistance,
+        cameraOptions.minDistance,
+        cameraOptions.maxDistance,
+      );
+      const cameraOptionsAtDistance = (): ThirdPersonFollowCameraOptions => ({
+        ...cameraOptions,
+        offset: thirdPersonCameraOffsetAtDistance(
+          cameraBaseOffset,
+          cameraDistance,
+        ),
+      });
       const cameraHandle = createThirdPersonFollowCamera(
         camera,
         target,
-        resolved.camera,
+        cameraOptionsAtDistance(),
       );
       const removers: Array<() => void> = [];
       let disposed = false;
@@ -1052,15 +1122,30 @@ export const createThreePlayerController = (
           event.preventDefault();
         }
       };
+      const onWheel = (event: WheelEvent) => {
+        if (!resolved.enabled || isEditableInputTarget(event.target)) return;
+        const nextDistance = thirdPersonCameraDistanceAfterWheel(
+          cameraDistance,
+          event.deltaY,
+          event.deltaMode,
+          cameraOptions,
+        );
+        if (nextDistance === cameraDistance) return;
+        event.preventDefault();
+        cameraDistance = nextDistance;
+        Effect.runSync(cameraHandle.setOptions(cameraOptionsAtDistance()));
+      };
       resolved.inputTarget.addEventListener("keydown", onKeyDown as EventListener, {
         passive: false,
       });
       resolved.inputTarget.addEventListener("keyup", onKeyUp as EventListener, {
         passive: false,
       });
+      domElement.addEventListener("wheel", onWheel, { passive: false });
       removers.push(() => {
         resolved.inputTarget.removeEventListener("keydown", onKeyDown as EventListener);
         resolved.inputTarget.removeEventListener("keyup", onKeyUp as EventListener);
+        domElement.removeEventListener("wheel", onWheel);
       });
 
       return {
