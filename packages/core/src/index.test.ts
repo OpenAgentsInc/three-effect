@@ -141,6 +141,7 @@ import {
   trainingRunMotionSourceRefs,
   trainingRunPointerClickIntent,
   trainingRunSelectionIsPylon,
+  trainingRunVisualizationOptionsWithLocalPose,
   trainingRunWorldLabelVisibleForSelection,
   trainingRunVisualizationOptionsFromSnapshot,
   updateScrollMetrics,
@@ -1566,6 +1567,42 @@ describe("training run visualization", () => {
       maxTargets: 24,
     });
     expect(resolved.walkController).toEqual({});
+  });
+
+  test("preserves local controller position across refreshed visualization remounts", () => {
+    const refreshed = trainingRunVisualizationOptionsWithLocalPose(
+      {
+        cameraMode: "perspective_walk",
+        controller: "third_person_character",
+        thirdPersonController: {
+          jumpHeight: 4.9,
+        },
+      },
+      {
+        controller: "third_person_character",
+        position: [4.25, 0, -12.75],
+      },
+    );
+
+    expect(refreshed.thirdPersonController).toEqual({
+      initialPosition: [4.25, 0, -12.75],
+      jumpHeight: 4.9,
+    });
+  });
+
+  test("does not apply a stale pose to a different controller mode", () => {
+    const refreshed = trainingRunVisualizationOptionsWithLocalPose(
+      {
+        cameraMode: "perspective_walk",
+        controller: "wasd_mouselook",
+      },
+      {
+        controller: "third_person_character",
+        position: [4.25, 0, -12.75],
+      },
+    );
+
+    expect(refreshed.walkController).toBeUndefined();
   });
 
   test("cycles keyboard targets from nearest to farthest", () => {

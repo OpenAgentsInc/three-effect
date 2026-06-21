@@ -328,6 +328,14 @@ export type TrainingRunVisualizationSnapshot = Readonly<{
   verifiedWorkCount?: number;
 }>;
 
+export type TrainingRunLocalPoseSnapshot = Readonly<{
+  controller: Extract<
+    TrainingRunControllerMode,
+    "third_person_character" | "wasd_mouselook"
+  >;
+  position: TrainingRunVector;
+}>;
+
 export type ResolvedTrainingRunVisualizationOptions = Readonly<{
   backgroundColor: number;
   cameraMode: TrainingRunCameraMode;
@@ -357,6 +365,7 @@ export type ResolvedTrainingRunVisualizationOptions = Readonly<{
 export type TrainingRunVisualizationHandle = Readonly<{
   element: HTMLElement;
   canvas: HTMLCanvasElement;
+  captureLocalPose: () => TrainingRunLocalPoseSnapshot | undefined;
   selectNextTarget: (direction?: 1 | -1) => TrainingRunNodeSelection | undefined;
   resize: Effect.Effect<void>;
   dispose: Effect.Effect<void>;
@@ -656,6 +665,33 @@ export const resolveTrainingRunVisualizationOptions = (
     ...(options.onPresenceZoneChange === undefined
       ? {}
       : { onPresenceZoneChange: options.onPresenceZoneChange }),
+  };
+};
+
+export const trainingRunVisualizationOptionsWithLocalPose = (
+  options: TrainingRunVisualizationOptions,
+  pose: TrainingRunLocalPoseSnapshot | undefined,
+): TrainingRunVisualizationOptions => {
+  if (pose === undefined || options.controller !== pose.controller) {
+    return options;
+  }
+
+  if (pose.controller === "third_person_character") {
+    return {
+      ...options,
+      thirdPersonController: {
+        ...(options.thirdPersonController ?? {}),
+        initialPosition: pose.position,
+      },
+    };
+  }
+
+  return {
+    ...options,
+    walkController: {
+      ...(options.walkController ?? {}),
+      initialPosition: pose.position,
+    },
   };
 };
 
@@ -3380,6 +3416,23 @@ export const mountTrainingRunVisualization = (
         }
         return [camera.position.x, camera.position.y, camera.position.z];
       };
+      const captureLocalPose = (): TrainingRunLocalPoseSnapshot | undefined => {
+        if (threePlayerController !== undefined) {
+          const position = Effect.runSync(threePlayerController.getPosition);
+          return {
+            controller: "third_person_character",
+            position: [position.x, position.y, position.z],
+          };
+        }
+        if (walkController !== undefined) {
+          const position = Effect.runSync(walkController.getPosition);
+          return {
+            controller: "wasd_mouselook",
+            position: [position.x, position.y, position.z],
+          };
+        }
+        return undefined;
+      };
       let currentPresenceZone: TrainingRunPresenceZone | null | undefined;
       const emitPresenceZone = (
         zone: TrainingRunPresenceZone | null,
@@ -3639,6 +3692,7 @@ export const mountTrainingRunVisualization = (
       return {
         element,
         canvas,
+        captureLocalPose,
         selectNextTarget,
         resize: Effect.sync(resize),
         dispose,

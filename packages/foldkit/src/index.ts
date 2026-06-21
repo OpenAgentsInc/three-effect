@@ -8,9 +8,12 @@ import {
   mountMokshaExperience,
   mountSpinningCube,
   mountTrainingRunVisualization,
+  trainingRunVisualizationOptionsWithLocalPose,
   type MokshaOptions,
+  type TrainingRunLocalPoseSnapshot,
   type TrainingRunNodeSelection,
   type TrainingRunPresenceZone,
+  type TrainingRunVisualizationHandle,
   type TrainingRunVisualizationOptions,
 } from "@openagentsinc/three-effect/core"
 
@@ -285,8 +288,9 @@ const makeMokshaElement = (): CustomElementConstructor => {
 
 const makeTrainingRunElement = (): CustomElementConstructor => {
   return class TrainingRunElement extends HTMLElement {
-    #dispose: Effect.Effect<void> | null = null
+    #handle: TrainingRunVisualizationHandle | null = null
     #mount: HTMLDivElement | null = null
+    #preservedLocalPose: TrainingRunLocalPoseSnapshot | undefined
     #visualization: TrainingRunVisualizationOptions = {}
     #visualizationSignature = stableOptionsSignature(this.#visualization)
 
@@ -338,26 +342,33 @@ const makeTrainingRunElement = (): CustomElementConstructor => {
     disconnectedCallback(): void {
       this.#unmount()
       this.#mount = null
+      this.#preservedLocalPose = undefined
     }
 
     #unmount(): void {
-      if (this.#dispose === null) return
-      Effect.runSync(this.#dispose)
-      this.#dispose = null
+      if (this.#handle === null) return
+      Effect.runSync(this.#handle.dispose)
+      this.#handle = null
     }
 
     #remount(): void {
       if (this.#mount === null) return
+      this.#preservedLocalPose =
+        this.#handle?.captureLocalPose() ?? this.#preservedLocalPose
       this.#unmount()
+      const visualization = trainingRunVisualizationOptionsWithLocalPose(
+        this.#visualization,
+        this.#preservedLocalPose,
+      )
       const handle = Effect.runSync(
         mountTrainingRunVisualization(this.#mount, {
-          ...this.#visualization,
+          ...visualization,
           onNodeClick: node => dispatchTrainingNodeSelected(this, node),
           onPresenceZoneChange: zone =>
             dispatchTrainingPresenceZoneChanged(this, zone),
         }),
       )
-      this.#dispose = handle.dispose
+      this.#handle = handle
     }
   }
 }
