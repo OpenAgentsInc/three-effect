@@ -190,11 +190,9 @@ const dispatchTrainingPresenceZoneChanged = (
   element: HTMLElement,
   zone: TrainingRunPresenceZone | null,
 ): void => {
-  if (zone === null) {
-    element.removeAttribute("data-presence-zone")
-  } else {
-    element.setAttribute("data-presence-zone", zone)
-  }
+  recordTrainingHostDiagnostic("verse-host.presence-zone", {
+    zone: zone ?? "away",
+  })
   element.dispatchEvent(
     new CustomEvent("presence-zone-changed", {
       bubbles: true,
@@ -208,11 +206,11 @@ const dispatchTrainingWorldItemProximityChanged = (
   element: HTMLElement,
   item: TrainingRunWorldItemSelection | null,
 ): void => {
-  if (item === null) {
-    element.removeAttribute("data-world-item")
-  } else {
-    element.setAttribute("data-world-item", item.id)
-  }
+  recordTrainingHostDiagnostic("verse-host.world-item-proximity", {
+    itemId: item?.id ?? null,
+    kind: item?.kind ?? null,
+    status: item?.status ?? null,
+  })
   element.dispatchEvent(
     new CustomEvent("world-item-proximity-changed", {
       bubbles: true,

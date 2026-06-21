@@ -50,6 +50,13 @@ type ThreePlayerAvatarAnimationHandle = Readonly<{
   update: (delta: number) => void;
 }>;
 
+type AvatarFadeMaterial = Readonly<{
+  depthWrite: boolean;
+  material: Three.Material;
+  opacity: number;
+  transparent: boolean;
+}>;
+
 export class TrainingRunMountError extends Data.TaggedError(
   "TrainingRunMountError",
 )<{
@@ -2607,6 +2614,7 @@ const makeThreePlayerAvatar = (
   group.name = "three-player-controller-avatar";
   group.userData["sourceModelUrl"] = modelUrl;
   group.userData["animationClips"] = defaultThreePlayerAvatarAnimationClips;
+  group.userData["modelLoadState"] = "loading";
 
   const ring = makeRing(0.42, 0x8ef6ff, 0.34);
   ring.rotation.x = Math.PI / 2;
@@ -2618,7 +2626,55 @@ const makeThreePlayerAvatar = (
   let currentAction: Three.AnimationAction | undefined;
   let currentKey: ThreePlayerAvatarClipKey | undefined;
   let queuedGroundKey: ThreePlayerAvatarClipKey | undefined;
+  let modelFadeProgress = 1;
+  const fadeMaterials: AvatarFadeMaterial[] = [];
   const actions = new Map<ThreePlayerAvatarClipKey, Three.AnimationAction>();
+
+  const fadeInModel = (model: Three.Object3D): void => {
+    modelFadeProgress = 0;
+    group.userData["modelFadeState"] = "fading";
+    model.traverse((child) => {
+      const mesh = child as Three.Mesh<
+        Three.BufferGeometry,
+        Three.Material | Three.Material[]
+      >;
+      if (!mesh.isMesh) return;
+      const materials = Array.isArray(mesh.material)
+        ? mesh.material
+        : [mesh.material];
+      for (const material of materials) {
+        fadeMaterials.push({
+          material,
+          opacity: material.opacity,
+          transparent: material.transparent,
+          depthWrite: material.depthWrite,
+        });
+        material.transparent = true;
+        material.depthWrite = false;
+        material.opacity = 0;
+        material.needsUpdate = true;
+      }
+    });
+  };
+
+  const updateModelFade = (delta: number): void => {
+    if (modelFadeProgress >= 1 || fadeMaterials.length === 0) return;
+    modelFadeProgress = Math.min(1, modelFadeProgress + Math.max(0, delta) / 0.22);
+    const eased = 1 - (1 - modelFadeProgress) * (1 - modelFadeProgress);
+    for (const entry of fadeMaterials) {
+      entry.material.opacity = entry.opacity * eased;
+      entry.material.needsUpdate = true;
+    }
+    if (modelFadeProgress < 1) return;
+    for (const entry of fadeMaterials) {
+      entry.material.opacity = entry.opacity;
+      entry.material.transparent = entry.transparent;
+      entry.material.depthWrite = entry.depthWrite;
+      entry.material.needsUpdate = true;
+    }
+    fadeMaterials.length = 0;
+    group.userData["modelFadeState"] = "complete";
+  };
 
   const playClip = (key: ThreePlayerAvatarClipKey, fade = 0.18): void => {
     const next = actions.get(key);
@@ -2682,6 +2738,7 @@ const makeThreePlayerAvatar = (
         mesh.castShadow = true;
         mesh.receiveShadow = true;
       });
+      fadeInModel(model);
       for (const [key, clipName] of Object.entries(
         defaultThreePlayerAvatarAnimationClips,
       ) as Array<[ThreePlayerAvatarClipKey, string]>) {
@@ -2709,11 +2766,13 @@ const makeThreePlayerAvatar = (
       group.add(model);
       playClip("idle", 0);
       mixer.update(0);
+      group.userData["modelLoadState"] = "ready";
     },
     undefined,
     (error) => {
       group.userData["modelLoadError"] =
         error instanceof Error ? error.message : String(error);
+      group.userData["modelLoadState"] = "error";
     },
   );
 
@@ -2722,6 +2781,7 @@ const makeThreePlayerAvatar = (
     playAction,
     update: (delta) => {
       mixer?.update(Math.max(0, Math.min(delta, 0.1)));
+      updateModelFade(Math.max(0, Math.min(delta, 0.1)));
     },
   };
 };
