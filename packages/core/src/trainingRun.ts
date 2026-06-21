@@ -17,6 +17,7 @@ import {
   HitTargetRegistry,
   raycastHitTargetRegistry,
 } from "./spatialPrimitives";
+import { createSky } from "./stagingPrimitives";
 import { createTextLabel, type TextLabelHandle } from "./textLabelPrimitives";
 
 export const defaultThreePlayerAvatarModelUrl = new URL(
@@ -1930,6 +1931,28 @@ const makeHorizontalPlane = (
   return mesh;
 };
 
+const makeHorizontalLitPlane = (
+  width: number,
+  depth: number,
+  color: number,
+  opacity: number,
+): Three.Mesh<Three.PlaneGeometry, Three.MeshStandardMaterial> => {
+  const mesh = new Three.Mesh(
+    new Three.PlaneGeometry(width, depth),
+    new Three.MeshStandardMaterial({
+      color,
+      metalness: 0,
+      opacity,
+      roughness: 0.86,
+      transparent: opacity < 1,
+      side: Three.DoubleSide,
+    }),
+  );
+  mesh.receiveShadow = true;
+  mesh.rotation.x = -Math.PI / 2;
+  return mesh;
+};
+
 export const metaverseStreetSourceRefs = [
   "Snow Crash / Metaverse: a persistent city organized around The Street",
 ] as const;
@@ -1999,21 +2022,110 @@ export const metaverseStreetBuildingDimensions = (
   width: 3.8 + (index % 4) * 1.25,
 });
 
+export const metaverseStreetBuildingColor = (index: number): number => {
+  const grayscale = [0xf2f2f2, 0xd8d8d8, 0xc2c2c2, 0xe8e8e8] as const;
+  return grayscale[Math.abs(index) % grayscale.length]!;
+};
+
+export const metaverseStreetBuildingOpacity = (index: number): number =>
+  0.16 + (Math.abs(index) % 4) * 0.035;
+
+const makeMetaverseStreetBuildingMaterial = (
+  index: number,
+): Three.MeshPhysicalMaterial =>
+  new Three.MeshPhysicalMaterial({
+    color: metaverseStreetBuildingColor(index),
+    metalness: 0.02,
+    opacity: metaverseStreetBuildingOpacity(index),
+    roughness: 0.58,
+    transparent: true,
+    depthWrite: false,
+    envMapIntensity: 0.24,
+    clearcoat: 0.25,
+    clearcoatRoughness: 0.6,
+    side: Three.DoubleSide,
+  });
+
+export const trainingRunPerspectiveSunDirection = (): Three.Vector3 =>
+  new Three.Vector3(0.36, 0.44, -0.82).normalize();
+
+export const createTrainingRunPerspectiveAtmosphere = (): Three.Group => {
+  const group = new Three.Group();
+  group.name = "training-run-perspective-atmosphere";
+  const sunDirection = trainingRunPerspectiveSunDirection();
+
+  const sky = createSky({
+    distance: 650,
+    mieCoefficient: 0.004,
+    mieDirectionalG: 0.86,
+    rayleigh: 0.08,
+    sunPosition: sunDirection,
+    turbidity: 18,
+  });
+  sky.name = "training-run-dark-grayscale-sky";
+  group.add(sky);
+
+  const sunDisc = new Three.Sprite(
+    new Three.SpriteMaterial({
+      color: 0xffffff,
+      depthWrite: false,
+      opacity: 0.62,
+      transparent: true,
+    }),
+  );
+  sunDisc.name = "training-run-white-sun";
+  sunDisc.position.copy(sunDirection).multiplyScalar(520);
+  sunDisc.scale.setScalar(28);
+  group.add(sunDisc);
+
+  const ambient = new Three.AmbientLight(0xd8d8d8, 0.42);
+  ambient.name = "training-run-low-ambient-fill";
+  group.add(ambient);
+
+  const hemisphere = new Three.HemisphereLight(0xf4f4f4, 0x050505, 0.82);
+  hemisphere.name = "training-run-grayscale-hemisphere";
+  group.add(hemisphere);
+
+  const sunLight = new Three.DirectionalLight(0xffffff, 5.2);
+  sunLight.name = "training-run-shadow-sun";
+  sunLight.position.copy(sunDirection).multiplyScalar(90);
+  sunLight.castShadow = true;
+  sunLight.shadow.mapSize.setScalar(2048);
+  sunLight.shadow.camera.left = -82;
+  sunLight.shadow.camera.right = 82;
+  sunLight.shadow.camera.top = 82;
+  sunLight.shadow.camera.bottom = -82;
+  sunLight.shadow.camera.near = 0.5;
+  sunLight.shadow.camera.far = 220;
+  sunLight.shadow.bias = -0.00045;
+  sunLight.shadow.normalBias = 0.018;
+  sunLight.target.position.set(0, 0, 0);
+  group.add(sunLight);
+  group.add(sunLight.target);
+
+  const fill = new Three.DirectionalLight(0xb8b8b8, 0.36);
+  fill.name = "training-run-soft-opposite-fill";
+  fill.position.set(-28, 18, 38);
+  group.add(fill);
+
+  return group;
+};
+
 export const makeMetaverseStreetDistrict = (): Three.Group => {
   const group = new Three.Group();
   group.name = "the-street-district";
   group.userData["sourceRefs"] = metaverseStreetSourceRefs;
 
-  const road = makeHorizontalPlane(
+  const road = makeHorizontalLitPlane(
     metaverseStreetLayout.roadWidth,
     metaverseStreetLength,
-    0x0b1014,
-    0.94,
+    0x050607,
+    0.98,
   );
   road.position.set(0, -0.255, metaverseStreetLayout.centerZ);
   group.add(road);
 
-  const median = makeHorizontalPlane(0.14, metaverseStreetLength - 2, 0xfff3a3, 0.34);
+  const median = makeHorizontalLitPlane(0.14, metaverseStreetLength - 2, 0xf5f5f5, 0.34);
   median.position.set(0, -0.248, metaverseStreetLayout.centerZ);
   group.add(median);
 
@@ -2024,8 +2136,8 @@ export const makeMetaverseStreetDistrict = (): Three.Group => {
           new Three.Vector3(x, -0.235, metaverseStreetLayout.farZ + 0.45),
           new Three.Vector3(x, -0.235, metaverseStreetLayout.nearZ - 0.45),
         ],
-        0x8ef6ff,
-        0.28,
+        0xf5f5f5,
+        0.18,
       ),
     );
   }
@@ -2038,7 +2150,7 @@ export const makeMetaverseStreetDistrict = (): Three.Group => {
   }
 
   for (const x of [-metaverseStreetLayout.shoulderX, metaverseStreetLayout.shoulderX]) {
-    const walk = makeHorizontalPlane(2.35, metaverseStreetLength - 2, 0x111827, 0.4);
+    const walk = makeHorizontalLitPlane(2.35, metaverseStreetLength - 2, 0x0a0b0d, 0.56);
     walk.position.set(x, -0.25, metaverseStreetLayout.centerZ);
     group.add(walk);
     group.add(
@@ -2047,8 +2159,8 @@ export const makeMetaverseStreetDistrict = (): Three.Group => {
           new Three.Vector3(x, -0.215, metaverseStreetLayout.farZ + 0.65),
           new Three.Vector3(x, -0.215, metaverseStreetLayout.nearZ - 0.65),
         ],
-        0xb9e6ff,
-        0.16,
+        0xd8d8d8,
+        0.12,
       ),
     );
   }
@@ -2056,19 +2168,17 @@ export const makeMetaverseStreetDistrict = (): Three.Group => {
   for (const [index, position] of metaverseStreetParcelPositions().entries()) {
     const side = position.x < 0 ? -1 : 1;
     const { depth, height, width } = metaverseStreetBuildingDimensions(index);
-    const parcel = makeHorizontalPlane(1.9, 1.36, 0x1f2937, 0.38);
+    const parcel = makeHorizontalLitPlane(1.9, 1.36, 0x171717, 0.42);
     parcel.position.set(position.x, -0.246, position.z);
     group.add(parcel);
 
     const building = new Three.Mesh(
       new Three.BoxGeometry(width, height, depth),
-      new Three.MeshBasicMaterial({
-        color: index % 4 === 0 ? 0x1d4ed8 : index % 4 === 1 ? 0x7c3aed : 0x155e75,
-        opacity: 0.24 + (index % 3) * 0.08,
-        transparent: true,
-        depthWrite: false,
-      }),
+      makeMetaverseStreetBuildingMaterial(index),
     );
+    building.name = `the-street-building-${index}`;
+    building.castShadow = true;
+    building.receiveShadow = true;
     building.position.set(
       position.x + side * 0.12,
       height / 2 - 0.22,
@@ -2081,8 +2191,8 @@ export const makeMetaverseStreetDistrict = (): Three.Group => {
         new Three.Vector3(position.x - side * 0.48, 0.05, position.z - 0.28),
         new Three.Vector3(position.x - side * 0.48, 0.05, position.z + 0.28),
       ],
-      0xff80b5,
-      0.32,
+      0xf5f5f5,
+      0.2,
     );
     group.add(frontage);
   }
@@ -2534,26 +2644,22 @@ export const mountTrainingRunVisualization = (
       renderer.setClearColor(resolved.backgroundColor, 1);
       renderer.outputColorSpace = Three.SRGBColorSpace;
       renderer.toneMapping = Three.ACESFilmicToneMapping;
-      renderer.toneMappingExposure = perspectiveWalk ? 1.35 : 1;
+      renderer.toneMappingExposure = perspectiveWalk ? 0.86 : 1;
+      renderer.shadowMap.enabled = perspectiveWalk;
+      if (perspectiveWalk) {
+        renderer.shadowMap.type = Three.VSMShadowMap;
+      }
       renderer.setPixelRatio(
         Math.min(window.devicePixelRatio || 1, resolved.pixelRatio),
       );
 
       const scene = new Three.Scene();
       if (perspectiveWalk) {
-        const ambient = new Three.AmbientLight(0xffffff, 2.6);
-        scene.add(ambient);
-        const hemisphere = new Three.HemisphereLight(0xdceeff, 0x101923, 2.2);
-        scene.add(hemisphere);
-        const keyLight = new Three.DirectionalLight(0xffffff, 4.8);
-        keyLight.position.set(2.8, 5.2, 4.4);
-        scene.add(keyLight);
-        const rimLight = new Three.DirectionalLight(0x7dd3fc, 1.8);
-        rimLight.position.set(-4.5, 2.6, -2.2);
-        scene.add(rimLight);
+        scene.fog = new Three.FogExp2(0x070808, 0.0048);
+        scene.add(createTrainingRunPerspectiveAtmosphere());
       }
       const camera = perspectiveWalk
-        ? new Three.PerspectiveCamera(62, 1, 0.05, 120)
+        ? new Three.PerspectiveCamera(62, 1, 0.05, 900)
         : new Three.OrthographicCamera(-5, 5, 3, -3, 0.1, 100);
       if (camera instanceof Three.PerspectiveCamera) {
         camera.position.set(0, 1.65, 6.25);

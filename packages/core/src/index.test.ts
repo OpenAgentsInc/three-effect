@@ -82,7 +82,11 @@ import {
   maskMaterialProps,
   mergeBufferGeometries,
   makeTrainingRunArtifactMarker,
+  createTrainingRunPerspectiveAtmosphere,
+  makeMetaverseStreetDistrict,
+  metaverseStreetBuildingColor,
   metaverseStreetBuildingDimensions,
+  metaverseStreetBuildingOpacity,
   metaverseStreetHumanHeight,
   metaverseStreetLayout,
   metaverseStreetParcelPositions,
@@ -90,6 +94,7 @@ import {
   metaverseStreetSourceRefs,
   metaverseStreetStoryHeight,
   makeTrainingRunPylonLandmark,
+  trainingRunPerspectiveSunDirection,
   trainingRunHeadLabelPositionForObject,
   MokshaPlaneMaterial,
   cycleTrainingRunCameraTarget,
@@ -1842,6 +1847,73 @@ describe("training run visualization", () => {
       metaverseStreetHumanHeight * 25,
     );
     expect(metaverseStreetBuildingDimensions(5).width).toBeGreaterThan(4.5);
+  });
+
+  test("renders Street buildings as translucent grayscale shadow casters", () => {
+    expect(metaverseStreetBuildingColor(0)).toBe(0xf2f2f2);
+    expect(metaverseStreetBuildingOpacity(3)).toBeCloseTo(0.265);
+
+    const district = makeMetaverseStreetDistrict();
+    const building = district.children.find(
+      (child): child is Three.Mesh<
+        Three.BoxGeometry,
+        Three.MeshPhysicalMaterial
+      > =>
+        child instanceof Three.Mesh &&
+        child.name === "the-street-building-0",
+    );
+
+    expect(building).toBeDefined();
+    expect(building!.castShadow).toBe(true);
+    expect(building!.receiveShadow).toBe(true);
+    expect(building!.material).toBeInstanceOf(Three.MeshPhysicalMaterial);
+    expect(building!.material.transparent).toBe(true);
+    expect(building!.material.opacity).toBeLessThan(0.3);
+    expect(building!.material.color.r).toBeCloseTo(
+      building!.material.color.g,
+    );
+    expect(building!.material.color.g).toBeCloseTo(
+      building!.material.color.b,
+    );
+
+    const receivingSurface = district.children.find(
+      (child): child is Three.Mesh<
+        Three.PlaneGeometry,
+        Three.MeshStandardMaterial
+      > =>
+        child instanceof Three.Mesh &&
+        child.material instanceof Three.MeshStandardMaterial &&
+        child.receiveShadow,
+    );
+    expect(receivingSurface).toBeDefined();
+  });
+
+  test("creates a dark grayscale sky, white sun, and shadow sun for perspective Verse", () => {
+    const direction = trainingRunPerspectiveSunDirection();
+    expect(direction.length()).toBeCloseTo(1);
+    expect(direction.y).toBeGreaterThan(0);
+
+    const atmosphere = createTrainingRunPerspectiveAtmosphere();
+    const sky = atmosphere.children.find(
+      (child) => child.name === "training-run-dark-grayscale-sky",
+    );
+    const sunDisc = atmosphere.children.find(
+      (child) => child.name === "training-run-white-sun",
+    );
+    const sunLight = atmosphere.children.find(
+      (child): child is Three.DirectionalLight =>
+        child instanceof Three.DirectionalLight &&
+        child.name === "training-run-shadow-sun",
+    );
+
+    expect(sky).toBeDefined();
+    expect(sunDisc).toBeInstanceOf(Three.Sprite);
+    expect(sunLight).toBeDefined();
+    expect(sunLight!.color.getHex()).toBe(0xffffff);
+    expect(sunLight!.castShadow).toBe(true);
+    expect(sunLight!.shadow.mapSize.width).toBe(2048);
+    expect(sunLight!.shadow.camera.left).toBeLessThan(-50);
+    expect(sunLight!.shadow.camera.right).toBeGreaterThan(50);
   });
 
   test("uses the imported controller GLB for the default third-person avatar", () => {
