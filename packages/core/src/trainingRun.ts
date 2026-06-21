@@ -1787,10 +1787,10 @@ export const makeTrainingRunBulletinBoard = (
   item: TrainingRunWorldItemDefinition,
 ): Three.Group => {
   const group = new Three.Group();
-  const width = 2.1;
-  const height = 1.25;
-  const thickness = 0.1;
-  const postHeight = 1.76;
+  const width = 3.1;
+  const height = 1.64;
+  const thickness = 0.14;
+  const postHeight = 2.18;
   const statusColor = colorForStatus(item.status ?? "active");
   const yaw = typeof item.yaw === "number" && Number.isFinite(item.yaw)
     ? item.yaw
@@ -1801,83 +1801,111 @@ export const makeTrainingRunBulletinBoard = (
   group.name = `training-run-world-item:${item.id}`;
 
   const postMaterial = new Three.MeshStandardMaterial({
-    color: 0x5a4b3a,
+    color: 0x8a6b45,
+    emissive: 0x181008,
     metalness: 0.02,
-    roughness: 0.82,
+    roughness: 0.76,
   });
-  for (const x of [-width / 2 + 0.16, width / 2 - 0.16]) {
+  for (const x of [-width / 2 + 0.22, width / 2 - 0.22]) {
     const post = new Three.Mesh(
-      new Three.BoxGeometry(0.12, 0.12, postHeight),
+      new Three.BoxGeometry(0.18, 0.18, postHeight),
       postMaterial,
     );
     post.position.set(x, 0.04, postHeight / 2);
     group.add(post);
   }
 
+  const base = new Three.Mesh(
+    new Three.BoxGeometry(width + 0.34, 0.34, 0.12),
+    new Three.MeshStandardMaterial({
+      color: 0x6a4c2e,
+      emissive: 0x100a05,
+      metalness: 0.02,
+      roughness: 0.8,
+    }),
+  );
+  base.position.set(0, 0.04, 0.06);
+  base.castShadow = true;
+  base.receiveShadow = true;
+  group.add(base);
+
   const board = new Three.Mesh(
     new Three.BoxGeometry(width, thickness, height),
     new Three.MeshStandardMaterial({
-      color: 0x302a22,
-      emissive: 0x080604,
+      color: 0x5a3d22,
+      emissive: 0x241408,
       metalness: 0.04,
-      roughness: 0.74,
+      roughness: 0.66,
     }),
   );
-  board.position.set(0, 0, 1.17);
+  board.position.set(0, 0, 1.39);
   board.castShadow = true;
   board.receiveShadow = true;
   group.add(board);
 
   const face = new Three.Mesh(
-    new Three.PlaneGeometry(width - 0.16, height - 0.14),
+    new Three.PlaneGeometry(width - 0.24, height - 0.22),
     new Three.MeshBasicMaterial({
-      color: 0x181512,
-      opacity: 0.9,
+      color: 0x211a13,
+      opacity: 0.98,
       transparent: true,
       side: Three.DoubleSide,
     }),
   );
   face.rotation.x = Math.PI / 2;
-  face.position.set(0, -thickness / 2 - 0.006, 1.17);
+  face.position.set(0, -thickness / 2 - 0.008, 1.39);
   group.add(face);
 
+  const headerBacking = new Three.Mesh(
+    new Three.PlaneGeometry(width - 0.36, 0.36),
+    new Three.MeshBasicMaterial({
+      color: 0x0e1116,
+      opacity: 0.96,
+      transparent: true,
+      side: Three.DoubleSide,
+    }),
+  );
+  headerBacking.rotation.x = Math.PI / 2;
+  headerBacking.position.set(0, -thickness / 2 - 0.011, 1.96);
+  group.add(headerBacking);
+
   const accent = new Three.Mesh(
-    new Three.BoxGeometry(width - 0.22, 0.012, 0.035),
+    new Three.BoxGeometry(width - 0.34, 0.018, 0.05),
     new Three.MeshBasicMaterial({ color: statusColor }),
   );
-  accent.position.set(0, -thickness / 2 - 0.014, 1.76);
+  accent.position.set(0, -thickness / 2 - 0.018, 1.73);
   group.add(accent);
 
   const title = createTextLabel({
     text: compactWorldLabel(item.title ?? item.label, 24),
-    color: "#f8fafc",
-    fontSize: 48,
+    color: "#fff7d6",
+    fontSize: 64,
     fontWeight: 700,
-    worldHeight: 0.16,
+    worldHeight: 0.24,
     billboard: false,
     depthTest: true,
-    opacity: 0.96,
+    opacity: 1,
   });
   title.object3D.rotation.x = Math.PI / 2;
-  title.object3D.position.set(0, -thickness / 2 - 0.02, 1.48);
+  title.object3D.position.set(0, -thickness / 2 - 0.024, 1.96);
   group.add(title.object3D);
 
   const lines = (item.lines ?? [item.detail]).slice(0, 3);
   for (const [index, line] of lines.entries()) {
     const label = createTextLabel({
       text: compactWorldLabel(line, 34),
-      color: "#d6d3c9",
-      fontSize: 34,
-      worldHeight: 0.105,
+      color: "#f4efe3",
+      fontSize: 42,
+      worldHeight: 0.14,
       billboard: false,
       depthTest: true,
-      opacity: 0.88,
+      opacity: 0.94,
     });
     label.object3D.rotation.x = Math.PI / 2;
     label.object3D.position.set(
       0,
-      -thickness / 2 - 0.021,
-      1.25 - index * 0.16,
+      -thickness / 2 - 0.025,
+      1.52 - index * 0.22,
     );
     group.add(label.object3D);
   }
@@ -1885,15 +1913,20 @@ export const makeTrainingRunBulletinBoard = (
   const footer = createTextLabel({
     text: "walk up for details",
     color: "#8ef6ff",
-    fontSize: 28,
-    worldHeight: 0.09,
+    fontSize: 34,
+    worldHeight: 0.12,
     billboard: false,
     depthTest: true,
-    opacity: 0.82,
+    opacity: 0.9,
   });
   footer.object3D.rotation.x = Math.PI / 2;
-  footer.object3D.position.set(0, -thickness / 2 - 0.022, 0.78);
+  footer.object3D.position.set(0, -thickness / 2 - 0.026, 0.82);
   group.add(footer.object3D);
+
+  const glow = makeRing(width * 0.56, statusColor, 0.34);
+  glow.scale.y = 0.24;
+  glow.position.z = 0.025;
+  group.add(glow);
 
   return group;
 };
@@ -3401,10 +3434,10 @@ export const mountTrainingRunVisualization = (
         registerKeyboardTarget(item.position, nodeTarget, color);
 
         const hitTarget = new Three.Mesh(
-          new Three.BoxGeometry(2.25, 0.72, 1.62),
+          new Three.BoxGeometry(3.28, 0.86, 2.18),
           translucentBasicMaterial(color, 0.001),
         );
-        hitTarget.position.set(0, -0.18, 1.15);
+        hitTarget.position.set(0, -0.2, 1.18);
         group.add(hitTarget);
         hitTargets.register({
           id: `world-item:${item.id}`,

@@ -2188,6 +2188,53 @@ describe("training run visualization", () => {
     expect(typeof makeTrainingRunBulletinBoard).toBe("function");
   });
 
+  test("renders bulletin boards as visible grounded world objects", () => {
+    const previousDocument = globalThis.document;
+    const canvasContext = {
+      clearRect: () => {},
+      fillRect: () => {},
+      fillText: () => {},
+      measureText: (text: string) => ({ width: text.length * 12 }),
+      font: "",
+      fillStyle: "",
+      textAlign: "center",
+      textBaseline: "middle",
+    };
+    globalThis.document = {
+      createElement: (tagName: string) => {
+        if (tagName !== "canvas") {
+          throw new Error(`unexpected test element: ${tagName}`);
+        }
+        return {
+          width: 1,
+          height: 1,
+          getContext: () => canvasContext,
+        } as unknown as HTMLCanvasElement;
+      },
+    } as unknown as Document;
+    let board: Three.Group;
+    try {
+      board = makeTrainingRunBulletinBoard({
+        id: "bulletin.visible",
+        kind: "bulletin_board",
+        label: "Tassadar",
+        detail: "Live run summary.",
+        lines: ["Status: active", "5 pylons, 2 active"],
+        position: [0, 0, 0],
+      });
+    } finally {
+      globalThis.document = previousDocument;
+    }
+
+    const box = new Three.Box3().setFromObject(board);
+    const size = box.getSize(new Three.Vector3());
+
+    expect(size.x).toBeGreaterThan(3);
+    expect(size.z).toBeGreaterThan(2);
+    expect(box.min.z).toBeGreaterThanOrEqual(-0.001);
+    expect(board.children.length).toBeGreaterThan(9);
+  });
+
   test("selects scene hits before requesting perspective-walk pointer lock", () => {
     const selection = {
       detail: "6 pylons seen",
