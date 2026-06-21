@@ -82,6 +82,7 @@ import {
   maskMaterialProps,
   mergeBufferGeometries,
   metaverseStreetBuildingDimensions,
+  metaverseStreetLayout,
   metaverseStreetParcelPositions,
   metaverseStreetSourceRefs,
   makeTrainingRunPylonLandmark,
@@ -1748,8 +1749,13 @@ describe("training run visualization", () => {
     const parcels = metaverseStreetParcelPositions(3);
 
     expect(parcels).toHaveLength(6);
-    expect(parcels[0]).toMatchObject({ x: -5.8, y: 0, z: -10.8 });
-    expect(parcels[1]).toMatchObject({ x: 5.8, y: 0, z: -10.8 });
+    expect(metaverseStreetLayout.farZ).toBeLessThan(-25);
+    expect(metaverseStreetLayout.nearZ).toBeGreaterThan(2);
+    expect(metaverseStreetLayout.tassadarLotX).toBeGreaterThan(
+      metaverseStreetLayout.shoulderX,
+    );
+    expect(parcels[0]).toMatchObject({ x: -7.1, y: 0, z: -27.3 });
+    expect(parcels[1]).toMatchObject({ x: 7.1, y: 0, z: -27.3 });
     expect(parcels[2]?.z).toBeGreaterThan(parcels[0]!.z);
   });
 

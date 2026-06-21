@@ -1663,16 +1663,30 @@ export const metaverseStreetSourceRefs = [
   "Snow Crash / Metaverse: a persistent city organized around The Street",
 ] as const;
 
+export const metaverseStreetLayout = {
+  centerZ: -13.5,
+  farZ: -29.5,
+  nearZ: 2.5,
+  roadWidth: 4.8,
+  shoulderX: 4.9,
+  sidewalkX: 6.15,
+  tassadarLotX: 7.25,
+  tassadarLotZ: -3.1,
+} as const;
+
+const metaverseStreetLength =
+  metaverseStreetLayout.nearZ - metaverseStreetLayout.farZ;
+
 export const metaverseStreetParcelPositions = (
-  countPerSide = 8,
+  countPerSide = 16,
 ): readonly Three.Vector3[] => {
   const count = Math.max(0, Math.floor(countPerSide));
   const positions: Three.Vector3[] = [];
   for (let index = 0; index < count; index += 1) {
-    const z = -10.8 + index * 1.08;
+    const z = metaverseStreetLayout.farZ + 2.2 + index * 1.62;
     const stagger = index % 2 === 0 ? 0 : 0.22;
-    positions.push(new Three.Vector3(-5.8 - stagger, 0, z));
-    positions.push(new Three.Vector3(5.8 + stagger, 0, z));
+    positions.push(new Three.Vector3(-7.1 - stagger, 0, z));
+    positions.push(new Three.Vector3(7.1 + stagger, 0, z));
   }
   return positions;
 };
@@ -1690,38 +1704,49 @@ export const makeMetaverseStreetDistrict = (): Three.Group => {
   group.name = "the-street-district";
   group.userData["sourceRefs"] = metaverseStreetSourceRefs;
 
-  const road = makeHorizontalPlane(3.4, 12.8, 0x0b1014, 0.94);
-  road.position.set(0, -0.255, -7.5);
+  const road = makeHorizontalPlane(
+    metaverseStreetLayout.roadWidth,
+    metaverseStreetLength,
+    0x0b1014,
+    0.94,
+  );
+  road.position.set(0, -0.255, metaverseStreetLayout.centerZ);
   group.add(road);
 
-  const median = makeHorizontalPlane(0.16, 12.4, 0xfff3a3, 0.42);
-  median.position.set(0, -0.248, -7.5);
+  const median = makeHorizontalPlane(0.18, metaverseStreetLength - 0.8, 0xfff3a3, 0.42);
+  median.position.set(0, -0.248, metaverseStreetLayout.centerZ);
   group.add(median);
 
-  for (const x of [-1.72, 1.72]) {
+  for (const x of [-2.42, 2.42]) {
     group.add(
       makeLine(
-        [new Three.Vector3(x, -0.235, -13.8), new Three.Vector3(x, -0.235, -1.25)],
+        [
+          new Three.Vector3(x, -0.235, metaverseStreetLayout.farZ + 0.45),
+          new Three.Vector3(x, -0.235, metaverseStreetLayout.nearZ - 0.45),
+        ],
         0x8ef6ff,
         0.42,
       ),
     );
   }
 
-  for (let index = 0; index < 14; index += 1) {
-    const z = -13.45 + index * 0.86;
-    const stripe = makeHorizontalPlane(0.09, 0.36, 0xffffff, 0.42);
+  for (let index = 0; index < 32; index += 1) {
+    const z = metaverseStreetLayout.farZ + 0.9 + index * 0.92;
+    const stripe = makeHorizontalPlane(0.1, 0.42, 0xffffff, 0.42);
     stripe.position.set(0, -0.242, z);
     group.add(stripe);
   }
 
-  for (const x of [-3.8, 3.8]) {
-    const walk = makeHorizontalPlane(1.65, 12.2, 0x111827, 0.52);
-    walk.position.set(x, -0.25, -7.5);
+  for (const x of [-metaverseStreetLayout.shoulderX, metaverseStreetLayout.shoulderX]) {
+    const walk = makeHorizontalPlane(2.35, metaverseStreetLength - 1.2, 0x111827, 0.52);
+    walk.position.set(x, -0.25, metaverseStreetLayout.centerZ);
     group.add(walk);
     group.add(
       makeLine(
-        [new Three.Vector3(x, -0.215, -13.55), new Three.Vector3(x, -0.215, -1.45)],
+        [
+          new Three.Vector3(x, -0.215, metaverseStreetLayout.farZ + 0.65),
+          new Three.Vector3(x, -0.215, metaverseStreetLayout.nearZ - 0.65),
+        ],
         0xb9e6ff,
         0.24,
       ),
@@ -1763,7 +1788,7 @@ export const makeMetaverseStreetDistrict = (): Three.Group => {
   }
 
   const arch = new Three.Group();
-  arch.position.set(0, 0, -1.25);
+  arch.position.set(0, 0, metaverseStreetLayout.nearZ - 0.85);
   arch.add(makeLine([new Three.Vector3(-1.95, -0.2, 0), new Three.Vector3(-1.95, 1.25, 0)], 0xffffff, 0.42));
   arch.add(makeLine([new Three.Vector3(1.95, -0.2, 0), new Three.Vector3(1.95, 1.25, 0)], 0xffffff, 0.42));
   arch.add(makeLine([new Three.Vector3(-1.95, 1.25, 0), new Three.Vector3(1.95, 1.25, 0)], 0xffffff, 0.42));
@@ -2258,6 +2283,11 @@ export const mountTrainingRunVisualization = (
       const root = new Three.Group();
       if (perspectiveWalk) {
         root.rotation.x = -Math.PI / 2;
+        root.position.set(
+          metaverseStreetLayout.tassadarLotX,
+          0,
+          metaverseStreetLayout.tassadarLotZ,
+        );
         scene.add(makePerspectiveFloorGrid());
         scene.add(makeMetaverseStreetDistrict());
       }
@@ -3036,10 +3066,10 @@ export const mountTrainingRunVisualization = (
           createWasdMouseLookController(camera, canvas, {
             initialPosition: [0, 1.65, 6.25],
             bounds: {
-              minX: -8,
-              maxX: 8,
-              minZ: -13.5,
-              maxZ: 6.8,
+              minX: -11,
+              maxX: 13,
+              minZ: -30.5,
+              maxZ: 7.5,
             },
             ...resolved.walkController,
             onLockChange: (locked) => {
@@ -3064,10 +3094,10 @@ export const mountTrainingRunVisualization = (
             initialPosition: [0, 0, 4.4],
             character: {
               bounds: {
-                minX: -8,
-                maxX: 8,
-                minZ: -13.5,
-                maxZ: 6.8,
+                minX: -11,
+                maxX: 13,
+                minZ: -30.5,
+                maxZ: 7.5,
               },
             },
             ...resolved.thirdPersonController,
