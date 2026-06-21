@@ -2554,7 +2554,7 @@ describe("training run visualization", () => {
     expect(box.min.z).toBeGreaterThanOrEqual(-0.001);
     expect(board.children.length).toBeGreaterThan(9);
     expect([...colors]).toEqual(
-      expect.arrayContaining([0x050608, 0x111315, 0x24272c, 0x2f343a, 0xe5e7eb]),
+      expect.arrayContaining([0x050608, 0x111315, 0x24272c, 0x2f343a, 0xe5e7eb, 0xf8fafc]),
     );
     expect([...colors]).toEqual(
       expect.not.arrayContaining([0x5a3d22, 0x6a4c2e, 0x8a6b45]),

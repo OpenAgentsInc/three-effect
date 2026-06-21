@@ -1907,6 +1907,37 @@ export const makeTrainingRunBulletinBoard = (
   board.receiveShadow = true;
   group.add(board);
 
+  const frameMaterial = new Three.MeshStandardMaterial({
+    color: 0xf8fafc,
+    emissive: 0x30343a,
+    metalness: 0.18,
+    roughness: 0.46,
+  });
+  const frameDepth = 0.048;
+  const frameRail = 0.08;
+  const frameY = -thickness / 2 - 0.028;
+  for (const z of [
+    1.39 - height / 2 - frameRail / 2,
+    1.39 + height / 2 + frameRail / 2,
+  ]) {
+    const rail = new Three.Mesh(
+      new Three.BoxGeometry(width + frameRail * 2, frameDepth, frameRail),
+      frameMaterial,
+    );
+    rail.position.set(0, frameY, z);
+    rail.castShadow = true;
+    group.add(rail);
+  }
+  for (const x of [-width / 2 - frameRail / 2, width / 2 + frameRail / 2]) {
+    const rail = new Three.Mesh(
+      new Three.BoxGeometry(frameRail, frameDepth, height + frameRail * 2),
+      frameMaterial,
+    );
+    rail.position.set(x, frameY, 1.39);
+    rail.castShadow = true;
+    group.add(rail);
+  }
+
   const face = new Three.Mesh(
     new Three.PlaneGeometry(width - 0.24, height - 0.22),
     new Three.MeshBasicMaterial({
