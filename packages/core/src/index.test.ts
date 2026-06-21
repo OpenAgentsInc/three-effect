@@ -1977,8 +1977,8 @@ describe("training run entity layer", () => {
     expect(a).toEqual(b);
     const c = trainingRunEntityRingPosition(1, 5);
     expect(c).not.toEqual(a);
-    // ring positions share the z plane of the layout center
-    expect(a[2]).toBe(c[2]);
+    // default ring positions are a deterministic 3D cloud, not one flat plane
+    expect(a[2]).not.toBe(c[2]);
   });
 
   test("resolves positions: explicit wins, ring fills the unplaced", () => {
@@ -1991,6 +1991,7 @@ describe("training run entity layer", () => {
     // unplaced entities only count themselves for ring spacing
     expect(positions.get("ring0")).toEqual(trainingRunEntityRingPosition(0, 2));
     expect(positions.get("ring1")).toEqual(trainingRunEntityRingPosition(1, 2));
+    expect(positions.get("ring0")?.[2]).not.toBe(positions.get("ring1")?.[2]);
   });
 
   test("collapses duplicate entity ids into one visual node", () => {

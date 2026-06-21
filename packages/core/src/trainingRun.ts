@@ -221,6 +221,8 @@ export type TrainingRunSceneChrome = Readonly<{
   statusChart?: TrainingRunSceneChromeVisibility;
 }>;
 
+export type TrainingRunWorldLabelDensity = "full" | "compact";
+
 export type TrainingRunCameraMode = "orthographic_map" | "perspective_walk";
 
 export type TrainingRunControllerMode =
@@ -261,6 +263,8 @@ export type TrainingRunVisualizationOptions = Readonly<{
   stageNodeGlyph?: TrainingRunStageNodeGlyph;
   /** Toggle auxiliary analytical chrome around the primary scene nodes. */
   sceneChrome?: TrainingRunSceneChrome;
+  /** Control how much text is drawn into the world itself. */
+  worldLabelDensity?: TrainingRunWorldLabelDensity;
   thirdPersonController?: ThreePlayerControllerOptions;
   walkController?: WasdMouseLookControllerOptions;
   onNodeClick?: (node: TrainingRunNodeSelection) => void;
@@ -324,6 +328,7 @@ export type ResolvedTrainingRunVisualizationOptions = Readonly<{
   motionPolicy: Required<TrainingRunMotionPolicy>;
   stageNodeGlyph: TrainingRunStageNodeGlyph;
   sceneChrome: Required<TrainingRunSceneChrome>;
+  worldLabelDensity: TrainingRunWorldLabelDensity;
   thirdPersonController: ThreePlayerControllerOptions;
   walkController: WasdMouseLookControllerOptions;
   onNodeClick?: (node: TrainingRunNodeSelection) => void;
@@ -549,6 +554,7 @@ export const defaultTrainingRunVisualizationOptions: ResolvedTrainingRunVisualiz
       staleRing: "visible",
       statusChart: "visible",
     },
+    worldLabelDensity: "full",
     thirdPersonController: {},
     walkController: {},
     pulseSpeed: 0.17,
@@ -595,6 +601,9 @@ export const resolveTrainingRunVisualizationOptions = (
       options.stageNodeGlyph ??
       defaultTrainingRunVisualizationOptions.stageNodeGlyph,
     sceneChrome: resolveTrainingRunSceneChrome(options.sceneChrome),
+    worldLabelDensity:
+      options.worldLabelDensity ??
+      defaultTrainingRunVisualizationOptions.worldLabelDensity,
     thirdPersonController: {
       ...defaultTrainingRunVisualizationOptions.thirdPersonController,
       ...(options.thirdPersonController ?? {}),
@@ -1136,23 +1145,27 @@ export const trainingRunEntityRingPosition = (
   options: Readonly<{
     center?: TrainingRunVector;
     radius?: number;
+    heightAmplitude?: number;
   }> = {},
 ): TrainingRunVector => {
   const center = options.center ?? entityRingLayout.center;
   const radius = options.radius ?? entityRingLayout.radius;
+  const heightAmplitude = options.heightAmplitude ?? entityRingLayout.heightAmplitude;
   const total = Math.max(1, count);
   // Even angular spacing with a golden-ratio offset keeps small rings legible
   // and large rings non-overlapping, all deterministically.
   const angle = (index / total) * Math.PI * 2 + index * 2.399963229728653;
+  const heightPhase = index * 1.324717957244746 + total * 0.37;
   return [
     center[0] + Math.cos(angle) * radius,
     center[1] + Math.sin(angle) * radius,
-    center[2],
+    center[2] + Math.sin(heightPhase) * heightAmplitude,
   ];
 };
 
 const entityRingLayout = {
-  center: [-0.15, 0.28, 0.12] as TrainingRunVector,
+  center: [-0.15, 0.28, 0.62] as TrainingRunVector,
+  heightAmplitude: 0.58,
   radius: 1.62,
 } as const;
 
@@ -1364,6 +1377,12 @@ const makeTextSprite = (
     1,
   );
   return sprite;
+};
+
+const compactWorldLabel = (text: string, maxLength = 18): string => {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, Math.max(1, maxLength - 1))}…`;
 };
 
 const lineGeometry = (points: readonly Three.Vector3[]): Three.BufferGeometry =>
@@ -1800,6 +1819,7 @@ export const mountTrainingRunVisualization = (
           resolved.lossCurve.length > 1);
       const showStatusChart = resolved.sceneChrome.statusChart === "visible";
       const perspectiveWalk = resolved.cameraMode === "perspective_walk";
+      const compactWorldLabels = resolved.worldLabelDensity === "compact";
       const canvas = document.createElement("canvas");
       canvas.style.display = "block";
       canvas.style.width = "100%";
@@ -2005,21 +2025,26 @@ export const mountTrainingRunVisualization = (
           marker.position.z = 0.62;
           group.add(marker);
 
-          const label = makeTextSprite(node.label, {
+          const label = makeTextSprite(
+            compactWorldLabels ? compactWorldLabel(node.label, 16) : node.label,
+            {
             color: "#ffffff",
             fontSize: 21,
             width: 336,
-          });
+            },
+          );
           label.position.set(0, -0.18, 0.55);
           group.add(label);
 
-          const detail = makeTextSprite(node.detail, {
-            color: "#a3a3a3",
-            fontSize: 16,
-            width: 384,
-          });
-          detail.position.set(0, -0.42, 0.55);
-          group.add(detail);
+          if (!compactWorldLabels) {
+            const detail = makeTextSprite(node.detail, {
+              color: "#a3a3a3",
+              fontSize: 16,
+              width: 384,
+            });
+            detail.position.set(0, -0.42, 0.55);
+            group.add(detail);
+          }
 
           root.add(group);
           continue;
@@ -2042,21 +2067,26 @@ export const mountTrainingRunVisualization = (
         });
         group.add(makeCircle(radius * 0.32, statusColor, 0.95));
 
-        const label = makeTextSprite(node.label, {
+        const label = makeTextSprite(
+          compactWorldLabels ? compactWorldLabel(node.label, node.role === "run" ? 18 : 14) : node.label,
+          {
           color: "#ffffff",
           fontSize: node.role === "run" ? 32 : 28,
           width: node.role === "run" ? 512 : 384,
-        });
+          },
+        );
         label.position.set(0, -radius - 0.25, 0.55);
         group.add(label);
 
-        const detail = makeTextSprite(node.detail, {
-          color: "#a3a3a3",
-          fontSize: 22,
-          width: 448,
-        });
-        detail.position.set(0, -radius - 0.58, 0.55);
-        group.add(detail);
+        if (!compactWorldLabels) {
+          const detail = makeTextSprite(node.detail, {
+            color: "#a3a3a3",
+            fontSize: 22,
+            width: 448,
+          });
+          detail.position.set(0, -radius - 0.58, 0.55);
+          group.add(detail);
+        }
 
         root.add(group);
       }
@@ -2375,7 +2405,7 @@ export const mountTrainingRunVisualization = (
           root.add(ring);
 
           const hitTarget = makeCircle(0.16, color, 0.001);
-          hitTarget.position.set(position[0], position[1], 0.7);
+          hitTarget.position.set(position[0], position[1], position[2] + 0.34);
           root.add(hitTarget);
           hitTargets.register({
             id: `entity:${entity.id}`,
@@ -2387,11 +2417,11 @@ export const mountTrainingRunVisualization = (
 
           if (entity.label !== undefined) {
             const label = createTextLabel({
-              text: entity.label,
+              text: compactWorldLabels ? compactWorldLabel(entity.label, 18) : entity.label,
               color: "#e5e7eb",
               fontSize: 36,
               worldHeight: 0.2,
-              position: [position[0], position[1] - 0.26, 0.55],
+              position: [position[0], position[1] - 0.26, position[2] + 0.26],
               billboard: true,
             });
             label.faceCamera(camera);
@@ -2415,7 +2445,6 @@ export const mountTrainingRunVisualization = (
           bend: 0.18,
           opacity: 0.32,
         });
-        handle.object3D.position.z = 0.34;
         root.add(handle.object3D);
         flowBeams.push({ update: handle.update });
         beamDisposers.push(handle.dispose);
