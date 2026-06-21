@@ -1855,6 +1855,37 @@ const makeTextSprite = (
   return sprite;
 };
 
+export const trainingRunHeadLabelPositionForObject = (
+  object: Three.Object3D,
+  parent: Three.Object3D,
+  options: Readonly<{
+    fallbackHeight?: number;
+    margin?: number;
+    worldHeight?: number;
+  }> = {},
+): Three.Vector3 => {
+  const margin = options.margin ?? 0.08;
+  const worldHeight = options.worldHeight ?? 0.42;
+  const fallbackHeight = options.fallbackHeight ?? 0.8;
+  object.updateWorldMatrix(true, true);
+  parent.updateWorldMatrix(true, false);
+
+  const box = new Three.Box3().setFromObject(object);
+  const anchorWorld = new Three.Vector3();
+  if (box.isEmpty()) {
+    object.getWorldPosition(anchorWorld);
+    anchorWorld.z += fallbackHeight;
+  } else {
+    anchorWorld.set(
+      (box.min.x + box.max.x) / 2,
+      (box.min.y + box.max.y) / 2,
+      box.max.z,
+    );
+  }
+  anchorWorld.z += margin + worldHeight / 2;
+  return parent.worldToLocal(anchorWorld);
+};
+
 const compactWorldLabel = (text: string, maxLength = 18): string => {
   const normalized = text.replace(/\s+/g, " ").trim();
   if (normalized.length <= maxLength) return normalized;
@@ -2812,6 +2843,7 @@ export const mountTrainingRunVisualization = (
             ),
           );
           const labelText = visibleWorldLabelText(selection, 16);
+          let labelAnchor: Three.Vector3 | undefined;
           if (trainingRunSelectionIsPylon(selection)) {
             const pylon = makeTrainingRunPylonLandmark(statusColor, {
               opacity: 0.88,
@@ -2819,6 +2851,10 @@ export const mountTrainingRunVisualization = (
             });
             pylon.position.z = 0.52;
             group.add(pylon);
+            labelAnchor = trainingRunHeadLabelPositionForObject(pylon, group, {
+              margin: 0.06,
+              worldHeight: 0.42,
+            });
           } else {
             const marker = makeTrainingRunArtifactMarker(
               trainingRunArtifactKindForSelection(selection),
@@ -2838,7 +2874,9 @@ export const mountTrainingRunVisualization = (
               fontSize: 21,
               width: 336,
             });
-            label.position.set(0, -0.18, 0.55);
+            label.position.copy(
+              labelAnchor ?? new Three.Vector3(0, -0.18, 0.55),
+            );
             group.add(label);
           }
 
@@ -2871,6 +2909,7 @@ export const mountTrainingRunVisualization = (
           recursive: false,
           value: selection,
         });
+        let labelAnchor: Three.Vector3 | undefined;
         if (trainingRunSelectionIsPylon(selection)) {
           const pylon = makeTrainingRunPylonLandmark(statusColor, {
             opacity: 0.88,
@@ -2878,6 +2917,10 @@ export const mountTrainingRunVisualization = (
           });
           pylon.position.z = 0.46;
           group.add(pylon);
+          labelAnchor = trainingRunHeadLabelPositionForObject(pylon, group, {
+            margin: node.role === "run" ? 0.07 : 0.06,
+            worldHeight: 0.42,
+          });
         } else {
           const marker = makeTrainingRunArtifactMarker(
             trainingRunArtifactKindForSelection(selection),
@@ -2901,7 +2944,9 @@ export const mountTrainingRunVisualization = (
             fontSize: node.role === "run" ? 32 : 28,
             width: node.role === "run" ? 512 : 384,
           });
-          label.position.set(0, -radius - 0.25, 0.55);
+          label.position.copy(
+            labelAnchor ?? new Three.Vector3(0, -radius - 0.25, 0.55),
+          );
           group.add(label);
         }
 
@@ -2929,6 +2974,7 @@ export const mountTrainingRunVisualization = (
           Math.sin(angle) * radius,
           0,
         );
+        let contributorLabelAnchor: Three.Vector3 | undefined;
         if (
           trainingRunSelectionIsPylon({
             id: contributor.id,
@@ -2941,6 +2987,14 @@ export const mountTrainingRunVisualization = (
           });
           pylon.position.copy(position);
           contributorGroup.add(pylon);
+          contributorLabelAnchor = trainingRunHeadLabelPositionForObject(
+            pylon,
+            contributorGroup,
+            {
+              margin: 0.05,
+              worldHeight: 0.42,
+            },
+          );
         } else {
           const dot = makeCircle(
             contributor.lifecycleState === "active" ? 0.065 : 0.045,
@@ -2958,7 +3012,10 @@ export const mountTrainingRunVisualization = (
             height: 80,
             width: 220,
           });
-          label.position.set(position.x, position.y - 0.16, 0.3);
+          label.position.copy(
+            contributorLabelAnchor ??
+              new Three.Vector3(position.x, position.y - 0.16, 0.3),
+          );
           contributorGroup.add(label);
         }
       }
@@ -3252,6 +3309,7 @@ export const mountTrainingRunVisualization = (
           const ring = makeRing(0.14, color, 0.42);
           ring.position.set(position[0], position[1], position[2] - 0.02);
           root.add(ring);
+          let labelAnchor: Three.Vector3 | undefined;
           if (trainingRunSelectionIsPylon(selection)) {
             const pylon = makeTrainingRunPylonLandmark(color, {
               opacity: 0.84,
@@ -3259,6 +3317,10 @@ export const mountTrainingRunVisualization = (
             });
             pylon.position.set(position[0], position[1], position[2] + 0.08);
             root.add(pylon);
+            labelAnchor = trainingRunHeadLabelPositionForObject(pylon, root, {
+              margin: 0.04,
+              worldHeight: 0.2,
+            });
           } else {
             const marker = makeTrainingRunArtifactMarker(
               trainingRunArtifactKindForSelection(selection),
@@ -3291,7 +3353,10 @@ export const mountTrainingRunVisualization = (
               color: "#e5e7eb",
               fontSize: 36,
               worldHeight: 0.2,
-              position: [position[0], position[1] - 0.26, position[2] + 0.26],
+              position:
+                labelAnchor === undefined
+                  ? [position[0], position[1] - 0.26, position[2] + 0.26]
+                  : [labelAnchor.x, labelAnchor.y, labelAnchor.z],
               billboard: true,
             });
             label.faceCamera(camera);

@@ -90,6 +90,7 @@ import {
   metaverseStreetSourceRefs,
   metaverseStreetStoryHeight,
   makeTrainingRunPylonLandmark,
+  trainingRunHeadLabelPositionForObject,
   MokshaPlaneMaterial,
   cycleTrainingRunCameraTarget,
   cycleTrainingRunTarget,
@@ -1946,6 +1947,34 @@ describe("training run visualization", () => {
     expect(
       meshes.some((mesh) => mesh.geometry instanceof Three.OctahedronGeometry),
     ).toBe(true);
+  });
+
+  test("anchors pylon labels directly above the pylon head", () => {
+    const parent = new Three.Group();
+    parent.position.set(2, -1, 0.25);
+    const pylon = makeTrainingRunPylonLandmark(0x8ef6ff, { scale: 0.75 });
+    pylon.position.set(1.25, -0.5, 0.4);
+    parent.add(pylon);
+
+    const anchor = trainingRunHeadLabelPositionForObject(pylon, parent, {
+      margin: 0.05,
+      worldHeight: 0.2,
+    });
+
+    pylon.updateWorldMatrix(true, true);
+    parent.updateWorldMatrix(true, false);
+    const box = new Three.Box3().setFromObject(pylon);
+    const topCenterLocal = parent.worldToLocal(
+      new Three.Vector3(
+        (box.min.x + box.max.x) / 2,
+        (box.min.y + box.max.y) / 2,
+        box.max.z,
+      ),
+    );
+
+    expect(anchor.x).toBeCloseTo(topCenterLocal.x);
+    expect(anchor.y).toBeCloseTo(topCenterLocal.y);
+    expect(anchor.z).toBeCloseTo(topCenterLocal.z + 0.15);
   });
 
   test("renders non-pylon run refs as dimensional artifacts", () => {
