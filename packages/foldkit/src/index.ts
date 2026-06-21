@@ -479,7 +479,9 @@ const makeTrainingRunElement = (): CustomElementConstructor => {
 
     #unmount(): void {
       if (this.#handle === null) return
-      Effect.runSync(this.#handle.dispose)
+      const handle = this.#handle
+      Effect.runSync(handle.dispose)
+      handle.element.remove()
       this.#handle = null
     }
 
@@ -516,6 +518,13 @@ const makeTrainingRunElement = (): CustomElementConstructor => {
         this.#preservedLocalPose,
       )
       const staging = document.createElement("div")
+      staging.style.position = "absolute"
+      staging.style.inset = "0"
+      staging.style.width = "100%"
+      staging.style.height = "100%"
+      staging.style.opacity = previous === null ? "1" : "0"
+      staging.style.pointerEvents = "none"
+      this.#mount.append(staging)
       const handle = Effect.runSync(
         mountTrainingRunVisualization(staging, {
           ...visualization,
@@ -530,11 +539,8 @@ const makeTrainingRunElement = (): CustomElementConstructor => {
           },
         }),
       )
-      handle.canvas.style.position = "absolute"
-      handle.canvas.style.inset = "0"
       handle.canvas.style.width = "100%"
       handle.canvas.style.height = "100%"
-      this.#mount.append(handle.canvas)
       this.#handle = handle
       recordTrainingHostDiagnostic("verse-host.remount.mounted", {
         hadPrevious: previous !== null,
@@ -546,7 +552,9 @@ const makeTrainingRunElement = (): CustomElementConstructor => {
             Effect.runSync(handle.dispose)
             return
           }
+          staging.style.opacity = "1"
           Effect.runSync(previous.dispose)
+          previous.element.remove()
           recordTrainingHostDiagnostic("verse-host.remount.swapped", {
             reason,
           })
