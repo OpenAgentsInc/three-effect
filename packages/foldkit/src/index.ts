@@ -11,6 +11,7 @@ import {
   trainingRunVisualizationRetainedStructuralSignature,
   trainingRunVisualizationOptionsWithLocalPose,
   type MokshaOptions,
+  type ThreePlayerCameraControlEvent,
   type TrainingRunLocalPoseSnapshot,
   type TrainingRunLocalPoseUpdate,
   type TrainingRunNodeSelection,
@@ -19,6 +20,15 @@ import {
   type TrainingRunVisualizationOptions,
   type TrainingRunWorldItemSelection,
 } from "@openagentsinc/three-effect/core"
+import {
+  activeTrainingRunStagingPointerEvents,
+  trainingRunStagingPointerEvents,
+} from "./trainingRunStaging.js"
+
+export {
+  activeTrainingRunStagingPointerEvents,
+  trainingRunStagingPointerEvents,
+} from "./trainingRunStaging.js"
 
 export const bezierNodesTagName = "oa-bezier-nodes"
 export const mokshaTagName = "oa-moksha"
@@ -211,6 +221,25 @@ const dispatchTrainingWorldItemProximityChanged = (
       detail: { item },
     }),
   )
+}
+
+const recordTrainingCameraControl = (
+  event: ThreePlayerCameraControlEvent,
+): void => {
+  recordTrainingHostDiagnostic("verse-host.camera-control", {
+    cameraDistance: event.cameraDistance,
+    offset: event.offset,
+    type: event.type,
+    ...(event.type === "drag"
+      ? {
+          movementX: event.movementX,
+          movementY: event.movementY,
+        }
+      : {
+          deltaMode: event.deltaMode,
+          deltaY: event.deltaY,
+        }),
+  })
 }
 
 const dispatchTrainingLocalPoseChanged = (
@@ -522,8 +551,17 @@ const makeTrainingRunElement = (): CustomElementConstructor => {
     #visualizationWithEventHandlers(
       visualization: TrainingRunVisualizationOptions,
     ): TrainingRunVisualizationOptions {
+      const originalCameraControl =
+        visualization.thirdPersonController?.onCameraControl
       return {
         ...visualization,
+        thirdPersonController: {
+          ...(visualization.thirdPersonController ?? {}),
+          onCameraControl: event => {
+            originalCameraControl?.(event)
+            recordTrainingCameraControl(event)
+          },
+        },
         onNodeClick: node => dispatchTrainingNodeSelected(this, node),
         onWorldItemProximityChange: item =>
           dispatchTrainingWorldItemProximityChanged(this, item),
@@ -553,7 +591,9 @@ const makeTrainingRunElement = (): CustomElementConstructor => {
       staging.style.width = "100%"
       staging.style.height = "100%"
       staging.style.opacity = previous === null ? "1" : "0"
-      staging.style.pointerEvents = "none"
+      staging.style.pointerEvents = trainingRunStagingPointerEvents(
+        previous !== null,
+      )
       this.#mount.append(staging)
       const handle = Effect.runSync(
         mountTrainingRunVisualization(
@@ -575,6 +615,7 @@ const makeTrainingRunElement = (): CustomElementConstructor => {
             return
           }
           staging.style.opacity = "1"
+          staging.style.pointerEvents = activeTrainingRunStagingPointerEvents
           Effect.runSync(previous.dispose)
           previous.element.remove()
           recordTrainingHostDiagnostic("verse-host.remount.swapped", {

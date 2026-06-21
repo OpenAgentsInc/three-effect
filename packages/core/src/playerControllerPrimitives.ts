@@ -154,6 +154,23 @@ export type MmorpgCharacterControllerSnapshot = Readonly<{
   velocity: Three.Vector3;
 }>;
 
+export type ThreePlayerCameraControlEvent = Readonly<{
+  cameraDistance: number;
+  offset: readonly [number, number, number];
+}> &
+  (
+    | Readonly<{
+        type: "drag";
+        movementX: number;
+        movementY: number;
+      }>
+    | Readonly<{
+        type: "wheel";
+        deltaMode: number;
+        deltaY: number;
+      }>
+  );
+
 export type ThreePlayerControllerOptions = Readonly<{
   enabled?: boolean;
   inputTarget?: HTMLElement | Window;
@@ -165,6 +182,7 @@ export type ThreePlayerControllerOptions = Readonly<{
   gravity?: number;
   groundHeightAt?: (x: number, z: number) => number;
   onActionChange?: (action: ThreePlayerControllerAvatarAction) => void;
+  onCameraControl?: (event: ThreePlayerCameraControlEvent) => void;
 }>;
 
 export type ResolvedThreePlayerControllerOptions = Readonly<{
@@ -178,6 +196,7 @@ export type ResolvedThreePlayerControllerOptions = Readonly<{
   gravity: number;
   groundHeightAt: (x: number, z: number) => number;
   onActionChange?: (action: ThreePlayerControllerAvatarAction) => void;
+  onCameraControl?: (event: ThreePlayerCameraControlEvent) => void;
 }>;
 
 export type ThreePlayerControllerHandle = Readonly<{
@@ -1254,6 +1273,17 @@ export const createThreePlayerController = (
         offset: cameraOffset,
         offsetSpace: "world",
       });
+      const emitCameraControl = (
+        event:
+          | Readonly<{ type: "drag"; movementX: number; movementY: number }>
+          | Readonly<{ type: "wheel"; deltaMode: number; deltaY: number }>,
+      ): void => {
+        resolved.onCameraControl?.({
+          ...event,
+          cameraDistance,
+          offset: [cameraOffset[0], cameraOffset[1], cameraOffset[2]],
+        });
+      };
       const cameraHandle = createThirdPersonFollowCamera(
         camera,
         target,
@@ -1305,6 +1335,11 @@ export const createThreePlayerController = (
           cameraDistance,
         );
         Effect.runSync(cameraHandle.setOptions(cameraOptionsAtDistance()));
+        emitCameraControl({
+          type: "wheel",
+          deltaMode: event.deltaMode,
+          deltaY: event.deltaY,
+        });
       };
       const onPointerDown = (event: PointerEvent) => {
         if (!resolved.enabled || isEditableInputTarget(event.target)) return;
@@ -1327,6 +1362,11 @@ export const createThreePlayerController = (
         );
         cameraDistance = thirdPersonCameraOffsetDistance(cameraOffset);
         Effect.runSync(cameraHandle.setOptions(cameraOptionsAtDistance()));
+        emitCameraControl({
+          type: "drag",
+          movementX: event.movementX,
+          movementY: event.movementY,
+        });
       };
       const onPointerUp = (event: PointerEvent) => {
         if (dragPointerId !== event.pointerId) return;
