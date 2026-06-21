@@ -171,6 +171,8 @@ import {
   createThirdPersonFollowCameraState,
   defaultMmorpgCharacterControllerOptions,
   defaultMmorpgCharacterControllerState,
+  defaultThreePlayerAvatarModelUrl,
+  defaultThreePlayerControllerOptions,
   integrateWasdVelocity,
   keyCodeToWasdAction,
   animationActionPhaseRatio,
@@ -1603,6 +1605,12 @@ describe("training run visualization", () => {
     expect(resolved.thirdPersonController.groundHeightAt).toBe(groundHeightAt);
   });
 
+  test("uses the imported controller GLB for the default third-person avatar", () => {
+    expect(defaultThreePlayerAvatarModelUrl).toContain(
+      "/assets/three-player-controller/UEPerson.glb",
+    );
+  });
+
   test("resolves explicit motion policy overrides", () => {
     const resolved = resolveTrainingRunVisualizationOptions({
       motionPolicy: {
@@ -2348,6 +2356,14 @@ describe("player controller primitives", () => {
 
     const forward = mmorpgCharacterForwardDirection(object);
     expect(forward.length()).toBeCloseTo(1);
+  });
+
+  test("keeps default A/D third-person turning calm", () => {
+    const defaults = defaultThreePlayerControllerOptions({} as Window);
+    expect(defaultMmorpgCharacterControllerOptions.turnSpeed).toBeLessThan(
+      Math.PI * 1.2,
+    );
+    expect(defaults.character.turnSpeed).toBeLessThan(Math.PI * 1.2);
   });
 
   test("keeps Quick-style character movement bounded and collision-aware", () => {

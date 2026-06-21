@@ -1,5 +1,6 @@
 import { Data, Effect } from "effect";
 import * as Three from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
 import { createEntityPool } from "./entityPoolPrimitives";
 import { createFlowBeam, createPayoutBurst } from "./flowEffectPrimitives";
@@ -17,6 +18,11 @@ import {
   raycastHitTargetRegistry,
 } from "./spatialPrimitives";
 import { createTextLabel, type TextLabelHandle } from "./textLabelPrimitives";
+
+export const defaultThreePlayerAvatarModelUrl = new URL(
+  "./assets/three-player-controller/UEPerson.glb",
+  import.meta.url,
+).href;
 
 export class TrainingRunMountError extends Data.TaggedError(
   "TrainingRunMountError",
@@ -1383,41 +1389,44 @@ const makePerspectiveFloorGrid = (): Three.Group => {
   return group;
 };
 
-const makeThreePlayerAvatar = (): Three.Group => {
+const makeThreePlayerAvatar = (
+  modelUrl: string = defaultThreePlayerAvatarModelUrl,
+): Three.Group => {
   const group = new Three.Group();
   group.name = "three-player-controller-avatar";
-
-  const body = new Three.Mesh(
-    new Three.CapsuleGeometry(0.18, 0.72, 4, 12),
-    new Three.MeshStandardMaterial({
-      color: 0xc8fbff,
-      emissive: 0x1a7684,
-      emissiveIntensity: 0.28,
-      roughness: 0.5,
-      metalness: 0.18,
-    }),
-  );
-  body.position.y = 0.58;
-  group.add(body);
-
-  const facing = new Three.Mesh(
-    new Three.ConeGeometry(0.16, 0.36, 4),
-    new Three.MeshStandardMaterial({
-      color: 0xffd36e,
-      emissive: 0x7a4a00,
-      emissiveIntensity: 0.25,
-      roughness: 0.42,
-      metalness: 0.16,
-    }),
-  );
-  facing.position.set(0, 0.62, -0.32);
-  facing.rotation.x = Math.PI / 2;
-  group.add(facing);
+  group.userData["sourceModelUrl"] = modelUrl;
 
   const ring = makeRing(0.42, 0x8ef6ff, 0.34);
   ring.rotation.x = Math.PI / 2;
   ring.position.y = 0.03;
   group.add(ring);
+
+  const loader = new GLTFLoader();
+  loader.load(
+    modelUrl,
+    (gltf) => {
+      const model = gltf.scene;
+      model.name = "three-player-controller-UEPerson-model";
+      model.scale.setScalar(0.86);
+      model.position.set(0, 0, 0);
+      model.rotation.y = Math.PI;
+      model.traverse((child) => {
+        const mesh = child as Three.Mesh<
+          Three.BufferGeometry,
+          Three.Material | Three.Material[]
+        >;
+        if (!mesh.isMesh) return;
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+      });
+      group.add(model);
+    },
+    undefined,
+    (error) => {
+      group.userData["modelLoadError"] =
+        error instanceof Error ? error.message : String(error);
+    },
+  );
 
   return group;
 };
