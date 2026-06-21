@@ -10,6 +10,7 @@ import {
   mountTrainingRunVisualization,
   type MokshaOptions,
   type TrainingRunNodeSelection,
+  type TrainingRunPresenceZone,
   type TrainingRunVisualizationOptions,
 } from "@openagentsinc/three-effect/core"
 
@@ -66,6 +67,9 @@ const trainingRunElement = defineCustomElement({
         "blocked",
       ]),
     }),
+    "presence-zone-changed": S.Struct({
+      zone: S.NullOr(S.Literal("tassadar_area")),
+    }),
   },
 })
 
@@ -97,6 +101,24 @@ const dispatchTrainingNodeSelected = (
       bubbles: true,
       composed: true,
       detail: node,
+    }),
+  )
+}
+
+const dispatchTrainingPresenceZoneChanged = (
+  element: HTMLElement,
+  zone: TrainingRunPresenceZone | null,
+): void => {
+  if (zone === null) {
+    element.removeAttribute("data-presence-zone")
+  } else {
+    element.setAttribute("data-presence-zone", zone)
+  }
+  element.dispatchEvent(
+    new CustomEvent("presence-zone-changed", {
+      bubbles: true,
+      composed: true,
+      detail: { zone },
     }),
   )
 }
@@ -331,6 +353,8 @@ const makeTrainingRunElement = (): CustomElementConstructor => {
         mountTrainingRunVisualization(this.#mount, {
           ...this.#visualization,
           onNodeClick: node => dispatchTrainingNodeSelected(this, node),
+          onPresenceZoneChange: zone =>
+            dispatchTrainingPresenceZoneChanged(this, zone),
         }),
       )
       this.#dispose = handle.dispose
@@ -446,6 +470,7 @@ export const trainingRunView = <Message>(
   attributes: ReadonlyArray<Attribute<Message>> = [],
   visualization?: TrainingRunVisualizationOptions,
   onNodeSelected?: (node: TrainingRunNodeSelection) => Message,
+  onPresenceZoneChanged?: (zone: TrainingRunPresenceZone | null) => Message,
 ): Html => {
   registerTrainingRunElement()
   const element = trainingRunElement.withMessage<Message>()
@@ -453,10 +478,19 @@ export const trainingRunView = <Message>(
     onNodeSelected === undefined
       ? attributes
       : [...attributes, element.OnNodeSelected(onNodeSelected)]
+  const attributesWithPresence =
+    onPresenceZoneChanged === undefined
+      ? resolvedAttributes
+      : [
+          ...resolvedAttributes,
+          element.OnPresenceZoneChanged(({ zone }) =>
+            onPresenceZoneChanged(zone),
+          ),
+        ]
   return element(
     visualization === undefined
-      ? resolvedAttributes
-      : [...resolvedAttributes, element.Visualization(visualization)],
+      ? attributesWithPresence
+      : [...attributesWithPresence, element.Visualization(visualization)],
     [],
   )
 }

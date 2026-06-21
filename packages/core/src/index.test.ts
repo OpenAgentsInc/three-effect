@@ -136,6 +136,7 @@ import {
   trainingRunEntityRingPosition,
   trainingRunEntitySelection,
   trainingRunArtifactKindForSelection,
+  trainingRunPresenceZoneForPosition,
   trainingRunMotionHasEvidence,
   trainingRunMotionSourceRefs,
   trainingRunPointerClickIntent,
@@ -1767,6 +1768,21 @@ describe("training run visualization", () => {
     expect(parcels[0]).toMatchObject({ x: -18.2, y: 0, z: -136 });
     expect(parcels[1]).toMatchObject({ x: 18.2, y: 0, z: -136 });
     expect(parcels[2]?.z).toBeCloseTo(parcels[0]!.z + metaverseStreetParcelSpacing);
+  });
+
+  test("detects the local avatar entering and leaving the Tassadar area", () => {
+    expect(trainingRunPresenceZoneForPosition([0, 0, 4.4])).toBe(
+      "tassadar_area",
+    );
+    expect(
+      trainingRunPresenceZoneForPosition([
+        metaverseStreetLayout.tassadarLotX + 1,
+        0,
+        metaverseStreetLayout.tassadarLotZ - 2,
+      ]),
+    ).toBe("tassadar_area");
+    expect(trainingRunPresenceZoneForPosition([0, 0, -40])).toBeNull();
+    expect(trainingRunPresenceZoneForPosition([22, 0, 0])).toBeNull();
   });
 
   test("scales Street buildings as skyline mass instead of tiny blocks", () => {

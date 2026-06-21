@@ -251,6 +251,8 @@ export type TrainingRunKeyboardTargeting = Readonly<{
   maxTargets?: number;
 }>;
 
+export type TrainingRunPresenceZone = "tassadar_area";
+
 export type TrainingRunEntitySelection = Pick<
   TrainingRunEntityDefinition,
   "id" | "label" | "position" | "status"
@@ -282,6 +284,7 @@ export type TrainingRunVisualizationOptions = Readonly<{
   thirdPersonController?: ThreePlayerControllerOptions;
   walkController?: WasdMouseLookControllerOptions;
   onNodeClick?: (node: TrainingRunNodeSelection) => void;
+  onPresenceZoneChange?: (zone: TrainingRunPresenceZone | null) => void;
   pulseSpeed?: number;
 }>;
 
@@ -347,6 +350,7 @@ export type ResolvedTrainingRunVisualizationOptions = Readonly<{
   thirdPersonController: ThreePlayerControllerOptions;
   walkController: WasdMouseLookControllerOptions;
   onNodeClick?: (node: TrainingRunNodeSelection) => void;
+  onPresenceZoneChange?: (zone: TrainingRunPresenceZone | null) => void;
   pulseSpeed: number;
 }>;
 
@@ -644,9 +648,15 @@ export const resolveTrainingRunVisualizationOptions = (
     },
   };
 
-  return options.onNodeClick === undefined
-    ? resolved
-    : { ...resolved, onNodeClick: options.onNodeClick };
+  return {
+    ...resolved,
+    ...(options.onNodeClick === undefined
+      ? {}
+      : { onNodeClick: options.onNodeClick }),
+    ...(options.onPresenceZoneChange === undefined
+      ? {}
+      : { onPresenceZoneChange: options.onPresenceZoneChange }),
+  };
 };
 
 export const trainingRunPointerClickIntent = ({
@@ -1869,6 +1879,24 @@ export const metaverseStreetLayout = {
   tassadarLotZ: 0.8,
   tassadarSceneScale: 1.65,
 } as const;
+
+export const metaverseTassadarAreaHalfExtents = {
+  x: metaverseStreetLayout.tassadarSceneScale * 6.1,
+  z: metaverseStreetLayout.tassadarSceneScale * 4.7,
+} as const;
+
+export const trainingRunPresenceZoneForPosition = (
+  position: readonly [number, number, number],
+): TrainingRunPresenceZone | null => {
+  const x = position[0];
+  const z = position[2];
+  return Math.abs(x - metaverseStreetLayout.tassadarLotX) <=
+    metaverseTassadarAreaHalfExtents.x &&
+    Math.abs(z - metaverseStreetLayout.tassadarLotZ) <=
+      metaverseTassadarAreaHalfExtents.z
+    ? "tassadar_area"
+    : null;
+};
 
 const metaverseStreetLength =
   metaverseStreetLayout.nearZ - metaverseStreetLayout.farZ;
@@ -3352,6 +3380,21 @@ export const mountTrainingRunVisualization = (
         }
         return [camera.position.x, camera.position.y, camera.position.z];
       };
+      let currentPresenceZone: TrainingRunPresenceZone | null | undefined;
+      const emitPresenceZone = (
+        zone: TrainingRunPresenceZone | null,
+      ): void => {
+        if (zone === currentPresenceZone) return;
+        currentPresenceZone = zone;
+        resolved.onPresenceZoneChange?.(zone);
+      };
+      const updatePresenceZone = (): void => {
+        emitPresenceZone(
+          perspectiveWalk
+            ? trainingRunPresenceZoneForPosition(targetOrigin())
+            : "tassadar_area",
+        );
+      };
 
       const selectNextTarget = (
         direction: 1 | -1 = 1,
@@ -3551,6 +3594,7 @@ export const mountTrainingRunVisualization = (
         if (threePlayerController !== undefined) {
           Effect.runSync(threePlayerController.update(delta));
         }
+        updatePresenceZone();
         threePlayerAvatar?.update(delta);
         renderer.render(scene, camera);
         frame = requestAnimationFrame(render);
@@ -3563,6 +3607,7 @@ export const mountTrainingRunVisualization = (
 
       resize();
       observer?.observe(element);
+      updatePresenceZone();
       frame = requestAnimationFrame(render);
 
       const dispose = Effect.sync(() => {
