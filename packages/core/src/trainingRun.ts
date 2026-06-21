@@ -5,6 +5,10 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { createEntityPool } from "./entityPoolPrimitives";
 import { createFlowBeam, createPayoutBurst } from "./flowEffectPrimitives";
 import {
+  createManagedFrameClock,
+  type ManagedFrameClockFrame,
+} from "./frameClockPrimitives";
+import {
   createMmoEntityTransformInterpolator,
   normalizeMmoEntityTransformSnapshot,
   type MmoEntityInterpolationOptions,
@@ -4684,8 +4688,8 @@ export const mountTrainingRunVisualization = (
         { capture: true },
       );
 
-      let frame = 0;
-      let lastTime = 0;
+      const frameClock = createManagedFrameClock({ mode: "always" });
+      sceneScope.add(frameClock.dispose);
 
       const resize = () => {
         const { width, height } = hostSize(element);
@@ -4703,10 +4707,8 @@ export const mountTrainingRunVisualization = (
         camera.updateProjectionMatrix();
       };
 
-      const render = (time: number) => {
+      const render = ({ delta, time }: ManagedFrameClockFrame) => {
         if (disposed) return;
-        const delta = lastTime === 0 ? 0 : (time - lastTime) / 1000;
-        lastTime = time;
         if (animateAmbient) {
           if (staleRing !== undefined) {
             staleRing.rotation.z += delta * 0.18;
@@ -4765,7 +4767,6 @@ export const mountTrainingRunVisualization = (
         updateWorldItemProximity();
         threePlayerAvatar?.update(delta);
         renderer.render(scene, camera);
-        frame = requestAnimationFrame(render);
       };
 
       const observer =
@@ -4780,12 +4781,13 @@ export const mountTrainingRunVisualization = (
       observer?.observe(element);
       updatePresenceZone();
       updateWorldItemProximity();
-      frame = requestAnimationFrame(render);
+      frameClock.subscribe(render);
+      frameClock.start();
 
       const dispose = Effect.sync(() => {
         if (disposed) return;
         disposed = true;
-        cancelAnimationFrame(frame);
+        frameClock.dispose();
         for (const avatarId of [...remoteAvatars.keys()]) {
           disposeRemoteAvatar(avatarId);
         }

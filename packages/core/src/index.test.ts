@@ -197,6 +197,7 @@ import {
   createColorSpline,
   createEvidenceBackedEventBurst,
   createFlowBeam,
+  createManagedFrameClock,
   createNumberSpline,
   createPayoutBurst,
   createSplineParticleEmitter,
@@ -1004,6 +1005,86 @@ describe("scene node reconciler", () => {
 
     expect(calls).toEqual(["dispose-leaf:leaf", "dispose-parent:parent"]);
     expect(root.children).toEqual([]);
+  });
+});
+
+describe("managed frame clock", () => {
+  test("steps manual frames with stable deltas and priority order", () => {
+    const calls: string[] = [];
+    const clock = createManagedFrameClock({ mode: "manual" });
+
+    clock.subscribe(
+      ({ delta, frame, time }) =>
+        calls.push(`late:${frame}:${time}:${delta.toFixed(2)}`),
+      { priority: 10 },
+    );
+    clock.subscribe(
+      ({ delta, frame, time }) =>
+        calls.push(`early:${frame}:${time}:${delta.toFixed(2)}`),
+      { priority: -1 },
+    );
+
+    clock.tick(1_000);
+    clock.tick(1_250);
+
+    expect(calls).toEqual([
+      "early:1:1000:0.00",
+      "late:1:1000:0.00",
+      "early:2:1250:0.25",
+      "late:2:1250:0.25",
+    ]);
+  });
+
+  test("runs demand frames only after invalidation", () => {
+    const queued: FrameRequestCallback[] = [];
+    const calls: number[] = [];
+    const clock = createManagedFrameClock({
+      mode: "demand",
+      requestFrame: (callback) => {
+        queued.push(callback);
+        return queued.length;
+      },
+      cancelFrame: () => undefined,
+    });
+    clock.subscribe(({ frame }) => calls.push(frame));
+
+    clock.start();
+    expect(queued).toHaveLength(0);
+
+    clock.invalidate(2);
+    expect(queued).toHaveLength(1);
+
+    queued.shift()?.(100);
+    expect(calls).toEqual([1]);
+    expect(queued).toHaveLength(1);
+
+    queued.shift()?.(116);
+    expect(calls).toEqual([1, 2]);
+    expect(queued).toHaveLength(0);
+  });
+
+  test("cancels scheduled frames and clears subscribers on dispose", () => {
+    const queued: FrameRequestCallback[] = [];
+    const canceled: number[] = [];
+    const clock = createManagedFrameClock({
+      requestFrame: (callback) => {
+        queued.push(callback);
+        return 42;
+      },
+      cancelFrame: (frame) => canceled.push(frame),
+    });
+    clock.subscribe(() => undefined);
+
+    clock.start();
+    expect(clock.running()).toBe(true);
+    expect(clock.subscriberCount()).toBe(1);
+
+    clock.dispose();
+    clock.dispose();
+
+    expect(clock.running()).toBe(false);
+    expect(clock.subscriberCount()).toBe(0);
+    expect(canceled).toEqual([42]);
   });
 });
 
