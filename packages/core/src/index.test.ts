@@ -85,6 +85,7 @@ import {
   metaverseStreetHumanHeight,
   metaverseStreetLayout,
   metaverseStreetParcelPositions,
+  metaverseStreetParcelSpacing,
   metaverseStreetSourceRefs,
   metaverseStreetStoryHeight,
   makeTrainingRunPylonLandmark,
@@ -1763,7 +1764,7 @@ describe("training run visualization", () => {
     expect(metaverseStreetLayout.tassadarSceneScale).toBeGreaterThan(1.4);
     expect(parcels[0]).toMatchObject({ x: -18.2, y: 0, z: -136 });
     expect(parcels[1]).toMatchObject({ x: 18.2, y: 0, z: -136 });
-    expect(parcels[2]?.z).toBeGreaterThan(parcels[0]!.z);
+    expect(parcels[2]?.z).toBeCloseTo(parcels[0]!.z + metaverseStreetParcelSpacing);
   });
 
   test("scales Street buildings as skyline mass instead of tiny blocks", () => {

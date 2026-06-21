@@ -1682,6 +1682,7 @@ const metaverseStreetLength =
 export const metaverseStreetHumanHeight = 1.83;
 export const metaverseStreetStoryHeight =
   metaverseStreetHumanHeight * (10 / 6);
+export const metaverseStreetParcelSpacing = 13.5;
 
 export const metaverseStreetParcelPositions = (
   countPerSide = 72,
@@ -1689,7 +1690,7 @@ export const metaverseStreetParcelPositions = (
   const count = Math.max(0, Math.floor(countPerSide));
   const positions: Three.Vector3[] = [];
   for (let index = 0; index < count; index += 1) {
-    const z = metaverseStreetLayout.farZ + 4 + index * 3.8;
+    const z = metaverseStreetLayout.farZ + 4 + index * metaverseStreetParcelSpacing;
     const stagger = index % 2 === 0 ? 0 : 0.38;
     positions.push(
       new Three.Vector3(-metaverseStreetLayout.parcelX - stagger, 0, z),
