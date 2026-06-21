@@ -566,6 +566,9 @@ export const trainingRunView = <Message>(
   onNodeSelected?: (node: TrainingRunNodeSelection) => Message,
   onPresenceZoneChanged?: (zone: TrainingRunPresenceZone | null) => Message,
   onLocalPoseChanged?: (pose: TrainingRunLocalPoseUpdate) => Message,
+  onWorldItemProximityChanged?: (
+    item: TrainingRunWorldItemSelection | null,
+  ) => Message,
 ): Html => {
   registerTrainingRunElement()
   const element = trainingRunElement.withMessage<Message>()
@@ -599,10 +602,19 @@ export const trainingRunView = <Message>(
             capturedAtMs: pose.capturedAtMs,
           })),
         ]
+  const attributesWithWorldItems =
+    onWorldItemProximityChanged === undefined
+      ? attributesWithLocalPose
+      : [
+          ...attributesWithLocalPose,
+          element.OnWorldItemProximityChanged(({ item }) =>
+            onWorldItemProximityChanged(item),
+          ),
+        ]
   return element(
     visualization === undefined
-      ? attributesWithLocalPose
-      : [...attributesWithLocalPose, element.Visualization(visualization)],
+      ? attributesWithWorldItems
+      : [...attributesWithWorldItems, element.Visualization(visualization)],
     [],
   )
 }
