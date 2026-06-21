@@ -242,6 +242,32 @@ bun run build:demo:moksha
 open examples/moksha/index.html
 ```
 
+## three-player-controller Reproduction
+
+The full upstream `three-player-controller` example catalog lives at
+`examples/three-player-controller-repro/`. This includes the copied GLB pack,
+3DGS assets, BIM GLBs, textures, audio, mobile control sprites, the upstream
+controller source, and the complete example set:
+
+- `glTF`
+- `ShinChan`
+- `OfficeBuilding`
+- `3dgs`
+- `3dtilesScene`
+- `multiplayer-gltf`
+- `multiplayer-3dgs`
+- `shooting`
+
+Attribution and dependency notes are recorded in
+`examples/three-player-controller-repro/THIRD_PARTY_NOTICES.md`.
+
+```sh
+bun run dev:demo:three-player-controller
+# open /examples/three-player-controller-repro/example/
+
+bun run verify:demo:three-player-controller
+```
+
 ## Training Run Demo
 
 The tracked visual smoke for the Training scene lives at
@@ -356,6 +382,7 @@ bun run verify
 bun run build:demo:bezier
 bun run build:demo:moksha
 bun run build:demo:training
+bun run verify:demo:three-player-controller
 ```
 
 ## Implementation Notes

@@ -1,0 +1,520 @@
+<!doctype html>
+<html lang="zh-CN">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width,initial-scale=1" />
+        <title>多人联机 GLTF — three-player-controller</title>
+        <style>
+            html, body { height: 100%; margin: 0; }
+            #container {
+                overflow: hidden !important;
+                width: 100vw; height: 100vh;
+                position: absolute; background: transparent;
+            }
+
+            /* 操作提示 */
+            .hud {
+                position: fixed; left: 12px; top: 12px; z-index: 9999;
+                background: rgba(0,0,0,0.45); color: #fff;
+                padding: 10px 12px; border-radius: 8px;
+                font-family: system-ui, sans-serif; font-size: 14px; line-height: 1.4;
+                backdrop-filter: blur(4px);
+            }
+            .hud .row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+            .hud .row:last-child { margin-bottom: 0; }
+            kbd {
+                display: inline-block; padding: 3px 6px; min-width: 18px; text-align: center;
+                font-family: monospace; font-size: 11px; color: #111;
+                background: linear-gradient(#f6f6f6,#e3e3e3);
+                border: 1px solid rgba(0,0,0,0.15); border-bottom-width: 2px; border-radius: 5px;
+            }
+            .hint-text { color: #cde; font-size: 12px; }
+            .hud-sep { width: 1px; height: 12px; background: rgba(255,255,255,0.2); margin: 0 6px; }
+
+            /* ===== 击杀动态（右上角） ===== */
+            #kill-feed {
+                position: fixed; top: 12px; right: 12px; z-index: 9999;
+                display: flex; flex-direction: column; gap: 4px;
+                align-items: flex-end; pointer-events: none;
+            }
+            .kf-entry {
+                display: flex; align-items: center; gap: 7px;
+                padding: 3px 0;
+                font-family: system-ui; font-size: 13px;
+                animation: kf-in 0.2s ease;
+                text-shadow: 0 1px 4px rgba(0,0,0,0.9), 0 0 8px rgba(0,0,0,0.7);
+            }
+            @keyframes kf-in { from { opacity:0; transform:translateX(8px); } to { opacity:1; } }
+            .kf-killer { color: #fff; }
+            .kf-victim { color: #fff; }
+
+            /* ===== 头顶悬浮名字标签 ===== */
+            .player-name-label {
+                position: fixed; display: none; pointer-events: none;
+                transform: translate(-50%, -100%); z-index: 9996;
+                color: #fff; font-family: system-ui, sans-serif;
+                font-size: 12px; font-weight: bold; white-space: nowrap;
+                text-shadow: 0 1px 4px rgba(0,0,0,0.95), 0 0 8px rgba(0,0,0,0.7);
+                letter-spacing: 0.04em;
+            }
+
+            /* ===== 头顶聊天气泡 ===== */
+            .player-chat-bubble {
+                position: fixed; display: none; pointer-events: none;
+                transform: translate(-50%, -100%); z-index: 9995;
+            }
+            .player-chat-bubble svg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+            .player-chat-text {
+                position: relative;
+                padding: 8px 18px 12px; box-sizing: border-box;
+                min-width: 60px; max-width: 170px;
+                text-align: center; color: #222;
+                font-family: system-ui, sans-serif; font-size: 11px;
+                font-weight: bold; line-height: 1.35;
+                word-break: break-word;
+            }
+
+            /* ===== 左下角：角色头像 + HP ===== */
+            #player-hud {
+                position: fixed; bottom: 20px; left: 20px; z-index: 9999;
+                display: flex; align-items: center; gap: 10px;
+                /* background: rgba(0,0,0,0.65); */
+                /* border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; */
+                /* padding: 10px 14px; backdrop-filter: blur(6px); */
+            }
+            .avatar-box {
+                width: 50px; height: 50px; flex-shrink: 0;
+                border: 2px solid rgba(60,200,60,0.8); border-radius: 6px;
+                position: relative; overflow: hidden;
+                display: flex; align-items: center; justify-content: center;
+                background: rgba(0,0,0,0.55);
+            }
+            /* 从底部向上填充的血量指示 */
+            #avatar-hp-fill {
+                position: absolute; bottom: 0; left: 0; right: 0;
+                height: 100%;
+                background: rgba(34,204,68,0.55);
+                transition: height 0.25s ease, background 0.3s;
+            }
+            .avatar-box svg { position: relative; z-index: 1; }
+            #my-hp-num {
+                color: #fff; font-family: monospace; font-size: 15px;
+                font-weight: bold; min-width: 26px;
+                text-shadow: 0 1px 6px rgba(0,0,0,1), 0 0 12px rgba(0,0,0,0.9);
+            }
+
+            /* ===== 准星 ===== */
+            #crosshair {
+                position: fixed; top: 50%; left: 50%;
+                transform: translate(-50%,-50%);
+                width: 6px; height: 6px; border-radius: 50%;
+                background: #fff; display: none; z-index: 9998;
+                box-shadow: 0 0 3px rgba(0,0,0,0.8); pointer-events: none;
+            }
+
+            /* ===== 右下角面板：源码（上） + 弹药（下） ===== */
+            #br-panel {
+                position: fixed; bottom: 16px; right: 16px; z-index: 9999;
+                display: flex; flex-direction: column; align-items: center; gap: 8px;
+            }
+            .source {
+                padding: 12px;
+                border-radius: 50%;
+                background-color: #fff;
+                opacity: 0.9;
+                box-shadow: 0 0 4px rgba(0, 0, 0, 0.15);
+            }
+            .source img { display: block; width: 24px; }
+            #ammo-hud {
+                display: none; flex-direction: column; align-items: center; gap: 4px;
+            }
+            .weapon-img-box {
+                width: 96px; height: 44px;
+                display: flex; align-items: center; justify-content: center;
+            }
+            .ammo-row {
+                display: flex; align-items: center; gap: 4px;
+                padding: 3px 16px 3px 8px; border-radius: 4px;
+                background: linear-gradient(to right, rgba(0,0,0,0.7), transparent);
+            }
+            .ammo-label-tag {
+                font-family: system-ui; font-size: 9px; font-weight: bold;
+                letter-spacing: 0.18em; color: #fff;
+                text-shadow: 0 1px 4px rgba(0,0,0,0.9);
+            }
+            #ammo-current-val {
+                color: #e8a020; font-family: monospace; font-size: 22px;
+                font-weight: bold; line-height: 1;
+                text-shadow: 0 1px 4px rgba(0,0,0,0.9);
+            }
+            .ammo-divider { color: #fff; font-family: monospace; font-size: 15px; margin: 0 1px; }
+            #ammo-total-val { color: #fff; font-family: monospace; font-size: 13px;
+                text-shadow: 0 1px 4px rgba(0,0,0,0.9); }
+
+            /* ===== 武器槽（保留但不展示，保持 HUD.js 兼容） ===== */
+            #weapon-hud { display: none; }
+
+            /* ===== 房间已满提示 ===== */
+            #room-full-overlay {
+                position: fixed; top: 14px; right: 14px; z-index: 99999;
+                background: rgba(15,18,28,0.92); backdrop-filter: blur(6px);
+                border: 1px solid rgba(255,80,80,0.35); border-radius: 10px;
+                padding: 12px 16px; display: none; flex-direction: column; gap: 4px;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            }
+            #room-full-overlay .rf-title { color: #ff6b6b; font-size: 14px; font-weight: bold; }
+            #room-full-overlay .rf-sub   { color: #aaa; font-size: 12px; }
+            #room-full-overlay .rf-hint  { color: #6ecbff; font-size: 11px; }
+
+            /* ===== 名字输入弹窗 ===== */
+            #name-overlay {
+                position: fixed; inset: 0; z-index: 99999;
+                background: rgba(0,0,0,0.82); backdrop-filter: blur(8px);
+                display: flex; align-items: center; justify-content: center;
+            }
+            #name-dialog {
+                background: rgba(15,18,28,0.95);
+                border: 1px solid rgba(255,255,255,0.12); border-radius: 14px;
+                padding: 28px 28px; display: flex; flex-direction: row; gap: 20px;
+                box-shadow: 0 8px 40px rgba(0,0,0,0.6); align-items: flex-start;
+            }
+            /* ---- 角色选择区 ---- */
+            #char-picker {
+                display: grid; grid-template-columns: repeat(3, 1fr);
+                gap: 8px; align-content: start;
+                min-width: 210px; max-height: 240px; overflow-y: auto;
+                padding-right: 6px;
+                border-right: 1px solid rgba(255,255,255,0.08);
+            }
+            #char-picker::-webkit-scrollbar { width: 3px; }
+            #char-picker::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 2px; }
+            .char-card {
+                width: 100%; cursor: pointer;
+                border-radius: 6px; border: 2px solid transparent;
+                overflow: hidden; position: relative;
+                background: rgba(255,255,255,0.04);
+                transition: border-color 0.15s;
+            }
+            .char-card:hover { border-color: rgba(255,255,255,0.25); }
+            .char-card.selected { border-color: rgba(100,180,255,0.7); }
+            .char-avatar {
+                width: 100%; height: 72px;
+                background: rgba(255,255,255,0.06);
+                background-size: cover; background-position: center top;
+                display: block;
+            }
+            .char-name {
+                position: absolute; bottom: 0; left: 0; right: 0;
+                padding: 3px 0;
+                background: rgba(0,0,0,0.55);
+                font-family: system-ui; font-size: 9px; text-align: center;
+                color: #ddd; letter-spacing: 0.02em;
+            }
+            .char-card.selected .char-name { color: #6ecbff; }
+            .char-divider {
+                grid-column: 1 / -1;
+                font-family: system-ui; font-size: 10px; color: #f4c542;
+                text-align: center; padding: 4px 0 2px;
+                border-top: 1px solid rgba(255,255,255,0.08);
+                letter-spacing: 0.03em; opacity: 0.85;
+            }
+            /* ---- 名字表单区 ---- */
+            #name-form {
+                display: flex; flex-direction: column; gap: 14px;
+                min-width: 210px; flex: 1;
+            }
+            #name-form .nd-title {
+                color: #fff; font-family: system-ui; font-size: 17px;
+                font-weight: bold; letter-spacing: 0.04em; text-align: center;
+            }
+            #name-form .nd-sub {
+                color: #888; font-family: system-ui; font-size: 12px;
+                text-align: center; margin-top: -8px;
+            }
+            #name-input {
+                background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.18);
+                border-radius: 8px; padding: 10px 14px;
+                color: #fff; font-family: system-ui; font-size: 15px;
+                outline: none; text-align: center; letter-spacing: 0.05em;
+            }
+            #name-input:focus { border-color: rgba(100,180,255,0.5); }
+            #name-confirm {
+                background: linear-gradient(135deg,#2a6dd9,#1a4fa0);
+                border: none; border-radius: 8px; padding: 11px 0;
+                color: #fff; font-family: system-ui; font-size: 14px;
+                font-weight: bold; letter-spacing: 0.08em; cursor: pointer;
+                transition: opacity 0.15s;
+            }
+            #name-confirm:hover { opacity: 0.88; }
+
+            /* ===== 计分板（Tab 键显示） ===== */
+            #scoreboard {
+                position: fixed; inset: 0; z-index: 99997;
+                display: none; align-items: center; justify-content: center;
+                pointer-events: none;
+            }
+            #scoreboard-panel {
+                background: rgba(10,12,20,0.88); backdrop-filter: blur(8px);
+                border: 1px solid rgba(255,255,255,0.1); border-radius: 10px;
+                padding: 0; min-width: 420px; overflow: hidden;
+            }
+            #scoreboard-panel .sb-header {
+                background: rgba(255,255,255,0.06);
+                padding: 10px 20px;
+                font-family: system-ui; font-size: 13px; font-weight: bold;
+                letter-spacing: 0.15em; color: #fff; text-align: center;
+                border-bottom: 1px solid rgba(255,255,255,0.08);
+            }
+            #scoreboard-panel table {
+                width: 100%; border-collapse: collapse;
+                font-family: system-ui; font-size: 13px;
+            }
+            #scoreboard-panel thead th {
+                padding: 8px 20px; color: #aaa; font-weight: bold;
+                font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase;
+                border-bottom: 1px solid rgba(255,255,255,0.06); text-align: left;
+            }
+            #scoreboard-panel thead th:nth-child(3),
+            #scoreboard-panel thead th:nth-child(4) { text-align: right; }
+            #scoreboard-panel tbody td {
+                padding: 8px 20px; color: #ddd;
+            }
+            #scoreboard-panel tbody td:nth-child(3) { color: #f4c542; text-align: right; font-weight: bold; }
+            #scoreboard-panel tbody td:nth-child(4) { color: #ff6b6b; text-align: right; }
+            #scoreboard-panel tbody tr:nth-child(even) { background: rgba(255,255,255,0.03); }
+            #scoreboard-panel tbody tr.sb-local { background: rgba(100,180,255,0.08); }
+            #scoreboard-panel tbody tr.sb-local td:nth-child(2) { color: #6ecbff; font-weight: bold; }
+            #scoreboard-panel tbody td:first-child { color: #666; width: 36px; }
+
+            /* ===== 死亡遮罩 ===== */
+            #death-overlay {
+                position: fixed; inset: 0; z-index: 99998;
+                background: rgba(0, 0, 0, 0.72); backdrop-filter: blur(4px);
+                display: none; flex-direction: column;
+                align-items: center; justify-content: center; gap: 20px;
+                pointer-events: all;
+            }
+            .death-title {
+                font-family: system-ui; font-size: 56px; font-weight: bold;
+                letter-spacing: 0.14em; color: #cc2222;
+                text-shadow: 0 0 50px rgba(200,0,0,0.45), 0 2px 8px rgba(0,0,0,0.9);
+            }
+            #btn-respawn {
+                margin-top: 24px; padding: 12px 40px; border-radius: 6px; cursor: pointer;
+                font-family: system-ui; font-size: 13px; font-weight: bold;
+                letter-spacing: 0.12em; transition: opacity 0.15s;
+                border: 1px solid rgba(80,200,80,0.45);
+                background: rgba(80,200,80,0.08); color: #88ee88;
+            }
+            #btn-respawn:hover { opacity: 0.75; }
+
+
+            /* ===== 聊天系统 ===== */
+            #chat-container {
+                position: fixed; bottom: 110px; left: 20px; z-index: 9997;
+                width: 320px; display: flex; flex-direction: column; gap: 4px;
+                pointer-events: none;
+            }
+            #chat-messages { display: flex; flex-direction: column; gap: 2px; }
+            .chat-msg {
+                font-family: system-ui; font-size: 13px; color: #fff; line-height: 1.4;
+                text-shadow: 0 1px 4px rgba(0,0,0,0.95), 0 0 8px rgba(0,0,0,0.8);
+                animation: chat-in 0.15s ease; word-break: break-word;
+            }
+            .chat-msg .chat-name { color: #f4c542; }
+            @keyframes chat-in { from { opacity:0; transform:translateY(3px); } to { opacity:1; } }
+            #chat-input-wrap {
+                display: none; pointer-events: all;
+                align-items: center; gap: 6px;
+                background: rgba(0,0,0,0.7); border: 1px solid rgba(255,255,255,0.2);
+                border-radius: 4px; padding: 5px 10px;
+            }
+            #chat-prefix {
+                font-family: system-ui; font-size: 11px; color: #aaa; white-space: nowrap;
+            }
+            #chat-input {
+                background: transparent; border: none; outline: none;
+                color: #fff; font-family: system-ui; font-size: 13px;
+                flex: 1; caret-color: #fff;
+            }
+
+            @media (max-width: 480px) { .hud { display: none; } }
+        </style>
+        <script src="./loader.js"></script>
+    </head>
+    <body>
+        <!-- 房间已满提示 -->
+        <div id="room-full-overlay">
+            <div class="rf-title">房间已满</div>
+        </div>
+
+        <!-- 名字输入弹窗（进入游戏前显示） -->
+        <div id="name-overlay">
+            <div id="name-dialog">
+                <!-- 左：角色库 -->
+                <div id="char-picker">
+                    <div class="char-card" data-idx="0">
+                        <div class="char-avatar"></div>
+                        <span class="char-name">Josh</span>
+                    </div>
+                    <div class="char-card" data-idx="1">
+                        <div class="char-avatar"></div>
+                        <span class="char-name">Tommy</span>
+                    </div>
+                    <div class="char-card selected" data-idx="2">
+                        <div class="char-avatar"></div>
+                        <span class="char-name">Swat</span>
+                    </div>
+                    <div class="char-divider">以下角色暂无持枪动画，不参与伤害计算</div>
+                    <div class="char-card" data-idx="3">
+                        <div class="char-avatar"></div>
+                        <span class="char-name">Manny</span>
+                    </div>
+                    <div class="char-card" data-idx="4">
+                        <div class="char-avatar"></div>
+                        <span class="char-name">Mob</span>
+                    </div>
+                    <div class="char-card" data-idx="5">
+                        <div class="char-avatar"></div>
+                        <span class="char-name">AntMan</span>
+                    </div>
+                </div>
+                <!-- 右：名字输入 -->
+                <div id="name-form">
+                    <div class="nd-title">输入你的名字</div>
+                    <input id="name-input" type="text" maxlength="16" spellcheck="false">
+                    <button id="name-confirm">进入</button>
+                </div>
+            </div>
+        </div>
+
+<div id="container"></div>
+
+        <!-- 操作提示 -->
+        <div class="hud" role="note">
+            <div class="row">
+                <span class="hint-text">移动:</span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>
+                <span class="hud-sep"></span>
+                <span class="hint-text">冲刺:</span><kbd>Shift</kbd>
+            </div>
+            <div class="row">
+                <span class="hint-text">跳跃:</span><kbd>Space</kbd>
+                <span class="hud-sep"></span>
+                <span class="hint-text">飞行:</span><kbd>F</kbd>
+                <span class="hud-sep"></span>
+                <span class="hint-text">视角:</span><kbd>V</kbd>
+            </div>
+            <div class="row">
+                <span class="hint-text">技能:</span><kbd>Z</kbd>
+                <span class="hud-sep"></span>
+                <span class="hint-text">武器:</span><kbd>Q</kbd>
+                <span class="hud-sep"></span>
+                <span class="hint-text">换弹:</span><kbd>R</kbd>
+            </div>
+            <div class="row">
+                <span class="hint-text">聊天:</span><kbd>Enter</kbd>
+                <span class="hud-sep"></span>
+                <span class="hint-text">计分板:</span><kbd>Tab</kbd>
+            </div>
+        </div>
+
+        <!-- 击杀动态 -->
+        <div id="kill-feed"></div>
+
+        <!-- 左下角：角色头像（底部填充指示血量）+ 名字 + HP -->
+        <div id="player-hud">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+                <div class="avatar-box">
+                    <div id="avatar-hp-fill"></div>
+                    <svg width="32" height="38" viewBox="0 0 32 38" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="16" cy="10" r="7" fill="rgba(200,185,155,0.85)"/>
+                        <path d="M7 10 Q16 1 25 10" fill="rgba(70,75,70,0.9)"/>
+                        <rect x="7" y="19" width="18" height="16" rx="3" fill="rgba(70,100,70,0.8)"/>
+                        <rect x="3" y="19" width="6" height="12" rx="2" fill="rgba(70,100,70,0.7)"/>
+                        <rect x="23" y="19" width="6" height="12" rx="2" fill="rgba(70,100,70,0.7)"/>
+                    </svg>
+                </div>
+                <!-- 本地玩家名字 -->
+                <span id="local-player-name" style="font-family:system-ui;font-size:11px;font-weight:bold;color:#fff;letter-spacing:0.04em;text-shadow:0 1px 4px rgba(0,0,0,0.9);white-space:nowrap;max-width:70px;overflow:hidden;text-overflow:ellipsis"></span>
+            </div>
+            <!-- HP 标签 + 数字同行，左实右透渐变背景 -->
+            <div style="display:flex;align-items:center;gap:5px;padding:4px 16px 4px 8px;border-radius:4px;background:linear-gradient(to right,rgba(0,0,0,0.7),transparent)">
+                <span style="font-family:system-ui;font-size:11px;font-weight:bold;letter-spacing:0.1em;color:#22cc44;text-shadow:0 0 6px rgba(34,204,68,0.5)">HP</span>
+                <span id="my-hp-num">100</span>
+            </div>
+        </div>
+
+        <!-- 计分板（Tab 键显示） -->
+        <div id="scoreboard">
+            <div id="scoreboard-panel">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>名字</th>
+                            <th>击杀</th>
+                            <th>死亡</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sb-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- 死亡遮罩 -->
+        <div id="death-overlay">
+            <button id="btn-respawn">复活</button>
+        </div>
+
+        <!-- 准星 -->
+        <div id="crosshair"></div>
+
+        <!-- 聊天气泡模板（由 JS _buildChatBubble 克隆使用） -->
+        <template id="chat-bubble-tpl">
+            <svg viewBox="39 89 412 332" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+                <polygon points="57.204641215,139.37130706 46.803796057999996,165.37342365 40.56329064,203.8565353 39.523206568,239.21940558 45.763715930000004,284.9831363 56.16455665,310.9852381 71.76582266000001,336.9873399 86.32700164,352.58862070000004 106.08860591,365.06963055 127.93038424,372.35020032 151.85231691,375.47045648 247.5400821,372.35020032 248.58016419999998,376.51053858 232.97890805,412.9134811 232.97890805,419.15400328 236.09916421,420.1941051 284.9831363,395.23208539999996 308.90505418,375.47045648 317.2257307,373.39028242 324.50633498,364.02954352 375.47045648,362.98946142 412.9134811,348.42826765 428.5147619,333.86709360000003 447.236289,293.3037931 450.3565353,274.582266 450.3565353,223.6181445 440.99576682,173.69409031 429.554844,133.13079474 414.99366502,106.08860591 401.472578,94.64767816 383.791133,91.52742693 221.53797043999998,89.4472578 147.69198851,91.52742693 117.52953859,97.76793432 88.40717570000001,109.208867 69.68565353,123.77004105"
+                    fill="rgba(255,255,255,0.6)" stroke="rgba(0,0,0,0.18)" stroke-width="3"/>
+            </svg>
+            <div class="player-chat-text"></div>
+        </template>
+
+        <!-- 聊天系统 -->
+        <div id="chat-container">
+            <div id="chat-messages"></div>
+            <div id="chat-input-wrap">
+                <span id="chat-prefix">你:</span>
+                <input id="chat-input" type="text" maxlength="80" autocomplete="off" spellcheck="false">
+            </div>
+        </div>
+
+        <!-- 武器槽（HUD.js 兼容用，不可见） -->
+        <div id="weapon-hud"></div>
+
+        <!-- 右下角面板：源码（上） + 弹药（下） -->
+        <div id="br-panel">
+            <a class="source" href="https://github.com/hh-hang/three-player-controller/blob/master/example/multiplayer-gltf.js" target="_blank" rel="noopener noreferrer">
+                <img src="./img/source.svg" alt="" />
+            </a>
+            <div id="ammo-hud">
+                <div class="weapon-img-box">
+                    <svg width="96" height="38" viewBox="0 0 96 38" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M2 18 L2 24 L20 24 L22 20 L20 15 L2 15 Z" fill="rgba(210,195,160,0.8)"/>
+                        <rect x="18" y="13" width="50" height="12" rx="2" fill="rgba(210,195,160,0.8)"/>
+                        <path d="M36 25 L34 37 L44 37 L46 25 Z" fill="rgba(190,175,140,0.85)"/>
+                        <rect x="66" y="15" width="28" height="6" rx="1" fill="rgba(210,195,160,0.8)"/>
+                        <rect x="88" y="12" width="2" height="3" fill="rgba(210,195,160,0.7)"/>
+                        <rect x="30" y="9" width="22" height="5" rx="1" fill="rgba(190,175,140,0.7)"/>
+                    </svg>
+                </div>
+                <div class="ammo-row">
+                    <span class="ammo-label-tag">AMMO</span>
+                    <span id="ammo-current-val">30</span>
+                    <span class="ammo-divider">/</span>
+                    <span id="ammo-total-val">300</span>
+                </div>
+            </div>
+        </div>
+
+        <script type="module" src="./multiplayer-gltf.js"></script>
+    </body>
+</html>

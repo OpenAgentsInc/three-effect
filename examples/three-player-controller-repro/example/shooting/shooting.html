@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width,initial-scale=1" />
+        <title>three-player-controller · FPS Game</title>
+        <style>
+            html, body {
+                height: 100%;
+                margin: 0;
+            }
+            #container {
+                overflow: hidden !important;
+                width: 100vw;
+                height: 100vh;
+                position: absolute;
+                background: transparent;
+            }
+
+            .hud {
+                position: fixed;
+                left: 12px;
+                top: 12px;
+                z-index: 9999;
+                background: rgba(0, 0, 0, 0.45);
+                color: #fff;
+                padding: 10px 12px;
+                border-radius: 8px;
+                font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial;
+                font-size: 16px;
+                line-height: 1.3;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+                backdrop-filter: blur(4px);
+            }
+            .hud .row {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                margin-bottom: 6px;
+            }
+            .hud .row:last-child { margin-bottom: 0; }
+            kbd {
+                display: inline-block;
+                padding: 4px 7px;
+                min-width: 20px;
+                text-align: center;
+                font-family: ui-monospace, monospace;
+                font-size: 12px;
+                line-height: 1;
+                color: #111;
+                background: linear-gradient(#f6f6f6, #e3e3e3);
+                border: 1px solid rgba(0, 0, 0, 0.15);
+                border-bottom-width: 2px;
+                border-radius: 6px;
+                box-shadow: 0 1px 0 rgba(255,255,255,0.6) inset, 0 2px 4px rgba(0,0,0,0.25);
+            }
+            .hint-text {
+                color: #e6eef6;
+                font-size: 13px;
+            }
+            .hint-group {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+            }
+
+            @media (max-width: 480px) {
+                .hud {
+                    font-size: 12px;
+                    padding: 8px;
+                    left: 8px;
+                    top: 8px;
+                }
+                kbd {
+                    padding: 3px 6px;
+                    min-width: 18px;
+                    font-size: 11px;
+                }
+            }
+
+            @media (hover: none) and (pointer: coarse), (max-width: 768px) {
+                .hud {
+                    display: none !important;
+                }
+            }
+
+            /* 准心 */
+            #crosshair {
+                display: none;
+                position: fixed;
+                left: 50%;
+                top: 50%;
+                transform: translate(-50%, -50%);
+                width: 6px;
+                height: 6px;
+                background: rgba(255, 255, 255, 0.9);
+                border-radius: 50%;
+                box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+                pointer-events: none;
+                z-index: 9999;
+            }
+
+            /* 右下角面板：源码（上） + 弹药（下） */
+            #weapon-hud { display: none; }
+            #br-panel {
+                position: fixed; bottom: 16px; right: 16px; z-index: 9999;
+                display: flex; flex-direction: column; align-items: center; gap: 8px;
+            }
+            .source {
+                padding: 12px;
+                border-radius: 50%;
+                background-color: #fff;
+                opacity: 0.9;
+                box-shadow: 0 0 4px rgba(0, 0, 0, 0.15);
+            }
+            .source img { display: block; width: 24px; }
+            #ammo-hud {
+                display: none; flex-direction: column; align-items: center; gap: 4px;
+            }
+            .weapon-img-box {
+                width: 96px; height: 44px;
+                display: flex; align-items: center; justify-content: center;
+            }
+            .ammo-row {
+                display: flex; align-items: center; gap: 4px;
+                padding: 3px 16px 3px 8px; border-radius: 4px;
+                background: linear-gradient(to right, rgba(0,0,0,0.7), transparent);
+            }
+            .ammo-label-tag {
+                font-family: system-ui; font-size: 9px; font-weight: bold;
+                letter-spacing: 0.18em; color: #fff;
+                text-shadow: 0 1px 4px rgba(0,0,0,0.9);
+            }
+            #ammo-current-val {
+                color: #e8a020; font-family: monospace; font-size: 22px;
+                font-weight: bold; line-height: 1;
+                text-shadow: 0 1px 4px rgba(0,0,0,0.9);
+            }
+            .ammo-divider { color: #fff; font-family: monospace; font-size: 15px; margin: 0 1px; }
+            #ammo-total-val { color: #fff; font-family: monospace; font-size: 13px;
+                text-shadow: 0 1px 4px rgba(0,0,0,0.9); }
+
+            .model-credit {
+                position: fixed;
+                top: 10px;
+                left: 50%;
+                transform: translateX(-50%);
+                z-index: 9999;
+                font-size: 16px;
+                color: #e6eef6;
+                background: rgba(0, 0, 0, 0.35);
+                padding: 6px 12px;
+                border-radius: 999px;
+                backdrop-filter: blur(4px);
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+                font-family:
+                    system-ui,
+                    -apple-system,
+                    "Segoe UI",
+                    Roboto,
+                    Arial;
+            }
+
+            .model-credit a {
+                color: #6ecbff;
+                text-decoration: none;
+            }
+
+            .model-credit a:hover {
+                text-decoration: underline;
+            }
+
+            /* ── Start Screen ── */
+            #start-screen {
+                position: fixed;
+                inset: 0;
+                z-index: 99998;
+                display: none;
+                align-items: center;
+                justify-content: center;
+                background: rgba(0, 0, 0, 0.6);
+                backdrop-filter: blur(6px);
+            }
+            #start-btn {
+                appearance: none;
+                border: none;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                padding: 16px 48px;
+                background: #c0392b;
+                color: #fff;
+                font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial;
+                font-size: 1.1rem;
+                font-weight: 700;
+                letter-spacing: 0.22em;
+                text-transform: uppercase;
+                border-radius: 4px;
+                box-shadow: 0 4px 24px rgba(192,57,43,0.55);
+                transition: transform 0.15s, box-shadow 0.15s, background 0.15s;
+            }
+            #start-btn:hover {
+                background: #e74c3c;
+                transform: scale(1.04);
+                box-shadow: 0 6px 32px rgba(192,57,43,0.7), 0 0 0 4px rgba(231,76,60,0.25);
+            }
+            #start-btn:active { transform: scale(0.98); }
+            #start-btn svg {
+                width: 18px;
+                height: 18px;
+                fill: currentColor;
+                flex-shrink: 0;
+            }
+        </style>
+        <script src="../loader.js"></script>
+    </head>
+    <body>
+        <div id="container"></div>
+        <div id="crosshair"></div>
+
+        <div id="start-screen">
+            <button id="start-btn">
+                <svg viewBox="0 0 10 10"><polygon points="2,1 9,5 2,9"/></svg>
+                Play
+            </button>
+        </div>
+
+        <div class="hud" role="note" aria-label="Controls">
+            <div class="row hint-group">
+                <span class="hint-text">Move:</span>
+                <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>
+            </div>
+            <div class="row hint-group">
+                <span class="hint-text">Sprint:</span>
+                <kbd>Shift</kbd>
+            </div>
+            <div class="row hint-group">
+                <span class="hint-text">Jump:</span>
+                <kbd>Space</kbd>
+            </div>
+            <div class="row hint-group">
+                <span class="hint-text">Toggle View:</span>
+                <kbd>V</kbd>
+            </div>
+            <div class="row hint-group">
+                <span class="hint-text">Switch Weapon:</span>
+                <kbd>1</kbd><kbd>4</kbd>
+                <span class="hint-text">/ Scroll</span>
+            </div>
+            <div class="row hint-group">
+                <span class="hint-text">Aim (Hold):</span>
+                <kbd>RMB</kbd>
+            </div>
+            <div class="row hint-group">
+                <span class="hint-text">Shoot:</span>
+                <kbd>LMB</kbd>
+            </div>
+            <div class="row hint-group">
+                <span class="hint-text">Reload:</span>
+                <kbd>R</kbd>
+            </div>
+        </div>
+
+        <div id="weapon-hud"></div>
+
+        <div id="br-panel">
+            <a class="source" href="https://github.com/hh-hang/three-player-controller/blob/master/example/shooting/shooting.js" target="_blank" rel="noopener noreferrer">
+                <img src="../img/source.svg" alt="" />
+            </a>
+            <div id="ammo-hud">
+                <div class="weapon-img-box">
+                    <svg width="96" height="38" viewBox="0 0 96 38" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M2 18 L2 24 L20 24 L22 20 L20 15 L2 15 Z" fill="rgba(210,195,160,0.8)"/>
+                        <rect x="18" y="13" width="50" height="12" rx="2" fill="rgba(210,195,160,0.8)"/>
+                        <path d="M36 25 L34 37 L44 37 L46 25 Z" fill="rgba(190,175,140,0.85)"/>
+                        <rect x="66" y="15" width="28" height="6" rx="1" fill="rgba(210,195,160,0.8)"/>
+                        <rect x="88" y="12" width="2" height="3" fill="rgba(210,195,160,0.7)"/>
+                        <rect x="30" y="9" width="22" height="5" rx="1" fill="rgba(190,175,140,0.7)"/>
+                    </svg>
+                </div>
+                <div class="ammo-row">
+                    <span class="ammo-label-tag">AMMO</span>
+                    <span id="ammo-current-val">30</span>
+                    <span class="ammo-divider">/</span>
+                    <span id="ammo-total-val">300</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="model-credit">
+            Scene model:
+            <a href="https://sketchfab.com/3d-models/horror-corridor-3-e03a192de67d442ebdf42f43a8a2d37a" target="_blank" rel="noopener noreferrer">Sketchfab</a>
+            <br />
+        </div>
+
+        <script type="module" src="./shooting.js"></script>
+    </body>
+</html>
