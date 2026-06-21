@@ -196,6 +196,7 @@ import {
   resolveMmorpgCharacterControllerOptions,
   resolveProofReplayVisualizationOptions,
   normalizeMmoEntityTransformSnapshot,
+  resolveThreePlayerControllerOptions,
   resolveThirdPersonFollowCameraOptions,
   resolveTextLabelOptions,
   proofReplayCameraPoseWithOverride,
@@ -2293,6 +2294,7 @@ describe("player controller primitives", () => {
     expect(lookAt.y).toBeCloseTo(1);
     expect(lookAt.z).toBeCloseTo(-2);
     expect(thirdPersonFollowSmoothingFactor(0, options.smoothing)).toBe(0);
+    expect(thirdPersonFollowSmoothingFactor(1, 0)).toBe(1);
     expect(thirdPersonFollowSmoothingFactor(1, 0.01)).toBeCloseTo(0.99);
   });
 
@@ -2332,6 +2334,18 @@ describe("player controller primitives", () => {
 
     const clampedUp = thirdPersonOrbitOffset([0, 4, 0.01], 0, -100);
     expect(clampedUp[1]).toBeLessThan(thirdPersonCameraOffsetDistance(clampedUp));
+  });
+
+  test("defaults the harvested controller to snap-follow and stronger click drag", () => {
+    const options = resolveThreePlayerControllerOptions(
+      globalThis as unknown as Window,
+      {},
+    );
+    expect(options.camera.smoothing).toBe(0);
+    expect(options.dragSensitivity).toBe(3);
+    expect(threePlayerControllerLookDeltaToOrbitDelta(100 * options.dragSensitivity)).toBeCloseTo(
+      -0.15,
+    );
   });
 
   test("updates a third-person follow camera with smoothing", () => {

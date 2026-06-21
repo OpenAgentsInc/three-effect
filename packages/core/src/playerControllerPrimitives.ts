@@ -160,6 +160,7 @@ export type ThreePlayerControllerOptions = Readonly<{
   initialPosition?: readonly [number, number, number];
   camera?: ThirdPersonFollowCameraOptions;
   character?: MmorpgCharacterControllerOptions;
+  dragSensitivity?: number;
   jumpHeight?: number;
   gravity?: number;
   groundHeightAt?: (x: number, z: number) => number;
@@ -172,6 +173,7 @@ export type ResolvedThreePlayerControllerOptions = Readonly<{
   initialPosition: readonly [number, number, number];
   camera: ThirdPersonFollowCameraOptions;
   character: MmorpgCharacterControllerOptions;
+  dragSensitivity: number;
   jumpHeight: number;
   gravity: number;
   groundHeightAt: (x: number, z: number) => number;
@@ -299,7 +301,7 @@ export const defaultThreePlayerControllerOptions = (
   camera: {
     offset: [0, 2.4, 4.8],
     lookAtOffset: [0, 0.9, -1.5],
-    smoothing: 0.035,
+    smoothing: 0,
     minDistance: 2.2,
     maxDistance: 8.5,
     zoomSpeed: 0.004,
@@ -313,6 +315,7 @@ export const defaultThreePlayerControllerOptions = (
     turnSpeed: Math.PI * 1.15,
     forwardAxis: "negativeZ",
   },
+  dragSensitivity: 3,
   jumpHeight: 4.8,
   gravity: -13.5,
   groundHeightAt: () => 0,
@@ -623,7 +626,10 @@ export const thirdPersonIdealLookAt = (
 export const thirdPersonFollowSmoothingFactor = (
   delta: number,
   smoothing: number,
-): number => 1 - Math.pow(Three.MathUtils.clamp(smoothing, 0.0001, 1), delta);
+): number =>
+  smoothing <= 0 && delta > 0
+    ? 1
+    : 1 - Math.pow(Three.MathUtils.clamp(smoothing, 0.0001, 1), delta);
 
 export const createThirdPersonFollowCameraState = (
   camera: Three.Camera,
@@ -1184,8 +1190,12 @@ export const createThreePlayerController = (
         event.preventDefault();
         cameraOffset = thirdPersonOrbitOffset(
           cameraOffset,
-          threePlayerControllerLookDeltaToOrbitDelta(event.movementX),
-          threePlayerControllerLookDeltaToOrbitDelta(event.movementY),
+          threePlayerControllerLookDeltaToOrbitDelta(
+            event.movementX * resolved.dragSensitivity,
+          ),
+          threePlayerControllerLookDeltaToOrbitDelta(
+            event.movementY * resolved.dragSensitivity,
+          ),
         );
         cameraDistance = thirdPersonCameraOffsetDistance(cameraOffset);
         Effect.runSync(cameraHandle.setOptions(cameraOptionsAtDistance()));
