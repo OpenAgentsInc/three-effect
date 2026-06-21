@@ -81,6 +81,8 @@ import {
   isWorldPointOccluded,
   maskMaterialProps,
   mergeBufferGeometries,
+  metaverseStreetParcelPositions,
+  metaverseStreetSourceRefs,
   MokshaPlaneMaterial,
   cycleTrainingRunCameraTarget,
   cycleTrainingRunTarget,
@@ -1736,6 +1738,16 @@ describe("training run visualization", () => {
       },
     });
     expect(resolved.thirdPersonController.groundHeightAt).toBe(groundHeightAt);
+  });
+
+  test("places The Street as deterministic distant parcel geometry", () => {
+    expect(metaverseStreetSourceRefs[0]).toContain("The Street");
+    const parcels = metaverseStreetParcelPositions(3);
+
+    expect(parcels).toHaveLength(6);
+    expect(parcels[0]).toMatchObject({ x: -5.1, y: 0, z: -10.8 });
+    expect(parcels[1]).toMatchObject({ x: 5.1, y: 0, z: -10.8 });
+    expect(parcels[2]?.z).toBeGreaterThan(parcels[0]!.z);
   });
 
   test("uses the imported controller GLB for the default third-person avatar", () => {
