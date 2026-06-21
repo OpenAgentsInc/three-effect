@@ -1850,8 +1850,8 @@ describe("training run visualization", () => {
   });
 
   test("renders Street buildings as translucent grayscale shadow casters", () => {
-    expect(metaverseStreetBuildingColor(0)).toBe(0xf2f2f2);
-    expect(metaverseStreetBuildingOpacity(3)).toBeCloseTo(0.265);
+    expect(metaverseStreetBuildingColor(0)).toBe(0xd8d8d8);
+    expect(metaverseStreetBuildingOpacity(3)).toBeCloseTo(0.129);
 
     const district = makeMetaverseStreetDistrict();
     const building = district.children.find(

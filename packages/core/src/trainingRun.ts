@@ -17,7 +17,6 @@ import {
   HitTargetRegistry,
   raycastHitTargetRegistry,
 } from "./spatialPrimitives";
-import { createSky } from "./stagingPrimitives";
 import { createTextLabel, type TextLabelHandle } from "./textLabelPrimitives";
 
 export const defaultThreePlayerAvatarModelUrl = new URL(
@@ -2023,12 +2022,12 @@ export const metaverseStreetBuildingDimensions = (
 });
 
 export const metaverseStreetBuildingColor = (index: number): number => {
-  const grayscale = [0xf2f2f2, 0xd8d8d8, 0xc2c2c2, 0xe8e8e8] as const;
+  const grayscale = [0xd8d8d8, 0xbcbcbc, 0xa3a3a3, 0xc9c9c9] as const;
   return grayscale[Math.abs(index) % grayscale.length]!;
 };
 
 export const metaverseStreetBuildingOpacity = (index: number): number =>
-  0.16 + (Math.abs(index) % 4) * 0.035;
+  0.075 + (Math.abs(index) % 4) * 0.018;
 
 const makeMetaverseStreetBuildingMaterial = (
   index: number,
@@ -2054,15 +2053,43 @@ export const createTrainingRunPerspectiveAtmosphere = (): Three.Group => {
   group.name = "training-run-perspective-atmosphere";
   const sunDirection = trainingRunPerspectiveSunDirection();
 
-  const sky = createSky({
-    distance: 650,
-    mieCoefficient: 0.004,
-    mieDirectionalG: 0.86,
-    rayleigh: 0.08,
-    sunPosition: sunDirection,
-    turbidity: 18,
-  });
+  const sky = new Three.Mesh(
+    new Three.SphereGeometry(640, 32, 16),
+    new Three.ShaderMaterial({
+      uniforms: {
+        topColor: { value: new Three.Color(0x0b0c0e) },
+        horizonColor: { value: new Three.Color(0x24272a) },
+        bottomColor: { value: new Three.Color(0x050506) },
+      },
+      vertexShader: `
+        varying vec3 vWorldPosition;
+        void main() {
+          vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+          vWorldPosition = worldPosition.xyz;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 topColor;
+        uniform vec3 horizonColor;
+        uniform vec3 bottomColor;
+        varying vec3 vWorldPosition;
+        void main() {
+          float h = normalize(vWorldPosition).y;
+          float upper = smoothstep(0.0, 0.82, h);
+          float lower = smoothstep(-0.86, 0.08, h);
+          vec3 lowBlend = mix(bottomColor, horizonColor, lower);
+          vec3 color = mix(lowBlend, topColor, upper);
+          gl_FragColor = vec4(color, 1.0);
+        }
+      `,
+      depthWrite: false,
+      fog: false,
+      side: Three.BackSide,
+    }),
+  );
   sky.name = "training-run-dark-grayscale-sky";
+  sky.renderOrder = -1000;
   group.add(sky);
 
   const sunDisc = new Three.Sprite(
@@ -2078,15 +2105,15 @@ export const createTrainingRunPerspectiveAtmosphere = (): Three.Group => {
   sunDisc.scale.setScalar(28);
   group.add(sunDisc);
 
-  const ambient = new Three.AmbientLight(0xd8d8d8, 0.42);
+  const ambient = new Three.AmbientLight(0xcfcfcf, 0.28);
   ambient.name = "training-run-low-ambient-fill";
   group.add(ambient);
 
-  const hemisphere = new Three.HemisphereLight(0xf4f4f4, 0x050505, 0.82);
+  const hemisphere = new Three.HemisphereLight(0xf4f4f4, 0x050505, 0.54);
   hemisphere.name = "training-run-grayscale-hemisphere";
   group.add(hemisphere);
 
-  const sunLight = new Three.DirectionalLight(0xffffff, 5.2);
+  const sunLight = new Three.DirectionalLight(0xffffff, 4.1);
   sunLight.name = "training-run-shadow-sun";
   sunLight.position.copy(sunDirection).multiplyScalar(90);
   sunLight.castShadow = true;
@@ -2103,7 +2130,7 @@ export const createTrainingRunPerspectiveAtmosphere = (): Three.Group => {
   group.add(sunLight);
   group.add(sunLight.target);
 
-  const fill = new Three.DirectionalLight(0xb8b8b8, 0.36);
+  const fill = new Three.DirectionalLight(0xb8b8b8, 0.22);
   fill.name = "training-run-soft-opposite-fill";
   fill.position.set(-28, 18, 38);
   group.add(fill);
