@@ -82,6 +82,8 @@ import {
   maskMaterialProps,
   mergeBufferGeometries,
   MokshaPlaneMaterial,
+  cycleTrainingRunTarget,
+  orderTrainingRunTargetsByDistance,
   pmndrsMokshaSourceRefs,
   pmndrsAdvancedMaterialPrimitiveSourceRefs,
   pmndrsAssetPrimitiveSourceRefs,
@@ -1543,7 +1545,62 @@ describe("training run visualization", () => {
       statusChart: "visible",
     });
     expect(resolved.stageNodeGlyph).toBe("orb");
+    expect(resolved.keyboardTargeting).toEqual({
+      enabled: false,
+      maxTargets: 24,
+    });
     expect(resolved.walkController).toEqual({});
+  });
+
+  test("cycles keyboard targets from nearest to farthest", () => {
+    const selection = {
+      detail: "detail",
+      label: "label",
+      role: "run" as const,
+      status: "active" as const,
+    };
+    const targets = [
+      {
+        id: "far",
+        position: [5, 0, 0] as const,
+        selection: { ...selection, id: "far" },
+      },
+      {
+        id: "near",
+        position: [0.5, 0, 0] as const,
+        selection: { ...selection, id: "near" },
+      },
+      {
+        id: "middle",
+        position: [2, 0, 0] as const,
+        selection: { ...selection, id: "middle" },
+      },
+    ];
+
+    expect(
+      orderTrainingRunTargetsByDistance(targets, [0, 0, 0]).map(
+        (target) => target.id,
+      ),
+    ).toEqual(["near", "middle", "far"]);
+    expect(
+      cycleTrainingRunTarget(targets, {
+        currentId: null,
+        origin: [0, 0, 0],
+      })?.id,
+    ).toBe("near");
+    expect(
+      cycleTrainingRunTarget(targets, {
+        currentId: "near",
+        origin: [0, 0, 0],
+      })?.id,
+    ).toBe("middle");
+    expect(
+      cycleTrainingRunTarget(targets, {
+        currentId: "near",
+        direction: -1,
+        origin: [0, 0, 0],
+      })?.id,
+    ).toBe("far");
   });
 
   test("resolves perspective walk controller options", () => {

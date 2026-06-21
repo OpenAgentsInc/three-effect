@@ -239,6 +239,11 @@ export type TrainingRunPointerClickDecisionInput = Readonly<{
   walkControllerEnabled: boolean;
 }>;
 
+export type TrainingRunKeyboardTargeting = Readonly<{
+  enabled?: boolean;
+  maxTargets?: number;
+}>;
+
 export type TrainingRunEntitySelection = Pick<
   TrainingRunEntityDefinition,
   "id" | "label" | "position" | "status"
@@ -265,6 +270,8 @@ export type TrainingRunVisualizationOptions = Readonly<{
   sceneChrome?: TrainingRunSceneChrome;
   /** Control how much text is drawn into the world itself. */
   worldLabelDensity?: TrainingRunWorldLabelDensity;
+  /** Let Tab cycle through nearby in-world nodes/entities instead of HTML focus. */
+  keyboardTargeting?: TrainingRunKeyboardTargeting;
   thirdPersonController?: ThreePlayerControllerOptions;
   walkController?: WasdMouseLookControllerOptions;
   onNodeClick?: (node: TrainingRunNodeSelection) => void;
@@ -329,6 +336,7 @@ export type ResolvedTrainingRunVisualizationOptions = Readonly<{
   stageNodeGlyph: TrainingRunStageNodeGlyph;
   sceneChrome: Required<TrainingRunSceneChrome>;
   worldLabelDensity: TrainingRunWorldLabelDensity;
+  keyboardTargeting: Required<TrainingRunKeyboardTargeting>;
   thirdPersonController: ThreePlayerControllerOptions;
   walkController: WasdMouseLookControllerOptions;
   onNodeClick?: (node: TrainingRunNodeSelection) => void;
@@ -338,6 +346,7 @@ export type ResolvedTrainingRunVisualizationOptions = Readonly<{
 export type TrainingRunVisualizationHandle = Readonly<{
   element: HTMLElement;
   canvas: HTMLCanvasElement;
+  selectNextTarget: (direction?: 1 | -1) => TrainingRunNodeSelection | undefined;
   resize: Effect.Effect<void>;
   dispose: Effect.Effect<void>;
 }>;
@@ -555,6 +564,10 @@ export const defaultTrainingRunVisualizationOptions: ResolvedTrainingRunVisualiz
       statusChart: "visible",
     },
     worldLabelDensity: "full",
+    keyboardTargeting: {
+      enabled: false,
+      maxTargets: 24,
+    },
     thirdPersonController: {},
     walkController: {},
     pulseSpeed: 0.17,
@@ -572,6 +585,13 @@ const resolveTrainingRunSceneChrome = (
 ): Required<TrainingRunSceneChrome> => ({
   ...defaultTrainingRunVisualizationOptions.sceneChrome,
   ...(chrome ?? {}),
+});
+
+const resolveTrainingRunKeyboardTargeting = (
+  targeting: TrainingRunKeyboardTargeting | undefined,
+): Required<TrainingRunKeyboardTargeting> => ({
+  ...defaultTrainingRunVisualizationOptions.keyboardTargeting,
+  ...(targeting ?? {}),
 });
 
 export const resolveTrainingRunVisualizationOptions = (
@@ -604,6 +624,9 @@ export const resolveTrainingRunVisualizationOptions = (
     worldLabelDensity:
       options.worldLabelDensity ??
       defaultTrainingRunVisualizationOptions.worldLabelDensity,
+    keyboardTargeting: resolveTrainingRunKeyboardTargeting(
+      options.keyboardTargeting,
+    ),
     thirdPersonController: {
       ...defaultTrainingRunVisualizationOptions.thirdPersonController,
       ...(options.thirdPersonController ?? {}),
@@ -1063,6 +1086,59 @@ const nodeSelection = (
   role: node.role,
   status: node.status,
 });
+
+export type TrainingRunTargetCandidate = Readonly<{
+  id: string;
+  position: TrainingRunVector;
+  selection: TrainingRunNodeSelection;
+}>;
+
+export const orderTrainingRunTargetsByDistance = (
+  targets: readonly TrainingRunTargetCandidate[],
+  origin: TrainingRunVector,
+  maxTargets = targets.length,
+): readonly TrainingRunTargetCandidate[] => {
+  const originVector = vector(origin);
+  const limit =
+    Number.isFinite(maxTargets) && maxTargets > 0
+      ? Math.floor(maxTargets)
+      : targets.length;
+  return [...targets]
+    .sort((left, right) => {
+      const leftDistance = vector(left.position).distanceToSquared(originVector);
+      const rightDistance = vector(right.position).distanceToSquared(originVector);
+      if (leftDistance !== rightDistance) return leftDistance - rightDistance;
+      return left.id.localeCompare(right.id);
+    })
+    .slice(0, limit);
+};
+
+export const cycleTrainingRunTarget = (
+  targets: readonly TrainingRunTargetCandidate[],
+  input: Readonly<{
+    currentId?: string | null;
+    direction?: 1 | -1;
+    maxTargets?: number;
+    origin: TrainingRunVector;
+  }>,
+): TrainingRunTargetCandidate | undefined => {
+  const ordered = orderTrainingRunTargetsByDistance(
+    targets,
+    input.origin,
+    input.maxTargets,
+  );
+  if (ordered.length === 0) return undefined;
+  const direction = input.direction ?? 1;
+  const currentIndex =
+    input.currentId === undefined || input.currentId === null
+      ? -1
+      : ordered.findIndex((target) => target.id === input.currentId);
+  const nextIndex =
+    currentIndex === -1
+      ? 0
+      : (currentIndex + direction + ordered.length) % ordered.length;
+  return ordered[nextIndex];
+};
 
 /**
  * Map an arbitrary contributor/entity status string onto the bounded node
@@ -1824,6 +1900,7 @@ export const mountTrainingRunVisualization = (
       canvas.style.display = "block";
       canvas.style.width = "100%";
       canvas.style.height = "100%";
+      canvas.tabIndex = -1;
       element.replaceChildren(canvas);
 
       const renderer = new Three.WebGLRenderer({
@@ -1873,6 +1950,12 @@ export const mountTrainingRunVisualization = (
       const raycaster = new Three.Raycaster();
       const pointer = new Three.Vector2();
       const hitTargets = new HitTargetRegistry<TrainingRunNodeSelection>();
+      const keyboardTargets: Array<{
+        candidate: TrainingRunTargetCandidate;
+        color: number;
+        localPosition: TrainingRunVector;
+      }> = [];
+      let selectedTargetId: string | null = null;
 
       const grid = new Three.Group();
       for (let x = -4; x <= 4; x += 1) {
@@ -1921,8 +2004,100 @@ export const mountTrainingRunVisualization = (
           orbit.rotation.z = rotation;
           contributorOrbitGroup.add(orbit);
         }
-        root.add(contributorOrbitGroup);
+      root.add(contributorOrbitGroup);
       }
+
+      const selectedTargetHighlight = new Three.Group();
+      selectedTargetHighlight.visible = false;
+      const selectedTargetRing = makeRing(0.38, 0x8ef6ff, 0.72);
+      selectedTargetRing.position.z = -0.18;
+      const selectedTargetLine = makeLine(
+        [new Three.Vector3(0, 0, -0.14), new Three.Vector3(0, 0, 0.9)],
+        0x8ef6ff,
+        0.72,
+      );
+      const selectedTargetBeacon = makeCircle(0.085, 0x8ef6ff, 0.92);
+      selectedTargetBeacon.position.z = 0.9;
+      const selectedTargetLight = new Three.PointLight(0x8ef6ff, 1.65, 2.8);
+      selectedTargetLight.position.z = 1.04;
+      let selectedTargetLabel: Three.Sprite | undefined;
+      selectedTargetHighlight.add(
+        selectedTargetRing,
+        selectedTargetLine,
+        selectedTargetBeacon,
+        selectedTargetLight,
+      );
+      root.add(selectedTargetHighlight);
+
+      const registerKeyboardTarget = (
+        localPosition: TrainingRunVector,
+        selection: TrainingRunNodeSelection,
+        color: number,
+      ): void => {
+        const worldPosition = vector(localPosition);
+        root.updateMatrixWorld(true);
+        root.localToWorld(worldPosition);
+        keyboardTargets.push({
+          candidate: {
+            id: selection.id,
+            position: [worldPosition.x, worldPosition.y, worldPosition.z],
+            selection,
+          },
+          color,
+          localPosition,
+        });
+      };
+
+      const setSelectedTarget = (
+        target:
+          | Readonly<{
+              candidate: TrainingRunTargetCandidate;
+              color: number;
+              localPosition: TrainingRunVector;
+            }>
+          | undefined,
+      ): TrainingRunNodeSelection | undefined => {
+        if (target === undefined) {
+          selectedTargetId = null;
+          selectedTargetHighlight.visible = false;
+          return undefined;
+        }
+        selectedTargetId = target.candidate.id;
+        const [x, y, z] = target.localPosition;
+        selectedTargetHighlight.position.set(x, y, 0);
+        selectedTargetRing.material.color.setHex(target.color);
+        selectedTargetLine.material.color.setHex(target.color);
+        selectedTargetBeacon.material.color.setHex(target.color);
+        selectedTargetLight.color.setHex(target.color);
+        selectedTargetLine.geometry.dispose();
+        selectedTargetLine.geometry = lineGeometry([
+          new Three.Vector3(0, 0, -0.14),
+          new Three.Vector3(0, 0, Math.max(0.42, z + 0.5)),
+        ]);
+        selectedTargetBeacon.position.z = Math.max(0.38, z + 0.5);
+        selectedTargetLight.position.z = Math.max(0.55, z + 0.65);
+        if (selectedTargetLabel !== undefined) {
+          selectedTargetHighlight.remove(selectedTargetLabel);
+          disposeObject(selectedTargetLabel);
+        }
+        selectedTargetLabel = makeTextSprite(
+          compactWorldLabel(
+            `${target.candidate.selection.label} · ${target.candidate.selection.status}`,
+            26,
+          ),
+          {
+            color: "#ffffff",
+            fontSize: 18,
+            height: 80,
+            width: 420,
+            worldHeight: 0.18,
+          },
+        );
+        selectedTargetLabel.position.set(0, -0.3, Math.max(0.56, z + 0.62));
+        selectedTargetHighlight.add(selectedTargetLabel);
+        selectedTargetHighlight.visible = true;
+        return target.candidate.selection;
+      };
 
       const edges = createTrainingRunEdges(resolved.nodes);
       const nodeStatusById = new Map(
@@ -1992,7 +2167,9 @@ export const mountTrainingRunVisualization = (
       for (const node of resolved.nodes) {
         const group = new Three.Group();
         const statusColor = colorForStatus(node.status);
+        const selection = nodeSelection(node);
         group.position.copy(vector(node.position));
+        registerKeyboardTarget(node.position, selection, statusColor);
 
         const compactStageNode =
           resolved.stageNodeGlyph === "compact_gate" && node.role !== "run";
@@ -2005,7 +2182,7 @@ export const mountTrainingRunVisualization = (
             kind: "mesh",
             object: hitTarget,
             recursive: false,
-            value: nodeSelection(node),
+            value: selection,
           });
 
           group.add(
@@ -2063,7 +2240,7 @@ export const mountTrainingRunVisualization = (
           kind: "mesh",
           object: hitTarget,
           recursive: false,
-          value: nodeSelection(node),
+          value: selection,
         });
         group.add(makeCircle(radius * 0.32, statusColor, 0.95));
 
@@ -2400,6 +2577,8 @@ export const mountTrainingRunVisualization = (
         for (const entity of visualEntities) {
           const position = entityPositions.get(entity.id) ?? [0, 0, 0];
           const color = colorForEntityStatus(entity.status);
+          const selection = trainingRunEntitySelection(entity);
+          registerKeyboardTarget(position, selection, color);
           const ring = makeRing(0.14, color, 0.42);
           ring.position.set(position[0], position[1], position[2] - 0.02);
           root.add(ring);
@@ -2412,7 +2591,7 @@ export const mountTrainingRunVisualization = (
             kind: "mesh",
             object: hitTarget,
             recursive: false,
-            value: trainingRunEntitySelection(entity),
+            value: selection,
           });
 
           if (entity.label !== undefined) {
@@ -2535,6 +2714,41 @@ export const mountTrainingRunVisualization = (
         walkController?.controls.isLocked === true ||
         canvas.ownerDocument.pointerLockElement === canvas;
 
+      const targetOrigin = (): TrainingRunVector => {
+        if (threePlayerController !== undefined) {
+          const position = Effect.runSync(threePlayerController.getPosition);
+          return [position.x, position.y, position.z];
+        }
+        if (walkController !== undefined) {
+          const position = Effect.runSync(walkController.getPosition);
+          return [position.x, position.y, position.z];
+        }
+        return [camera.position.x, camera.position.y, camera.position.z];
+      };
+
+      const selectNextTarget = (
+        direction: 1 | -1 = 1,
+      ): TrainingRunNodeSelection | undefined => {
+        const target = cycleTrainingRunTarget(
+          keyboardTargets.map((entry) => entry.candidate),
+          {
+            currentId: selectedTargetId,
+            direction,
+            maxTargets: resolved.keyboardTargeting.maxTargets,
+            origin: targetOrigin(),
+          },
+        );
+        const entry =
+          target === undefined
+            ? undefined
+            : keyboardTargets.find(
+                (candidate) => candidate.candidate.id === target.id,
+              );
+        const selection = setSelectedTarget(entry);
+        if (selection !== undefined) resolved.onNodeClick?.(selection);
+        return selection;
+      };
+
       const selectionAtPointer = (
         event?: MouseEvent | PointerEvent,
       ): TrainingRunNodeSelection | undefined => {
@@ -2568,8 +2782,21 @@ export const mountTrainingRunVisualization = (
         selection: TrainingRunNodeSelection | undefined,
       ): boolean => {
         if (selection === undefined) return false;
+        setSelectedTarget(
+          keyboardTargets.find(
+            (target) => target.candidate.selection.id === selection.id,
+          ),
+        );
         resolved.onNodeClick?.(selection);
         return true;
+      };
+
+      const handleKeyDown = (event: KeyboardEvent) => {
+        if (!resolved.keyboardTargeting.enabled || event.key !== "Tab") return;
+        event.preventDefault();
+        event.stopPropagation();
+        selectNextTarget(event.shiftKey ? -1 : 1);
+        canvas.focus({ preventScroll: true });
       };
 
       const handlePointerDown = (event: PointerEvent) => {
@@ -2618,6 +2845,7 @@ export const mountTrainingRunVisualization = (
       canvas.addEventListener("pointerleave", handlePointerLeave);
       canvas.addEventListener("pointerdown", handlePointerDown);
       canvas.addEventListener("click", handleClick);
+      window.addEventListener("keydown", handleKeyDown, { capture: true });
 
       let disposed = false;
       let frame = 0;
@@ -2659,6 +2887,16 @@ export const mountTrainingRunVisualization = (
           pulse.phase += delta * resolved.pulseSpeed;
           pulse.mesh.position.copy(pointOnPoints(pulse.points, pulse.phase));
           pulse.mesh.position.z = 0.35;
+        }
+        if (selectedTargetHighlight.visible) {
+          const pulsePhase = 0.5 + Math.sin(time * 0.004) * 0.5;
+          selectedTargetRing.scale.setScalar(1 + pulsePhase * 0.16);
+          selectedTargetRing.material.opacity = 0.42 + pulsePhase * 0.3;
+          selectedTargetBeacon.material.opacity = 0.62 + pulsePhase * 0.3;
+          selectedTargetLight.intensity = 1.1 + pulsePhase * 0.8;
+          if (selectedTargetLabel !== undefined) {
+            selectedTargetLabel.lookAt(camera.position);
+          }
         }
         for (const beam of flowBeams) {
           beam.update(delta);
@@ -2708,6 +2946,7 @@ export const mountTrainingRunVisualization = (
         canvas.removeEventListener("pointerleave", handlePointerLeave);
         canvas.removeEventListener("pointerdown", handlePointerDown);
         canvas.removeEventListener("click", handleClick);
+        window.removeEventListener("keydown", handleKeyDown, { capture: true });
         if (walkController !== undefined) {
           Effect.runSync(walkController.dispose);
         }
@@ -2727,6 +2966,7 @@ export const mountTrainingRunVisualization = (
       return {
         element,
         canvas,
+        selectNextTarget,
         resize: Effect.sync(resize),
         dispose,
       };
