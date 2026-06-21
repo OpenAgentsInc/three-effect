@@ -217,6 +217,7 @@ import {
   thirdPersonIdealLookAt,
   thirdPersonIdealOffset,
   thirdPersonOrbitOffset,
+  updateCameraRelativeMmorpgCharacterController,
   updateMmorpgCharacterController,
   updateThirdPersonFollowCamera,
   wheelDeltaPixels,
@@ -2399,7 +2400,21 @@ describe("player controller primitives", () => {
       {},
     );
     expect(options.camera.smoothing).toBe(0);
+    expect(options.camera.lookAtOffset).toEqual([0, 0.9, 0]);
     expect(options.dragSensitivity).toBe(3);
+    const yawedTarget = {
+      position: new Three.Vector3(3, 0, -2),
+      quaternion: new Three.Quaternion().setFromAxisAngle(
+        new Three.Vector3(0, 1, 0),
+        Math.PI / 2,
+      ),
+    };
+    const lookAt = thirdPersonIdealLookAt(
+      yawedTarget,
+      resolveThirdPersonFollowCameraOptions(options.camera),
+    );
+    expect(lookAt.x).toBeCloseTo(3);
+    expect(lookAt.z).toBeCloseTo(-2);
     expect(threePlayerControllerLookDeltaToOrbitDelta(100 * options.dragSensitivity)).toBeCloseTo(
       -0.15,
     );
@@ -2490,6 +2505,39 @@ describe("player controller primitives", () => {
 
     const forward = mmorpgCharacterForwardDirection(object);
     expect(forward.length()).toBeCloseTo(1);
+  });
+
+  test("moves the harvested third-person character camera-relative on A/D", () => {
+    const object = new Three.Object3D();
+    const camera = new Three.PerspectiveCamera();
+    camera.position.set(0, 1, 6);
+    camera.lookAt(0, 1, 0);
+    const state = defaultMmorpgCharacterControllerState();
+    const keyboard = {
+      ...defaultWasdKeyboardState(),
+      right: true,
+    };
+    const snapshot = updateCameraRelativeMmorpgCharacterController(
+      object,
+      camera,
+      keyboard,
+      state,
+      0.1,
+      {
+        acceleration: 100,
+        turnSpeed: 100,
+        walkSpeed: 4,
+      },
+    );
+
+    expect(snapshot.action).toBe("walk");
+    expect(snapshot.velocity.x).toBeGreaterThan(0);
+    expect(Math.abs(snapshot.velocity.z)).toBeLessThan(0.000001);
+    expect(object.position.x).toBeGreaterThan(0);
+    expect(Math.abs(object.position.z)).toBeLessThan(0.000001);
+    const forward = mmorpgCharacterForwardDirection(object);
+    expect(forward.x).toBeGreaterThan(0.99);
+    expect(Math.abs(forward.z)).toBeLessThan(0.000001);
   });
 
   test("keeps default A/D third-person turning calm", () => {

@@ -300,7 +300,7 @@ export const defaultThreePlayerControllerOptions = (
   initialPosition: [0, 0, 4.4],
   camera: {
     offset: [0, 2.4, 4.8],
-    lookAtOffset: [0, 0.9, -1.5],
+    lookAtOffset: [0, 0.9, 0],
     smoothing: 0,
     minDistance: 2.2,
     maxDistance: 8.5,
@@ -443,10 +443,15 @@ const yawRight = new Three.Vector3();
 const thirdPersonOffset = new Three.Vector3();
 const thirdPersonLookAt = new Three.Vector3();
 const characterForward = new Three.Vector3();
+const characterCameraDirection = new Three.Vector3();
+const characterCameraLocalDirection = new Three.Vector3();
+const characterMovementDirection = new Three.Vector3();
+const characterFacingDirection = new Three.Vector3();
 const characterNextPosition = new Three.Vector3();
 const characterPreviousPosition = new Three.Vector3();
 const characterTurnAxis = new Three.Vector3(0, 1, 0);
 const characterTurnDelta = new Three.Quaternion();
+const characterTargetQuaternion = new Three.Quaternion();
 const mouseLookEuler = new Three.Euler(0, 0, 0, "YXZ");
 
 export const wasdMouseMovementFromEvent = (
@@ -780,6 +785,129 @@ export const updateMmorpgCharacterController = (
     object.updateMatrixWorld();
   }
 
+  return {
+    action: state.action,
+    blocked,
+    position: object.position.clone(),
+    quaternion: object.quaternion.clone(),
+    velocity: state.velocity.clone(),
+  };
+};
+
+export const updateCameraRelativeMmorpgCharacterController = (
+  object: Three.Object3D,
+  camera: Three.Camera,
+  keyboard: WasdKeyboardState,
+  state: MmorpgCharacterControllerState,
+  delta: number,
+  options: MmorpgCharacterControllerOptions = {},
+): MmorpgCharacterControllerSnapshot => {
+  const resolved = resolveMmorpgCharacterControllerOptions(options);
+  const safeDelta = Math.max(0, Math.min(delta, 0.1));
+  const forwardInput =
+    (keyboard.forward && !keyboard.backward ? 1 : 0) +
+    (keyboard.backward && !keyboard.forward ? -1 : 0);
+  const strafeInput =
+    (keyboard.right && !keyboard.left ? 1 : 0) +
+    (keyboard.left && !keyboard.right ? -1 : 0);
+
+  camera.getWorldDirection(characterCameraDirection);
+  characterCameraDirection.y = 0;
+  if (characterCameraDirection.lengthSq() <= 0.000001) {
+    characterCameraDirection.set(0, 0, -1);
+  }
+  characterCameraDirection.normalize();
+  const cameraYaw =
+    2 *
+      Math.PI -
+    (Math.atan2(characterCameraDirection.z, characterCameraDirection.x) +
+      Math.PI / 2);
+
+  characterCameraLocalDirection.set(strafeInput, 0, -forwardInput);
+  const hasInput = characterCameraLocalDirection.lengthSq() > 0;
+  if (hasInput) {
+    characterCameraLocalDirection.normalize();
+    characterMovementDirection
+      .copy(characterCameraLocalDirection)
+      .applyAxisAngle(characterTurnAxis, cameraYaw);
+  } else {
+    characterMovementDirection.set(0, 0, 0);
+  }
+
+  const targetAction: MmorpgCharacterAction = !hasInput
+    ? "idle"
+    : keyboard.sprint && keyboard.forward
+      ? "run"
+      : "walk";
+  const targetSpeed =
+    targetAction === "idle"
+      ? 0
+      : targetAction === "run"
+        ? resolved.runSpeed
+        : resolved.walkSpeed;
+  const backwardOnly = keyboard.backward && !keyboard.forward && strafeInput === 0;
+  const speedMultiplier = backwardOnly ? resolved.backwardSpeedMultiplier : 1;
+  const targetVelocityX =
+    hasInput ? characterMovementDirection.x * targetSpeed * speedMultiplier : 0;
+  const targetVelocityZ =
+    hasInput ? characterMovementDirection.z * targetSpeed * speedMultiplier : 0;
+  const factor =
+    hasInput
+      ? 1 - Math.exp(-resolved.acceleration * safeDelta)
+      : 1 - Math.exp(-resolved.damping * safeDelta);
+  state.velocity.x = Three.MathUtils.lerp(
+    state.velocity.x,
+    targetVelocityX,
+    factor,
+  );
+  state.velocity.z = Three.MathUtils.lerp(
+    state.velocity.z,
+    targetVelocityZ,
+    factor,
+  );
+  if (Math.abs(state.velocity.x) < 0.000001) state.velocity.x = 0;
+  if (Math.abs(state.velocity.z) < 0.000001) state.velocity.z = 0;
+  state.action = targetAction;
+
+  characterPreviousPosition.copy(object.position);
+  characterNextPosition.copy(object.position);
+  characterNextPosition.addScaledVector(state.velocity, safeDelta);
+  clampWasdPosition(characterNextPosition, resolved.bounds);
+  characterNextPosition.y = resolved.groundHeightAt(
+    characterNextPosition.x,
+    characterNextPosition.z,
+  );
+  const blocked = !resolved.canMoveTo(
+    characterNextPosition,
+    characterPreviousPosition,
+  );
+  if (blocked) {
+    state.velocity.x = 0;
+    state.velocity.z = 0;
+  } else {
+    object.position.copy(characterNextPosition);
+  }
+
+  if (hasInput) {
+    characterFacingDirection.copy(characterMovementDirection).normalize();
+    if (resolved.forwardAxis === "positiveZ") {
+      characterTargetQuaternion.setFromUnitVectors(
+        new Three.Vector3(0, 0, 1),
+        characterFacingDirection,
+      );
+    } else {
+      characterTargetQuaternion.setFromUnitVectors(
+        new Three.Vector3(0, 0, -1),
+        characterFacingDirection,
+      );
+    }
+    object.quaternion.slerp(
+      characterTargetQuaternion,
+      Math.min(1, resolved.turnSpeed * safeDelta),
+    );
+  }
+
+  object.updateMatrixWorld();
   return {
     action: state.action,
     blocked,
@@ -1248,8 +1376,9 @@ export const createThreePlayerController = (
             }
             verticalVelocity += resolved.gravity * safeDelta;
             const beforeY = target.position.y;
-            const snapshot = updateMmorpgCharacterController(
+            const snapshot = updateCameraRelativeMmorpgCharacterController(
               target,
+              camera,
               keyboard,
               characterState,
               safeDelta,
