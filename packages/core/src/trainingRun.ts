@@ -27,6 +27,10 @@ import {
   type SceneResourceScope,
 } from "./resourceScopePrimitives";
 import {
+  createSceneNodeReconciler,
+  type SceneNodeDescriptor,
+} from "./sceneNodeReconcilerPrimitives";
+import {
   HitTargetRegistry,
   raycastHitTargetRegistry,
 } from "./spatialPrimitives";
@@ -3539,7 +3543,6 @@ export const mountTrainingRunVisualization = (
         hitTarget: Three.Object3D;
         item: TrainingRunWorldItemDefinition;
         nodeTarget: TrainingRunNodeSelection;
-        scope: SceneResourceScope;
         selection: TrainingRunWorldItemSelection;
         signature: string;
         worldPosition: Three.Vector3;
@@ -3565,20 +3568,30 @@ export const mountTrainingRunVisualization = (
           yaw: item.yaw,
         });
 
-      const disposeWorldItem = (itemId: string): void => {
-        const runtime = worldItemTargets.get(itemId);
-        if (runtime === undefined) return;
-        worldItemTargets.delete(itemId);
-        runtime.scope.dispose();
+      const worldItemDescriptor = (
+        item: TrainingRunWorldItemDefinition,
+      ): SceneNodeDescriptor<TrainingRunWorldItemKind, TrainingRunWorldItemDefinition> => ({
+        id: item.id,
+        kind: item.kind,
+        props: item,
+      });
+
+      const disposeWorldItemRuntime = (runtime: WorldItemRuntime): void => {
+        worldItemTargets.delete(runtime.item.id);
+        hitTargets.remove(`${worldItemTargetPrefix}${runtime.item.id}`);
+        removeKeyboardTargets((id) => id === runtime.nodeTarget.id);
+        if (selectedTargetId === runtime.nodeTarget.id) {
+          setSelectedTarget(undefined);
+        }
+        disposeObject(runtime.group);
       };
 
       const createWorldItem = (
         item: TrainingRunWorldItemDefinition,
+        _scope: SceneResourceScope,
       ): WorldItemRuntime | undefined => {
         if (item.kind !== "bulletin_board") return undefined;
-        const scope = sceneScope.child();
         const group = makeTrainingRunBulletinBoard(item);
-        root.add(group);
         const selection = trainingRunWorldItemSelection(item);
         const nodeTarget = trainingRunWorldItemNodeSelection(item);
         const color = colorForStatus(item.status ?? "active");
@@ -3600,48 +3613,56 @@ export const mountTrainingRunVisualization = (
           recursive: false,
           value: nodeTarget,
         });
-        scope.add(() => {
-          hitTargets.remove(`${worldItemTargetPrefix}${item.id}`);
-          removeKeyboardTargets((id) => id === `${worldItemTargetPrefix}${item.id}`);
-          if (selectedTargetId === `${worldItemTargetPrefix}${item.id}`) {
-            setSelectedTarget(undefined);
-          }
-          group.removeFromParent();
-          disposeObject(group);
-        });
-        return {
+        const runtime = {
           group,
           hitTarget,
           item,
           nodeTarget,
-          scope,
           selection,
           signature: worldItemSignature(item),
           worldPosition,
         };
+        worldItemTargets.set(item.id, runtime);
+        return runtime;
       };
+
+      const worldItemReconciler = createSceneNodeReconciler({
+        root,
+        scope: sceneScope,
+        catalogue: {
+          bulletin_board: {
+            create: (descriptor, scope) => {
+              const item =
+                descriptor.props as TrainingRunWorldItemDefinition;
+              const runtime = createWorldItem(item, scope);
+              if (runtime === undefined) {
+                throw new Error(`Unsupported world item kind: ${item.kind}`);
+              }
+              return {
+                object: runtime.group,
+                state: runtime,
+                dispose: () => disposeWorldItemRuntime(runtime),
+              };
+            },
+            update: (runtime, descriptor) => {
+              const item =
+                descriptor.props as TrainingRunWorldItemDefinition;
+              const current = runtime.state as WorldItemRuntime | undefined;
+              return current?.signature === worldItemSignature(item);
+            },
+          },
+        },
+      });
 
       const updateWorldItems = (
         items: readonly TrainingRunWorldItemDefinition[],
       ): void => {
         if (disposed) return;
-        const bulletinItems = items.filter(
-          (item) => item.kind === "bulletin_board",
+        worldItemReconciler.update(
+          items
+            .filter((item) => item.kind === "bulletin_board")
+            .map(worldItemDescriptor),
         );
-        const activeIds = new Set(bulletinItems.map((item) => item.id));
-        for (const itemId of [...worldItemTargets.keys()]) {
-          if (!activeIds.has(itemId)) disposeWorldItem(itemId);
-        }
-        for (const item of bulletinItems) {
-          const signature = worldItemSignature(item);
-          const existing = worldItemTargets.get(item.id);
-          if (existing?.signature === signature) continue;
-          if (existing !== undefined) disposeWorldItem(item.id);
-          const runtime = createWorldItem(item);
-          if (runtime !== undefined) {
-            worldItemTargets.set(item.id, runtime);
-          }
-        }
       };
 
       updateWorldItems(resolved.worldItems);
@@ -4768,9 +4789,7 @@ export const mountTrainingRunVisualization = (
         for (const avatarId of [...remoteAvatars.keys()]) {
           disposeRemoteAvatar(avatarId);
         }
-        for (const itemId of [...worldItemTargets.keys()]) {
-          disposeWorldItem(itemId);
-        }
+        worldItemReconciler.dispose();
         for (const label of entityLabels) label.dispose();
         for (const slot of burstSlots) slot.handle.dispose();
         for (const disposeBeam of beamDisposers) disposeBeam();

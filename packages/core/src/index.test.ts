@@ -48,6 +48,7 @@ import {
   createRandomizedLightRig,
   createReflector,
   createSceneResourceScope,
+  createSceneNodeReconciler,
   createRefractionMaterial,
   createRoundedBoxGeometry,
   createShaderMaterial,
@@ -841,6 +842,168 @@ describe("scene resource scope", () => {
     target.dispatchEvent(new Event("ping"));
 
     expect(count).toBe(1);
+  });
+});
+
+describe("scene node reconciler", () => {
+  test("retains keyed objects while applying updates and descriptor order", () => {
+    const root = new Three.Group();
+    const calls: string[] = [];
+    const reconciler = createSceneNodeReconciler({
+      root,
+      catalogue: {
+        marker: {
+          create: (descriptor) => {
+            const object = new Three.Group();
+            const props = descriptor.props as { label: string };
+            object.name = props.label;
+            calls.push(`create:${descriptor.id}:${props.label}`);
+            return { object };
+          },
+          update: (runtime, descriptor) => {
+            const props = descriptor.props as { label: string };
+            runtime.object.name = props.label;
+            calls.push(`update:${runtime.id}:${props.label}`);
+          },
+        },
+      },
+    });
+
+    reconciler.update([
+      { id: "a", kind: "marker", props: { label: "alpha" } },
+      { id: "b", kind: "marker", props: { label: "beta" } },
+    ]);
+    const firstA = reconciler.get("a");
+    const firstB = reconciler.get("b");
+    expect(firstA).toBeDefined();
+    expect(firstB).toBeDefined();
+    const firstAObject = firstA!.object;
+    const firstBObject = firstB!.object;
+
+    reconciler.update([
+      { id: "b", kind: "marker", props: { label: "beta-live" } },
+      { id: "a", kind: "marker", props: { label: "alpha-live" } },
+    ]);
+
+    expect(reconciler.get("a")?.object).toBe(firstAObject);
+    expect(reconciler.get("b")?.object).toBe(firstBObject);
+    expect(root.children.map(child => child.name)).toEqual([
+      "beta-live",
+      "alpha-live",
+    ]);
+    expect(calls).toEqual([
+      "create:a:alpha",
+      "create:b:beta",
+      "update:b:beta-live",
+      "update:a:alpha-live",
+    ]);
+  });
+
+  test("recreates only the rejected keyed node and runs its finalizers once", () => {
+    const root = new Three.Group();
+    const calls: string[] = [];
+    const reconciler = createSceneNodeReconciler({
+      root,
+      catalogue: {
+        marker: {
+          create: (descriptor, scope) => {
+            const props = descriptor.props as { version: number };
+            const object = new Three.Group();
+            object.name = `${descriptor.id}:${props.version}`;
+            scope.add(() => calls.push(`scoped:${descriptor.id}:${props.version}`));
+            calls.push(`create:${descriptor.id}:${props.version}`);
+            return {
+              object,
+              dispose: () =>
+                calls.push(`dispose:${descriptor.id}:${props.version}`),
+            };
+          },
+          update: (_runtime, descriptor) => {
+            const props = descriptor.props as { recreate?: boolean };
+            return props.recreate === true ? false : true;
+          },
+        },
+      },
+    });
+
+    reconciler.update([
+      { id: "a", kind: "marker", props: { version: 1 } },
+      { id: "b", kind: "marker", props: { version: 1 } },
+    ]);
+    const firstA = reconciler.get("a");
+    const firstB = reconciler.get("b");
+    expect(firstA).toBeDefined();
+    expect(firstB).toBeDefined();
+    const firstAObject = firstA!.object;
+    const firstBObject = firstB!.object;
+
+    reconciler.update([
+      { id: "a", kind: "marker", props: { recreate: true, version: 2 } },
+      { id: "b", kind: "marker", props: { version: 1 } },
+    ]);
+
+    expect(reconciler.get("a")?.object).not.toBe(firstAObject);
+    expect(reconciler.get("b")?.object).toBe(firstBObject);
+    expect(root.children.map(child => child.name)).toEqual(["a:2", "b:1"]);
+
+    reconciler.dispose();
+    reconciler.dispose();
+
+    expect(calls).toEqual([
+      "create:a:1",
+      "create:b:1",
+      "dispose:a:1",
+      "scoped:a:1",
+      "create:a:2",
+      "dispose:a:2",
+      "scoped:a:2",
+      "dispose:b:1",
+      "scoped:b:1",
+    ]);
+  });
+
+  test("disposes child descriptor scopes before their parent", () => {
+    const root = new Three.Group();
+    const calls: string[] = [];
+    const reconciler = createSceneNodeReconciler({
+      root,
+      catalogue: {
+        parent: {
+          create: (descriptor) => {
+            const object = new Three.Group();
+            object.name = descriptor.id;
+            return {
+              object,
+              dispose: () => calls.push(`dispose-parent:${descriptor.id}`),
+            };
+          },
+        },
+        leaf: {
+          create: (descriptor) => {
+            const object = new Three.Group();
+            object.name = descriptor.id;
+            return {
+              object,
+              dispose: () => calls.push(`dispose-leaf:${descriptor.id}`),
+            };
+          },
+        },
+      },
+    });
+
+    reconciler.update([
+      {
+        id: "parent",
+        kind: "parent",
+        props: {},
+        children: [{ id: "leaf", kind: "leaf", props: {} }],
+      },
+    ]);
+
+    reconciler.update([]);
+
+    expect(calls).toEqual(["dispose-leaf:leaf", "dispose-parent:parent"]);
+    expect(root.children).toEqual([]);
   });
 });
 
