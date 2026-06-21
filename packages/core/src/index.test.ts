@@ -2533,11 +2533,32 @@ describe("training run visualization", () => {
 
     const box = new Three.Box3().setFromObject(board);
     const size = box.getSize(new Three.Vector3());
+    const colors = new Set<number>();
+    board.traverse((object) => {
+      if (!(object instanceof Three.Mesh)) return;
+      const materials = Array.isArray(object.material)
+        ? object.material
+        : [object.material];
+      for (const material of materials) {
+        const maybeColored = material as Three.Material & {
+          color?: Three.Color;
+        };
+        if (maybeColored.color !== undefined) {
+          colors.add(maybeColored.color.getHex());
+        }
+      }
+    });
 
     expect(size.x).toBeGreaterThan(3);
     expect(size.z).toBeGreaterThan(2);
     expect(box.min.z).toBeGreaterThanOrEqual(-0.001);
     expect(board.children.length).toBeGreaterThan(9);
+    expect([...colors]).toEqual(
+      expect.arrayContaining([0x050608, 0x111315, 0x24272c, 0x2f343a, 0xe5e7eb]),
+    );
+    expect([...colors]).toEqual(
+      expect.not.arrayContaining([0x5a3d22, 0x6a4c2e, 0x8a6b45]),
+    );
   });
 
   test("selects scene hits before requesting perspective-walk pointer lock", () => {

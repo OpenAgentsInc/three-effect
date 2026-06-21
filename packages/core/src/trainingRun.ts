@@ -1856,7 +1856,6 @@ export const makeTrainingRunBulletinBoard = (
   const height = 1.64;
   const thickness = 0.14;
   const postHeight = 2.18;
-  const statusColor = colorForStatus(item.status ?? "active");
   const yaw = typeof item.yaw === "number" && Number.isFinite(item.yaw)
     ? item.yaw
     : 0;
@@ -1866,10 +1865,10 @@ export const makeTrainingRunBulletinBoard = (
   group.name = `training-run-world-item:${item.id}`;
 
   const postMaterial = new Three.MeshStandardMaterial({
-    color: 0x8a6b45,
-    emissive: 0x181008,
-    metalness: 0.02,
-    roughness: 0.76,
+    color: 0x24272c,
+    emissive: 0x060708,
+    metalness: 0.08,
+    roughness: 0.72,
   });
   for (const x of [-width / 2 + 0.22, width / 2 - 0.22]) {
     const post = new Three.Mesh(
@@ -1883,10 +1882,10 @@ export const makeTrainingRunBulletinBoard = (
   const base = new Three.Mesh(
     new Three.BoxGeometry(width + 0.34, 0.34, 0.12),
     new Three.MeshStandardMaterial({
-      color: 0x6a4c2e,
-      emissive: 0x100a05,
-      metalness: 0.02,
-      roughness: 0.8,
+      color: 0x111315,
+      emissive: 0x030405,
+      metalness: 0.08,
+      roughness: 0.78,
     }),
   );
   base.position.set(0, 0.04, 0.06);
@@ -1897,10 +1896,10 @@ export const makeTrainingRunBulletinBoard = (
   const board = new Three.Mesh(
     new Three.BoxGeometry(width, thickness, height),
     new Three.MeshStandardMaterial({
-      color: 0x5a3d22,
-      emissive: 0x241408,
-      metalness: 0.04,
-      roughness: 0.66,
+      color: 0x2f343a,
+      emissive: 0x07090b,
+      metalness: 0.12,
+      roughness: 0.62,
     }),
   );
   board.position.set(0, 0, 1.39);
@@ -1911,7 +1910,7 @@ export const makeTrainingRunBulletinBoard = (
   const face = new Three.Mesh(
     new Three.PlaneGeometry(width - 0.24, height - 0.22),
     new Three.MeshBasicMaterial({
-      color: 0x211a13,
+      color: 0x050608,
       opacity: 0.98,
       transparent: true,
       side: Three.DoubleSide,
@@ -1924,7 +1923,7 @@ export const makeTrainingRunBulletinBoard = (
   const headerBacking = new Three.Mesh(
     new Three.PlaneGeometry(width - 0.36, 0.36),
     new Three.MeshBasicMaterial({
-      color: 0x0e1116,
+      color: 0x111418,
       opacity: 0.96,
       transparent: true,
       side: Three.DoubleSide,
@@ -1936,7 +1935,7 @@ export const makeTrainingRunBulletinBoard = (
 
   const accent = new Three.Mesh(
     new Three.BoxGeometry(width - 0.34, 0.018, 0.05),
-    new Three.MeshBasicMaterial({ color: statusColor }),
+    new Three.MeshBasicMaterial({ color: 0xe5e7eb }),
   );
   accent.position.set(0, -thickness / 2 - 0.018, 1.73);
   group.add(accent);
@@ -1977,7 +1976,7 @@ export const makeTrainingRunBulletinBoard = (
 
   const footer = createTextLabel({
     text: "walk up for details",
-    color: "#8ef6ff",
+    color: "#d1d5db",
     fontSize: 34,
     worldHeight: 0.12,
     billboard: false,
@@ -1988,7 +1987,7 @@ export const makeTrainingRunBulletinBoard = (
   footer.object3D.position.set(0, -thickness / 2 - 0.026, 0.82);
   group.add(footer.object3D);
 
-  const glow = makeRing(width * 0.56, statusColor, 0.34);
+  const glow = makeRing(width * 0.56, 0xe5e7eb, 0.28);
   glow.scale.y = 0.24;
   glow.position.z = 0.025;
   group.add(glow);
