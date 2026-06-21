@@ -47,6 +47,7 @@ import {
   createPointsFromAttributes,
   createRandomizedLightRig,
   createReflector,
+  createSceneResourceScope,
   createRefractionMaterial,
   createRoundedBoxGeometry,
   createShaderMaterial,
@@ -162,6 +163,7 @@ import {
   useMaskMaterialProps,
   viewportAtDistance,
   applyFirstPersonControlsOptions,
+  addScopedEventListener,
   applyFlyControlsOptions,
   applyTrackballControlsOptions,
   applyTransformControlsOptions,
@@ -782,6 +784,63 @@ describe("spatial primitives", () => {
     expect(a).toBeDefined();
     expect(b).toBeDefined();
     expect(a!.distanceTo(b!)).toBeGreaterThanOrEqual(1.99);
+  });
+});
+
+describe("scene resource scope", () => {
+  test("disposes finalizers once in reverse ownership order", () => {
+    const scope = createSceneResourceScope();
+    const calls: string[] = [];
+
+    scope.add(() => calls.push("root"));
+    scope.add(() => calls.push("child"));
+
+    expect(scope.size()).toBe(2);
+    scope.dispose();
+    scope.dispose();
+
+    expect(scope.disposed()).toBe(true);
+    expect(calls).toEqual(["child", "root"]);
+    expect(scope.size()).toBe(0);
+  });
+
+  test("unregisters finalizers and disposes child scopes with the parent", () => {
+    const scope = createSceneResourceScope();
+    const child = scope.child();
+    const calls: string[] = [];
+    const unregister = scope.add(() => calls.push("removed"));
+    child.add(() => calls.push("child"));
+    unregister();
+
+    scope.dispose();
+
+    expect(calls).toEqual(["child"]);
+    expect(child.disposed()).toBe(true);
+  });
+
+  test("runs finalizers added after disposal immediately", () => {
+    const scope = createSceneResourceScope();
+    const calls: string[] = [];
+
+    scope.dispose();
+    scope.add(() => calls.push("late"));
+
+    expect(calls).toEqual(["late"]);
+  });
+
+  test("scopes DOM event listener ownership", () => {
+    const scope = createSceneResourceScope();
+    const target = new EventTarget();
+    let count = 0;
+    addScopedEventListener(scope, target, "ping", () => {
+      count += 1;
+    });
+
+    target.dispatchEvent(new Event("ping"));
+    scope.dispose();
+    target.dispatchEvent(new Event("ping"));
+
+    expect(count).toBe(1);
   });
 });
 

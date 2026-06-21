@@ -22,6 +22,11 @@ import {
 } from "./playerControllerPrimitives";
 import { bindEntityPresence } from "./presenceBindingPrimitives";
 import {
+  addScopedEventListener,
+  createSceneResourceScope,
+  type SceneResourceScope,
+} from "./resourceScopePrimitives";
+import {
   HitTargetRegistry,
   raycastHitTargetRegistry,
 } from "./spatialPrimitives";
@@ -3086,6 +3091,7 @@ export const mountTrainingRunVisualization = (
   Effect.try({
     try: () => {
       let resolved = resolveTrainingRunVisualizationOptions(options);
+      const sceneScope = createSceneResourceScope();
       const animateStructuralEdges =
         resolved.motionPolicy.structuralEdges === "animated";
       const animateAmbient = resolved.motionPolicy.ambient === "animated";
@@ -3138,6 +3144,11 @@ export const mountTrainingRunVisualization = (
       );
 
       const scene = new Three.Scene();
+      sceneScope.add(() => {
+        disposeObject(scene);
+        renderer.dispose();
+        canvas.remove();
+      });
       if (perspectiveWalk) {
         scene.fog = new Three.FogExp2(0x070808, 0.0048);
         scene.add(createTrainingRunPerspectiveAtmosphere());
@@ -3528,6 +3539,7 @@ export const mountTrainingRunVisualization = (
         hitTarget: Three.Object3D;
         item: TrainingRunWorldItemDefinition;
         nodeTarget: TrainingRunNodeSelection;
+        scope: SceneResourceScope;
         selection: TrainingRunWorldItemSelection;
         signature: string;
         worldPosition: Three.Vector3;
@@ -3557,19 +3569,14 @@ export const mountTrainingRunVisualization = (
         const runtime = worldItemTargets.get(itemId);
         if (runtime === undefined) return;
         worldItemTargets.delete(itemId);
-        hitTargets.remove(`${worldItemTargetPrefix}${itemId}`);
-        removeKeyboardTargets((id) => id === `${worldItemTargetPrefix}${itemId}`);
-        if (selectedTargetId === `${worldItemTargetPrefix}${itemId}`) {
-          setSelectedTarget(undefined);
-        }
-        runtime.group.removeFromParent();
-        disposeObject(runtime.group);
+        runtime.scope.dispose();
       };
 
       const createWorldItem = (
         item: TrainingRunWorldItemDefinition,
       ): WorldItemRuntime | undefined => {
         if (item.kind !== "bulletin_board") return undefined;
+        const scope = sceneScope.child();
         const group = makeTrainingRunBulletinBoard(item);
         root.add(group);
         const selection = trainingRunWorldItemSelection(item);
@@ -3593,11 +3600,21 @@ export const mountTrainingRunVisualization = (
           recursive: false,
           value: nodeTarget,
         });
+        scope.add(() => {
+          hitTargets.remove(`${worldItemTargetPrefix}${item.id}`);
+          removeKeyboardTargets((id) => id === `${worldItemTargetPrefix}${item.id}`);
+          if (selectedTargetId === `${worldItemTargetPrefix}${item.id}`) {
+            setSelectedTarget(undefined);
+          }
+          group.removeFromParent();
+          disposeObject(group);
+        });
         return {
           group,
           hitTarget,
           item,
           nodeTarget,
+          scope,
           selection,
           signature: worldItemSignature(item),
           worldPosition,
@@ -4333,6 +4350,11 @@ export const mountTrainingRunVisualization = (
             },
           }),
         );
+        sceneScope.add(() => {
+          if (walkController !== undefined) {
+            Effect.runSync(walkController.dispose);
+          }
+        });
       }
       if (
         perspectiveWalk &&
@@ -4362,6 +4384,11 @@ export const mountTrainingRunVisualization = (
             },
           }),
         );
+        sceneScope.add(() => {
+          if (threePlayerController !== undefined) {
+            Effect.runSync(threePlayerController.dispose);
+          }
+        });
       }
 
       const pointerLockActive = (): boolean =>
@@ -4609,11 +4636,32 @@ export const mountTrainingRunVisualization = (
         }
       };
 
-      canvas.addEventListener("pointermove", handlePointerMove);
-      canvas.addEventListener("pointerleave", handlePointerLeave);
-      canvas.addEventListener("pointerdown", handlePointerDown);
-      canvas.addEventListener("click", handleClick);
-      window.addEventListener("keydown", handleKeyDown, { capture: true });
+      addScopedEventListener(
+        sceneScope,
+        canvas,
+        "pointermove",
+        handlePointerMove as EventListener,
+      );
+      addScopedEventListener(sceneScope, canvas, "pointerleave", handlePointerLeave);
+      addScopedEventListener(
+        sceneScope,
+        canvas,
+        "pointerdown",
+        handlePointerDown as EventListener,
+      );
+      addScopedEventListener(
+        sceneScope,
+        canvas,
+        "click",
+        handleClick as EventListener,
+      );
+      addScopedEventListener(
+        sceneScope,
+        window,
+        "keydown",
+        handleKeyDown as EventListener,
+        { capture: true },
+      );
 
       let frame = 0;
       let lastTime = 0;
@@ -4703,6 +4751,9 @@ export const mountTrainingRunVisualization = (
         typeof ResizeObserver === "undefined"
           ? null
           : new ResizeObserver(() => resize());
+      if (observer !== null) {
+        sceneScope.add(() => observer.disconnect());
+      }
 
       resize();
       observer?.observe(element);
@@ -4714,18 +4765,6 @@ export const mountTrainingRunVisualization = (
         if (disposed) return;
         disposed = true;
         cancelAnimationFrame(frame);
-        observer?.disconnect();
-        canvas.removeEventListener("pointermove", handlePointerMove);
-        canvas.removeEventListener("pointerleave", handlePointerLeave);
-        canvas.removeEventListener("pointerdown", handlePointerDown);
-        canvas.removeEventListener("click", handleClick);
-        window.removeEventListener("keydown", handleKeyDown, { capture: true });
-        if (walkController !== undefined) {
-          Effect.runSync(walkController.dispose);
-        }
-        if (threePlayerController !== undefined) {
-          Effect.runSync(threePlayerController.dispose);
-        }
         for (const avatarId of [...remoteAvatars.keys()]) {
           disposeRemoteAvatar(avatarId);
         }
@@ -4737,9 +4776,7 @@ export const mountTrainingRunVisualization = (
         for (const disposeBeam of beamDisposers) disposeBeam();
         entityPresence?.dispose();
         entityPool?.dispose();
-        disposeObject(scene);
-        renderer.dispose();
-        canvas.remove();
+        sceneScope.dispose();
       });
 
       return {
