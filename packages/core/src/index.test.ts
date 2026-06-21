@@ -1754,8 +1754,13 @@ describe("training run visualization", () => {
     expect(metaverseStreetLayout.tassadarLotX).toBeGreaterThan(
       metaverseStreetLayout.shoulderX,
     );
-    expect(parcels[0]).toMatchObject({ x: -7.1, y: 0, z: -27.3 });
-    expect(parcels[1]).toMatchObject({ x: 7.1, y: 0, z: -27.3 });
+    expect(metaverseStreetLayout.parcelX).toBeGreaterThan(
+      metaverseStreetLayout.tassadarLotX +
+        metaverseStreetLayout.tassadarSceneScale * 3,
+    );
+    expect(metaverseStreetLayout.tassadarSceneScale).toBeGreaterThan(1.2);
+    expect(parcels[0]).toMatchObject({ x: -13.6, y: 0, z: -27.3 });
+    expect(parcels[1]).toMatchObject({ x: 13.6, y: 0, z: -27.3 });
     expect(parcels[2]?.z).toBeGreaterThan(parcels[0]!.z);
   });
 

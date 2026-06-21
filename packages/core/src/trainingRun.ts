@@ -1670,8 +1670,10 @@ export const metaverseStreetLayout = {
   roadWidth: 4.8,
   shoulderX: 4.9,
   sidewalkX: 6.15,
-  tassadarLotX: 7.25,
-  tassadarLotZ: -3.1,
+  parcelX: 13.6,
+  tassadarLotX: 8.8,
+  tassadarLotZ: 0.15,
+  tassadarSceneScale: 1.35,
 } as const;
 
 const metaverseStreetLength =
@@ -1684,9 +1686,9 @@ export const metaverseStreetParcelPositions = (
   const positions: Three.Vector3[] = [];
   for (let index = 0; index < count; index += 1) {
     const z = metaverseStreetLayout.farZ + 2.2 + index * 1.62;
-    const stagger = index % 2 === 0 ? 0 : 0.22;
-    positions.push(new Three.Vector3(-7.1 - stagger, 0, z));
-    positions.push(new Three.Vector3(7.1 + stagger, 0, z));
+    const stagger = index % 2 === 0 ? 0 : 0.38;
+    positions.push(new Three.Vector3(-metaverseStreetLayout.parcelX - stagger, 0, z));
+    positions.push(new Three.Vector3(metaverseStreetLayout.parcelX + stagger, 0, z));
   }
   return positions;
 };
@@ -2288,6 +2290,7 @@ export const mountTrainingRunVisualization = (
           0,
           metaverseStreetLayout.tassadarLotZ,
         );
+        root.scale.setScalar(metaverseStreetLayout.tassadarSceneScale);
         scene.add(makePerspectiveFloorGrid());
         scene.add(makeMetaverseStreetDistrict());
       }
@@ -3066,8 +3069,8 @@ export const mountTrainingRunVisualization = (
           createWasdMouseLookController(camera, canvas, {
             initialPosition: [0, 1.65, 6.25],
             bounds: {
-              minX: -11,
-              maxX: 13,
+              minX: -15,
+              maxX: 17,
               minZ: -30.5,
               maxZ: 7.5,
             },
@@ -3094,8 +3097,8 @@ export const mountTrainingRunVisualization = (
             initialPosition: [0, 0, 4.4],
             character: {
               bounds: {
-                minX: -11,
-                maxX: 13,
+                minX: -15,
+                maxX: 17,
                 minZ: -30.5,
                 maxZ: 7.5,
               },
