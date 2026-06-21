@@ -1671,9 +1671,9 @@ export const metaverseStreetLayout = {
   shoulderX: 4.9,
   sidewalkX: 6.15,
   parcelX: 18.2,
-  tassadarLotX: 7.0,
-  tassadarLotZ: 0.45,
-  tassadarSceneScale: 1.5,
+  tassadarLotX: 5.8,
+  tassadarLotZ: 0.8,
+  tassadarSceneScale: 1.65,
 } as const;
 
 const metaverseStreetLength =
