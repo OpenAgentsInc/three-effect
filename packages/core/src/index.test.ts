@@ -83,6 +83,7 @@ import {
   mergeBufferGeometries,
   metaverseStreetParcelPositions,
   metaverseStreetSourceRefs,
+  makeTrainingRunPylonLandmark,
   MokshaPlaneMaterial,
   cycleTrainingRunCameraTarget,
   cycleTrainingRunTarget,
@@ -131,6 +132,7 @@ import {
   trainingRunMotionHasEvidence,
   trainingRunMotionSourceRefs,
   trainingRunPointerClickIntent,
+  trainingRunSelectionIsPylon,
   trainingRunWorldLabelVisibleForSelection,
   trainingRunVisualizationOptionsFromSnapshot,
   updateScrollMetrics,
@@ -1829,6 +1831,29 @@ describe("training run visualization", () => {
         { id: "training.verdict", label: "verdict" },
         "compact",
       ),
+    ).toBe(true);
+  });
+
+  test("builds pylon landmarks from geometry instead of a flat dot", () => {
+    expect(
+      trainingRunSelectionIsPylon({ id: "pylon.operator.mac", label: "M1" }),
+    ).toBe(true);
+    expect(
+      trainingRunSelectionIsPylon({ id: "training.trace", label: "trace" }),
+    ).toBe(false);
+
+    const landmark = makeTrainingRunPylonLandmark(0x8ef6ff);
+    const meshes = landmark.children.filter(
+      (child): child is Three.Mesh => child instanceof Three.Mesh,
+    );
+
+    expect(landmark.name).toBe("training-run-pylon-landmark");
+    expect(meshes.length).toBeGreaterThanOrEqual(5);
+    expect(
+      meshes.some((mesh) => mesh.geometry instanceof Three.CylinderGeometry),
+    ).toBe(true);
+    expect(
+      meshes.some((mesh) => mesh.geometry instanceof Three.OctahedronGeometry),
     ).toBe(true);
   });
 

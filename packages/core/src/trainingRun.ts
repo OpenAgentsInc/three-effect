@@ -660,6 +660,14 @@ export const trainingRunWorldLabelVisibleForSelection = (
   if (density === "full" || density === "compact") return true;
   const id = selection.id.toLowerCase();
   const label = selection.label.toLowerCase();
+  return trainingRunSelectionIsPylon({ id, label });
+};
+
+export const trainingRunSelectionIsPylon = (
+  selection: Pick<TrainingRunNodeSelection, "id" | "label">,
+): boolean => {
+  const id = selection.id.toLowerCase();
+  const label = selection.label.toLowerCase();
   return (
     id.startsWith("pylon.") ||
     id.startsWith("pylon:") ||
@@ -1507,6 +1515,64 @@ const makeRing = (
       side: Three.DoubleSide,
     }),
   );
+
+export const makeTrainingRunPylonLandmark = (
+  color: number,
+  options: Readonly<{ scale?: number; opacity?: number }> = {},
+): Three.Group => {
+  const scale = options.scale ?? 1;
+  const opacity = options.opacity ?? 0.9;
+  const group = new Three.Group();
+  group.name = "training-run-pylon-landmark";
+
+  const material = (nextColor: number, nextOpacity: number) =>
+    new Three.MeshBasicMaterial({
+      color: nextColor,
+      opacity: nextOpacity,
+      transparent: true,
+      depthWrite: false,
+      side: Three.DoubleSide,
+    });
+
+  const base = makeRing(0.2 * scale, color, opacity * 0.55);
+  base.position.z = 0.02 * scale;
+  group.add(base);
+
+  const tower = new Three.Mesh(
+    new Three.CylinderGeometry(0.055 * scale, 0.13 * scale, 0.62 * scale, 5),
+    material(color, opacity * 0.76),
+  );
+  tower.rotation.x = Math.PI / 2;
+  tower.position.z = 0.34 * scale;
+  group.add(tower);
+
+  const core = new Three.Mesh(
+    new Three.CylinderGeometry(0.026 * scale, 0.04 * scale, 0.74 * scale, 5),
+    material(0xffffff, opacity * 0.5),
+  );
+  core.rotation.x = Math.PI / 2;
+  core.position.z = 0.4 * scale;
+  group.add(core);
+
+  const cap = new Three.Mesh(
+    new Three.OctahedronGeometry(0.12 * scale, 0),
+    material(0xffffff, opacity * 0.82),
+  );
+  cap.position.z = 0.76 * scale;
+  group.add(cap);
+
+  for (const rotation of [0, Math.PI / 2]) {
+    const vane = new Three.Mesh(
+      new Three.BoxGeometry(0.38 * scale, 0.018 * scale, 0.08 * scale),
+      material(color, opacity * 0.48),
+    );
+    vane.rotation.z = rotation;
+    vane.position.z = 0.56 * scale;
+    group.add(vane);
+  }
+
+  return group;
+};
 
 const makeTextSprite = (
   text: string,
@@ -2434,14 +2500,23 @@ export const mountTrainingRunVisualization = (
               0.42,
             ),
           );
-          const marker =
-            node.status === "blocked"
-              ? makeRing(0.08, statusColor, 0.6)
-              : makeCircle(0.055, statusColor, 0.92);
-          marker.position.z = 0.62;
-          group.add(marker);
-
           const labelText = visibleWorldLabelText(selection, 16);
+          if (trainingRunSelectionIsPylon(selection)) {
+            const pylon = makeTrainingRunPylonLandmark(statusColor, {
+              opacity: 0.88,
+              scale: 0.58,
+            });
+            pylon.position.z = 0.52;
+            group.add(pylon);
+          } else {
+            const marker =
+              node.status === "blocked"
+                ? makeRing(0.08, statusColor, 0.6)
+                : makeCircle(0.055, statusColor, 0.92);
+            marker.position.z = 0.62;
+            group.add(marker);
+          }
+
           if (labelText !== undefined) {
             const label = makeTextSprite(labelText, {
               color: "#ffffff",
@@ -2481,7 +2556,16 @@ export const mountTrainingRunVisualization = (
           recursive: false,
           value: selection,
         });
-        group.add(makeCircle(radius * 0.32, statusColor, 0.95));
+        if (trainingRunSelectionIsPylon(selection)) {
+          const pylon = makeTrainingRunPylonLandmark(statusColor, {
+            opacity: 0.88,
+            scale: node.role === "run" ? 0.72 : 0.58,
+          });
+          pylon.position.z = 0.46;
+          group.add(pylon);
+        } else {
+          group.add(makeCircle(radius * 0.32, statusColor, 0.95));
+        }
 
         const labelText = visibleWorldLabelText(
           selection,
@@ -2513,16 +2597,35 @@ export const mountTrainingRunVisualization = (
       const contributorGroup = new Three.Group();
       contributorGroup.position.set(-0.15, 0.28, 0.4);
       for (const contributor of resolved.contributors) {
-        const dot = makeCircle(
-          contributor.lifecycleState === "active" ? 0.065 : 0.045,
-          0xffffff,
-          contributor.lifecycleState === "sync_reentry" ? 0.45 : 0.88,
-        );
         const angle = contributor.phase * Math.PI * 2;
         const radius =
           contributor.lifecycleState === "sync_reentry" ? 1.45 : 1.22;
-        dot.position.set(Math.cos(angle) * radius, Math.sin(angle) * radius, 0);
-        contributorGroup.add(dot);
+        const position = new Three.Vector3(
+          Math.cos(angle) * radius,
+          Math.sin(angle) * radius,
+          0,
+        );
+        if (
+          trainingRunSelectionIsPylon({
+            id: contributor.id,
+            label: contributor.label,
+          })
+        ) {
+          const pylon = makeTrainingRunPylonLandmark(0xffffff, {
+            opacity: contributor.lifecycleState === "sync_reentry" ? 0.48 : 0.78,
+            scale: contributor.lifecycleState === "active" ? 0.33 : 0.27,
+          });
+          pylon.position.copy(position);
+          contributorGroup.add(pylon);
+        } else {
+          const dot = makeCircle(
+            contributor.lifecycleState === "active" ? 0.065 : 0.045,
+            0xffffff,
+            contributor.lifecycleState === "sync_reentry" ? 0.45 : 0.88,
+          );
+          dot.position.copy(position);
+          contributorGroup.add(dot);
+        }
 
         if (resolved.worldLabelDensity !== "pylons") {
           const label = makeTextSprite(contributor.label, {
@@ -2531,7 +2634,7 @@ export const mountTrainingRunVisualization = (
             height: 80,
             width: 220,
           });
-          label.position.set(dot.position.x, dot.position.y - 0.16, 0.3);
+          label.position.set(position.x, position.y - 0.16, 0.3);
           contributorGroup.add(label);
         }
       }
@@ -2802,7 +2905,9 @@ export const mountTrainingRunVisualization = (
           scale: 1,
         });
         pool.mesh.position.z = 0.36;
-        root.add(pool.mesh);
+        if (resolved.worldLabelDensity !== "pylons") {
+          root.add(pool.mesh);
+        }
         entityPool = pool;
 
         const presence = bindEntityPresence(pool, {
@@ -2826,6 +2931,14 @@ export const mountTrainingRunVisualization = (
           const ring = makeRing(0.14, color, 0.42);
           ring.position.set(position[0], position[1], position[2] - 0.02);
           root.add(ring);
+          if (trainingRunSelectionIsPylon(selection)) {
+            const pylon = makeTrainingRunPylonLandmark(color, {
+              opacity: 0.84,
+              scale: 0.52,
+            });
+            pylon.position.set(position[0], position[1], position[2] + 0.08);
+            root.add(pylon);
+          }
 
           const hitTarget = makeCircle(0.16, color, 0.001);
           hitTarget.position.set(position[0], position[1], position[2] + 0.34);
