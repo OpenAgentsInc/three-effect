@@ -82,9 +82,11 @@ import {
   maskMaterialProps,
   mergeBufferGeometries,
   metaverseStreetBuildingDimensions,
+  metaverseStreetHumanHeight,
   metaverseStreetLayout,
   metaverseStreetParcelPositions,
   metaverseStreetSourceRefs,
+  metaverseStreetStoryHeight,
   makeTrainingRunPylonLandmark,
   MokshaPlaneMaterial,
   cycleTrainingRunCameraTarget,
@@ -1766,12 +1768,23 @@ describe("training run visualization", () => {
 
   test("scales Street buildings as skyline mass instead of tiny blocks", () => {
     expect(metaverseStreetBuildingDimensions(0)).toEqual({
-      depth: 1,
-      height: 2.1,
-      width: 1.15,
+      depth: 4.8,
+      height: metaverseStreetStoryHeight * 5,
+      width: 3.8,
     });
-    expect(metaverseStreetBuildingDimensions(4).height).toBeGreaterThan(4.5);
-    expect(metaverseStreetBuildingDimensions(5).width).toBeGreaterThan(1.5);
+    expect(metaverseStreetStoryHeight).toBeCloseTo(
+      metaverseStreetHumanHeight * (10 / 6),
+    );
+    expect(metaverseStreetBuildingDimensions(5).height).toBe(
+      metaverseStreetStoryHeight * 8,
+    );
+    expect(metaverseStreetBuildingDimensions(11).height).toBe(
+      metaverseStreetStoryHeight * 18,
+    );
+    expect(metaverseStreetBuildingDimensions(11).height).toBeGreaterThan(
+      metaverseStreetHumanHeight * 25,
+    );
+    expect(metaverseStreetBuildingDimensions(5).width).toBeGreaterThan(4.5);
   });
 
   test("uses the imported controller GLB for the default third-person avatar", () => {

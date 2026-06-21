@@ -1679,6 +1679,10 @@ export const metaverseStreetLayout = {
 const metaverseStreetLength =
   metaverseStreetLayout.nearZ - metaverseStreetLayout.farZ;
 
+export const metaverseStreetHumanHeight = 1.83;
+export const metaverseStreetStoryHeight =
+  metaverseStreetHumanHeight * (10 / 6);
+
 export const metaverseStreetParcelPositions = (
   countPerSide = 72,
 ): readonly Three.Vector3[] => {
@@ -1700,9 +1704,9 @@ export const metaverseStreetParcelPositions = (
 export const metaverseStreetBuildingDimensions = (
   index: number,
 ): Readonly<{ depth: number; height: number; width: number }> => ({
-  depth: 1.0 + (index % 4) * 0.2,
-  height: 2.1 + (index % 5) * 0.72,
-  width: 1.15 + (index % 3) * 0.25,
+  depth: 4.8 + (index % 5) * 1.6,
+  height: metaverseStreetStoryHeight * (5 + ((index * 7) % 16)),
+  width: 3.8 + (index % 4) * 1.25,
 });
 
 export const makeMetaverseStreetDistrict = (): Three.Group => {
