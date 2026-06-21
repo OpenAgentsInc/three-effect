@@ -1093,6 +1093,8 @@ export type TrainingRunTargetCandidate = Readonly<{
   selection: TrainingRunNodeSelection;
 }>;
 
+const projectedTarget = new Three.Vector3();
+
 export const orderTrainingRunTargetsByDistance = (
   targets: readonly TrainingRunTargetCandidate[],
   origin: TrainingRunVector,
@@ -1113,6 +1115,55 @@ export const orderTrainingRunTargetsByDistance = (
     .slice(0, limit);
 };
 
+export const orderTrainingRunTargetsByCameraView = (
+  targets: readonly TrainingRunTargetCandidate[],
+  camera: Three.Camera,
+  origin: TrainingRunVector,
+  maxTargets = targets.length,
+): readonly TrainingRunTargetCandidate[] => {
+  const originVector = vector(origin);
+  const limit =
+    Number.isFinite(maxTargets) && maxTargets > 0
+      ? Math.floor(maxTargets)
+      : targets.length;
+  camera.updateMatrixWorld();
+  const projectionCamera = camera as Three.Camera & {
+    updateProjectionMatrix?: () => void;
+  };
+  projectionCamera.updateProjectionMatrix?.();
+  return targets
+    .flatMap((target) => {
+      projectedTarget.set(
+        target.position[0],
+        target.position[1],
+        target.position[2],
+      );
+      projectedTarget.project(camera);
+      const onScreen =
+        projectedTarget.z >= -1 &&
+        projectedTarget.z <= 1 &&
+        Math.abs(projectedTarget.x) <= 1 &&
+        Math.abs(projectedTarget.y) <= 1;
+      if (!onScreen) return [];
+      const screenDistance =
+        projectedTarget.x * projectedTarget.x +
+        projectedTarget.y * projectedTarget.y;
+      const worldDistance = vector(target.position).distanceToSquared(originVector);
+      return [{ screenDistance, target, worldDistance }];
+    })
+    .sort((left, right) => {
+      if (left.screenDistance !== right.screenDistance) {
+        return left.screenDistance - right.screenDistance;
+      }
+      if (left.worldDistance !== right.worldDistance) {
+        return left.worldDistance - right.worldDistance;
+      }
+      return left.target.id.localeCompare(right.target.id);
+    })
+    .slice(0, limit)
+    .map((entry) => entry.target);
+};
+
 export const cycleTrainingRunTarget = (
   targets: readonly TrainingRunTargetCandidate[],
   input: Readonly<{
@@ -1124,6 +1175,35 @@ export const cycleTrainingRunTarget = (
 ): TrainingRunTargetCandidate | undefined => {
   const ordered = orderTrainingRunTargetsByDistance(
     targets,
+    input.origin,
+    input.maxTargets,
+  );
+  if (ordered.length === 0) return undefined;
+  const direction = input.direction ?? 1;
+  const currentIndex =
+    input.currentId === undefined || input.currentId === null
+      ? -1
+      : ordered.findIndex((target) => target.id === input.currentId);
+  const nextIndex =
+    currentIndex === -1
+      ? 0
+      : (currentIndex + direction + ordered.length) % ordered.length;
+  return ordered[nextIndex];
+};
+
+export const cycleTrainingRunCameraTarget = (
+  targets: readonly TrainingRunTargetCandidate[],
+  input: Readonly<{
+    camera: Three.Camera;
+    currentId?: string | null;
+    direction?: 1 | -1;
+    maxTargets?: number;
+    origin: TrainingRunVector;
+  }>,
+): TrainingRunTargetCandidate | undefined => {
+  const ordered = orderTrainingRunTargetsByCameraView(
+    targets,
+    input.camera,
     input.origin,
     input.maxTargets,
   );
@@ -2729,9 +2809,10 @@ export const mountTrainingRunVisualization = (
       const selectNextTarget = (
         direction: 1 | -1 = 1,
       ): TrainingRunNodeSelection | undefined => {
-        const target = cycleTrainingRunTarget(
+        const target = cycleTrainingRunCameraTarget(
           keyboardTargets.map((entry) => entry.candidate),
           {
+            camera,
             currentId: selectedTargetId,
             direction,
             maxTargets: resolved.keyboardTargeting.maxTargets,

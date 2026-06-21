@@ -82,7 +82,9 @@ import {
   maskMaterialProps,
   mergeBufferGeometries,
   MokshaPlaneMaterial,
+  cycleTrainingRunCameraTarget,
   cycleTrainingRunTarget,
+  orderTrainingRunTargetsByCameraView,
   orderTrainingRunTargetsByDistance,
   pmndrsMokshaSourceRefs,
   pmndrsAdvancedMaterialPrimitiveSourceRefs,
@@ -1602,6 +1604,70 @@ describe("training run visualization", () => {
         origin: [0, 0, 0],
       })?.id,
     ).toBe("far");
+  });
+
+  test("cycles keyboard targets through the camera-visible screen set", () => {
+    const selection = {
+      detail: "detail",
+      label: "label",
+      role: "run" as const,
+      status: "active" as const,
+    };
+    const camera = new Three.PerspectiveCamera(60, 1, 0.1, 20);
+    camera.position.set(0, 0, 5);
+    camera.lookAt(0, 0, 0);
+    camera.updateMatrixWorld();
+    camera.updateProjectionMatrix();
+    const targets = [
+      {
+        id: "offscreen",
+        position: [4, 0, 0] as const,
+        selection: { ...selection, id: "offscreen" },
+      },
+      {
+        id: "edge",
+        position: [1.25, 0, 0] as const,
+        selection: { ...selection, id: "edge" },
+      },
+      {
+        id: "behind",
+        position: [0, 0, 8] as const,
+        selection: { ...selection, id: "behind" },
+      },
+      {
+        id: "center",
+        position: [0, 0, 0] as const,
+        selection: { ...selection, id: "center" },
+      },
+    ];
+
+    expect(
+      orderTrainingRunTargetsByCameraView(targets, camera, [0, 0, 5]).map(
+        (target) => target.id,
+      ),
+    ).toEqual(["center", "edge"]);
+    expect(
+      cycleTrainingRunCameraTarget(targets, {
+        camera,
+        currentId: null,
+        origin: [0, 0, 5],
+      })?.id,
+    ).toBe("center");
+    expect(
+      cycleTrainingRunCameraTarget(targets, {
+        camera,
+        currentId: "center",
+        origin: [0, 0, 5],
+      })?.id,
+    ).toBe("edge");
+    expect(
+      cycleTrainingRunCameraTarget(targets, {
+        camera,
+        currentId: "edge",
+        direction: 1,
+        origin: [0, 0, 5],
+      })?.id,
+    ).toBe("center");
   });
 
   test("resolves perspective walk controller options", () => {
