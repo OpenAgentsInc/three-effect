@@ -7,6 +7,10 @@ import { createPointerLockControls } from "./extraControlsPrimitives";
 export const pmndrsPlayerControllerPrimitiveSourceRefs = [
   "projects/repos/drei/src/core/PointerLockControls.tsx",
   "projects/repos/drei/src/web/KeyboardControls.tsx",
+  "projects/repos/three-player-controller/src/playerController.ts",
+  "projects/repos/three-player-controller/src/systems/CameraSystem.ts",
+  "projects/repos/three-player-controller/src/systems/InputSystem.ts",
+  "projects/repos/three-player-controller/src/utils/capsuleCollision.ts",
   "projects/repos/Quick_3D_MMORPG/client/src/player-input.js",
   "projects/repos/Quick_3D_MMORPG/client/src/player-entity.js",
   "projects/repos/Quick_3D_MMORPG/client/src/player-state.js",
@@ -92,6 +96,12 @@ export type ThirdPersonFollowCameraHandle = Readonly<{
   snap: Effect.Effect<void>;
 }>;
 
+export type ThreePlayerControllerAvatarAction =
+  | "idle"
+  | "jump"
+  | "run"
+  | "walk";
+
 export type MmorpgCharacterAction = "idle" | "run" | "walk";
 
 export type MmorpgCharacterForwardAxis = "negativeZ" | "positiveZ";
@@ -133,6 +143,38 @@ export type MmorpgCharacterControllerSnapshot = Readonly<{
   position: Three.Vector3;
   quaternion: Three.Quaternion;
   velocity: Three.Vector3;
+}>;
+
+export type ThreePlayerControllerOptions = Readonly<{
+  enabled?: boolean;
+  inputTarget?: HTMLElement | Window;
+  initialPosition?: readonly [number, number, number];
+  camera?: ThirdPersonFollowCameraOptions;
+  character?: MmorpgCharacterControllerOptions;
+  jumpHeight?: number;
+  gravity?: number;
+  groundHeightAt?: (x: number, z: number) => number;
+  onActionChange?: (action: ThreePlayerControllerAvatarAction) => void;
+}>;
+
+export type ResolvedThreePlayerControllerOptions = Readonly<{
+  enabled: boolean;
+  inputTarget: HTMLElement | Window;
+  initialPosition: readonly [number, number, number];
+  camera: ThirdPersonFollowCameraOptions;
+  character: MmorpgCharacterControllerOptions;
+  jumpHeight: number;
+  gravity: number;
+  groundHeightAt: (x: number, z: number) => number;
+  onActionChange?: (action: ThreePlayerControllerAvatarAction) => void;
+}>;
+
+export type ThreePlayerControllerHandle = Readonly<{
+  keyboard: WasdKeyboardState;
+  update: (delta: number) => Effect.Effect<void>;
+  getPosition: Effect.Effect<Three.Vector3>;
+  setPosition: (position: Three.Vector3) => Effect.Effect<void>;
+  dispose: Effect.Effect<void>;
 }>;
 
 export type WasdMouseLookControllerOptions = Readonly<{
@@ -235,6 +277,31 @@ export const defaultMmorpgCharacterControllerOptions: ResolvedMmorpgCharacterCon
     canMoveTo: () => true,
   };
 
+export const defaultThreePlayerControllerOptions = (
+  inputTarget: HTMLElement | Window,
+): ResolvedThreePlayerControllerOptions => ({
+  enabled: true,
+  inputTarget,
+  initialPosition: [0, 0, 4.4],
+  camera: {
+    offset: [0, 2.4, 4.8],
+    lookAtOffset: [0, 0.9, -1.5],
+    smoothing: 0.035,
+  },
+  character: {
+    acceleration: 22,
+    damping: 16,
+    walkSpeed: 3.4,
+    runSpeed: 6.2,
+    backwardSpeedMultiplier: 0.5,
+    turnSpeed: Math.PI * 2.35,
+    forwardAxis: "negativeZ",
+  },
+  jumpHeight: 4.8,
+  gravity: -13.5,
+  groundHeightAt: () => 0,
+});
+
 export const resolveWasdMouseLookControllerOptions = (
   inputTarget: HTMLElement | Window,
   options: WasdMouseLookControllerOptions = {},
@@ -271,6 +338,37 @@ export const resolveMmorpgCharacterControllerOptions = (
   canMoveTo:
     options.canMoveTo ?? defaultMmorpgCharacterControllerOptions.canMoveTo,
 });
+
+export const resolveThreePlayerControllerOptions = (
+  inputTarget: HTMLElement | Window,
+  options: ThreePlayerControllerOptions = {},
+): ResolvedThreePlayerControllerOptions => {
+  const defaults = defaultThreePlayerControllerOptions(inputTarget);
+  const groundHeightAt = options.groundHeightAt ?? defaults.groundHeightAt;
+  return {
+    ...defaults,
+    ...options,
+    inputTarget: options.inputTarget ?? inputTarget,
+    initialPosition: options.initialPosition ?? defaults.initialPosition,
+    camera: {
+      ...defaults.camera,
+      ...(options.camera ?? {}),
+      groundHeightAt:
+        options.camera?.groundHeightAt ??
+        options.groundHeightAt ??
+        defaults.groundHeightAt,
+    },
+    character: {
+      ...defaults.character,
+      ...(options.character ?? {}),
+      groundHeightAt:
+        options.character?.groundHeightAt ??
+        options.groundHeightAt ??
+        defaults.groundHeightAt,
+    },
+    groundHeightAt,
+  };
+};
 
 export const keyCodeToWasdAction = (code: string): WasdAction | undefined => {
   switch (code) {
@@ -899,6 +997,122 @@ export const createWasdMouseLookController = (
           }
           pointerLockHandle.controls.unlock();
           Effect.runSync(pointerLockHandle.dispose);
+        }),
+      };
+    },
+    catch: (error) =>
+      new ThreePlayerControllerCreateError({ reason: reason(error) }),
+  });
+
+export const createThreePlayerController = (
+  camera: Three.PerspectiveCamera,
+  target: Three.Object3D,
+  domElement: HTMLElement,
+  options: ThreePlayerControllerOptions = {},
+): Effect.Effect<ThreePlayerControllerHandle, ThreePlayerControllerCreateError> =>
+  Effect.try({
+    try: () => {
+      const resolved = resolveThreePlayerControllerOptions(
+        typeof window === "undefined" ? domElement : window,
+        options,
+      );
+      const keyboard = defaultWasdKeyboardState();
+      const characterState = defaultMmorpgCharacterControllerState();
+      const cameraHandle = createThirdPersonFollowCamera(
+        camera,
+        target,
+        resolved.camera,
+      );
+      const removers: Array<() => void> = [];
+      let disposed = false;
+      let verticalVelocity = 0;
+      let lastAction: ThreePlayerControllerAvatarAction = "idle";
+
+      target.position.set(
+        resolved.initialPosition[0],
+        resolved.initialPosition[1],
+        resolved.initialPosition[2],
+      );
+      target.updateMatrixWorld();
+      Effect.runSync(cameraHandle.snap);
+
+      const emitAction = (action: ThreePlayerControllerAvatarAction) => {
+        if (action === lastAction) return;
+        lastAction = action;
+        resolved.onActionChange?.(action);
+      };
+      const onKeyDown = (event: KeyboardEvent) => {
+        if (!resolved.enabled || isEditableInputTarget(event.target)) return;
+        if (setWasdKeyState(keyboard, event.code, true)) {
+          event.preventDefault();
+        }
+      };
+      const onKeyUp = (event: KeyboardEvent) => {
+        if (setWasdKeyState(keyboard, event.code, false)) {
+          event.preventDefault();
+        }
+      };
+      resolved.inputTarget.addEventListener("keydown", onKeyDown as EventListener, {
+        passive: false,
+      });
+      resolved.inputTarget.addEventListener("keyup", onKeyUp as EventListener, {
+        passive: false,
+      });
+      removers.push(() => {
+        resolved.inputTarget.removeEventListener("keydown", onKeyDown as EventListener);
+        resolved.inputTarget.removeEventListener("keyup", onKeyUp as EventListener);
+      });
+
+      return {
+        keyboard,
+        update: (delta: number) =>
+          Effect.sync(() => {
+            if (disposed || !resolved.enabled) return;
+            const safeDelta = Math.max(0, Math.min(delta, 0.1));
+            const groundY = resolved.groundHeightAt(
+              target.position.x,
+              target.position.z,
+            );
+            const grounded = target.position.y <= groundY + 0.001;
+            if (keyboard.rise && grounded) {
+              verticalVelocity = resolved.jumpHeight;
+            }
+            verticalVelocity += resolved.gravity * safeDelta;
+            const beforeY = target.position.y;
+            const snapshot = updateMmorpgCharacterController(
+              target,
+              keyboard,
+              characterState,
+              safeDelta,
+              resolved.character,
+            );
+            target.position.y = Math.max(
+              groundY,
+              beforeY + verticalVelocity * safeDelta,
+            );
+            if (target.position.y <= groundY + 0.001 && verticalVelocity < 0) {
+              target.position.y = groundY;
+              verticalVelocity = 0;
+            }
+            target.updateMatrixWorld();
+            Effect.runSync(cameraHandle.update(safeDelta));
+            emitAction(target.position.y > groundY + 0.01 ? "jump" : snapshot.action);
+          }),
+        getPosition: Effect.sync(() => target.position.clone()),
+        setPosition: (position: Three.Vector3) =>
+          Effect.sync(() => {
+            target.position.copy(position);
+            verticalVelocity = 0;
+            target.updateMatrixWorld();
+            Effect.runSync(cameraHandle.snap);
+          }),
+        dispose: Effect.sync(() => {
+          if (disposed) return;
+          disposed = true;
+          for (const remove of removers.splice(0)) remove();
+          for (const key of Object.keys(keyboard) as WasdAction[]) {
+            keyboard[key] = false;
+          }
         }),
       };
     },

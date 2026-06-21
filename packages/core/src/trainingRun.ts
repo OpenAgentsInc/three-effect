@@ -4,7 +4,10 @@ import * as Three from "three";
 import { createEntityPool } from "./entityPoolPrimitives";
 import { createFlowBeam, createPayoutBurst } from "./flowEffectPrimitives";
 import {
+  createThreePlayerController,
   createWasdMouseLookController,
+  type ThreePlayerControllerHandle,
+  type ThreePlayerControllerOptions,
   type WasdMouseLookControllerHandle,
   type WasdMouseLookControllerOptions,
 } from "./playerControllerPrimitives";
@@ -196,7 +199,10 @@ export type TrainingRunSceneChrome = Readonly<{
 
 export type TrainingRunCameraMode = "orthographic_map" | "perspective_walk";
 
-export type TrainingRunControllerMode = "none" | "wasd_mouselook";
+export type TrainingRunControllerMode =
+  | "none"
+  | "third_person_character"
+  | "wasd_mouselook";
 
 export type TrainingRunPointerClickIntent = "lock" | "none" | "select";
 
@@ -231,6 +237,7 @@ export type TrainingRunVisualizationOptions = Readonly<{
   stageNodeGlyph?: TrainingRunStageNodeGlyph;
   /** Toggle auxiliary analytical chrome around the primary scene nodes. */
   sceneChrome?: TrainingRunSceneChrome;
+  thirdPersonController?: ThreePlayerControllerOptions;
   walkController?: WasdMouseLookControllerOptions;
   onNodeClick?: (node: TrainingRunNodeSelection) => void;
   pulseSpeed?: number;
@@ -293,6 +300,7 @@ export type ResolvedTrainingRunVisualizationOptions = Readonly<{
   motionPolicy: Required<TrainingRunMotionPolicy>;
   stageNodeGlyph: TrainingRunStageNodeGlyph;
   sceneChrome: Required<TrainingRunSceneChrome>;
+  thirdPersonController: ThreePlayerControllerOptions;
   walkController: WasdMouseLookControllerOptions;
   onNodeClick?: (node: TrainingRunNodeSelection) => void;
   pulseSpeed: number;
@@ -517,6 +525,7 @@ export const defaultTrainingRunVisualizationOptions: ResolvedTrainingRunVisualiz
       staleRing: "visible",
       statusChart: "visible",
     },
+    thirdPersonController: {},
     walkController: {},
     pulseSpeed: 0.17,
   };
@@ -562,6 +571,10 @@ export const resolveTrainingRunVisualizationOptions = (
       options.stageNodeGlyph ??
       defaultTrainingRunVisualizationOptions.stageNodeGlyph,
     sceneChrome: resolveTrainingRunSceneChrome(options.sceneChrome),
+    thirdPersonController: {
+      ...defaultTrainingRunVisualizationOptions.thirdPersonController,
+      ...(options.thirdPersonController ?? {}),
+    },
     walkController: {
       ...defaultTrainingRunVisualizationOptions.walkController,
       ...(options.walkController ?? {}),
@@ -1367,6 +1380,45 @@ const makePerspectiveFloorGrid = (): Three.Group => {
       ),
     );
   }
+  return group;
+};
+
+const makeThreePlayerAvatar = (): Three.Group => {
+  const group = new Three.Group();
+  group.name = "three-player-controller-avatar";
+
+  const body = new Three.Mesh(
+    new Three.CapsuleGeometry(0.18, 0.72, 4, 12),
+    new Three.MeshStandardMaterial({
+      color: 0xc8fbff,
+      emissive: 0x1a7684,
+      emissiveIntensity: 0.28,
+      roughness: 0.5,
+      metalness: 0.18,
+    }),
+  );
+  body.position.y = 0.58;
+  group.add(body);
+
+  const facing = new Three.Mesh(
+    new Three.ConeGeometry(0.16, 0.36, 4),
+    new Three.MeshStandardMaterial({
+      color: 0xffd36e,
+      emissive: 0x7a4a00,
+      emissiveIntensity: 0.25,
+      roughness: 0.42,
+      metalness: 0.16,
+    }),
+  );
+  facing.position.set(0, 0.62, -0.32);
+  facing.rotation.x = Math.PI / 2;
+  group.add(facing);
+
+  const ring = makeRing(0.42, 0x8ef6ff, 0.34);
+  ring.rotation.x = Math.PI / 2;
+  ring.position.y = 0.03;
+  group.add(ring);
+
   return group;
 };
 
@@ -2264,6 +2316,8 @@ export const mountTrainingRunVisualization = (
       }
 
       let walkController: WasdMouseLookControllerHandle | undefined;
+      let threePlayerController: ThreePlayerControllerHandle | undefined;
+      let threePlayerAvatar: Three.Group | undefined;
       const centerReticle =
         perspectiveWalk && camera instanceof Three.PerspectiveCamera
           ? makeCenterReticle()
@@ -2290,6 +2344,28 @@ export const mountTrainingRunVisualization = (
               if (centerReticle !== undefined) centerReticle.visible = locked;
               onLockChange?.(locked);
             },
+          }),
+        );
+      }
+      if (
+        perspectiveWalk &&
+        resolved.controller === "third_person_character" &&
+        camera instanceof Three.PerspectiveCamera
+      ) {
+        threePlayerAvatar = makeThreePlayerAvatar();
+        scene.add(threePlayerAvatar);
+        threePlayerController = Effect.runSync(
+          createThreePlayerController(camera, threePlayerAvatar, canvas, {
+            initialPosition: [0, 0, 4.4],
+            character: {
+              bounds: {
+                minX: -6,
+                maxX: 6,
+                minZ: -4.5,
+                maxZ: 5.2,
+              },
+            },
+            ...resolved.thirdPersonController,
           }),
         );
       }
@@ -2445,6 +2521,9 @@ export const mountTrainingRunVisualization = (
             centerReticle.visible = walkController.controls.isLocked;
           }
         }
+        if (threePlayerController !== undefined) {
+          Effect.runSync(threePlayerController.update(delta));
+        }
         renderer.render(scene, camera);
         frame = requestAnimationFrame(render);
       };
@@ -2469,6 +2548,9 @@ export const mountTrainingRunVisualization = (
         canvas.removeEventListener("click", handleClick);
         if (walkController !== undefined) {
           Effect.runSync(walkController.dispose);
+        }
+        if (threePlayerController !== undefined) {
+          Effect.runSync(threePlayerController.dispose);
         }
         for (const label of entityLabels) label.dispose();
         for (const slot of burstSlots) slot.handle.dispose();

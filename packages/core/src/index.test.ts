@@ -1572,6 +1572,37 @@ describe("training run visualization", () => {
     expect(resolved.walkController.onLockChange).toBe(onLockChange);
   });
 
+  test("resolves third-person character controller options", () => {
+    const groundHeightAt = (x: number, z: number) => x - z;
+    const resolved = resolveTrainingRunVisualizationOptions({
+      cameraMode: "perspective_walk",
+      controller: "third_person_character",
+      thirdPersonController: {
+        groundHeightAt,
+        initialPosition: [1, 0, 2],
+        character: {
+          runSpeed: 8,
+        },
+        camera: {
+          offset: [0, 2, 5],
+        },
+      },
+    });
+
+    expect(resolved.cameraMode).toBe("perspective_walk");
+    expect(resolved.controller).toBe("third_person_character");
+    expect(resolved.thirdPersonController).toMatchObject({
+      initialPosition: [1, 0, 2],
+      character: {
+        runSpeed: 8,
+      },
+      camera: {
+        offset: [0, 2, 5],
+      },
+    });
+    expect(resolved.thirdPersonController.groundHeightAt).toBe(groundHeightAt);
+  });
+
   test("resolves explicit motion policy overrides", () => {
     const resolved = resolveTrainingRunVisualizationOptions({
       motionPolicy: {
@@ -2066,6 +2097,15 @@ describe("player controller primitives", () => {
   test("cites the controller references that motivated the primitive", () => {
     expect(pmndrsPlayerControllerPrimitiveSourceRefs).toContain(
       "projects/repos/drei/src/core/PointerLockControls.tsx",
+    );
+    expect(pmndrsPlayerControllerPrimitiveSourceRefs).toContain(
+      "projects/repos/three-player-controller/src/playerController.ts",
+    );
+    expect(pmndrsPlayerControllerPrimitiveSourceRefs).toContain(
+      "projects/repos/three-player-controller/src/systems/CameraSystem.ts",
+    );
+    expect(pmndrsPlayerControllerPrimitiveSourceRefs).toContain(
+      "projects/repos/three-player-controller/src/systems/InputSystem.ts",
     );
     expect(pmndrsPlayerControllerPrimitiveSourceRefs).toContain(
       "projects/repos/Quick_3D_MMORPG/client/src/player-entity.js",
