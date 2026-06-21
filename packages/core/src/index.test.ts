@@ -81,6 +81,7 @@ import {
   isWorldPointOccluded,
   maskMaterialProps,
   mergeBufferGeometries,
+  makeTrainingRunArtifactMarker,
   metaverseStreetBuildingDimensions,
   metaverseStreetHumanHeight,
   metaverseStreetLayout,
@@ -134,6 +135,7 @@ import {
   trainingRunEntityNodeStatus,
   trainingRunEntityRingPosition,
   trainingRunEntitySelection,
+  trainingRunArtifactKindForSelection,
   trainingRunMotionHasEvidence,
   trainingRunMotionSourceRefs,
   trainingRunPointerClickIntent,
@@ -1891,6 +1893,46 @@ describe("training run visualization", () => {
     expect(
       meshes.some((mesh) => mesh.geometry instanceof Three.OctahedronGeometry),
     ).toBe(true);
+  });
+
+  test("renders non-pylon run refs as dimensional artifacts", () => {
+    expect(
+      trainingRunArtifactKindForSelection({
+        detail: "60 sats",
+        id: "settlement",
+        label: "settlement",
+        role: "receipt",
+        status: "sealed",
+      }),
+    ).toBe("settlement_vault");
+    expect(
+      trainingRunArtifactKindForSelection({
+        detail: "accepted/rejected",
+        id: "verdict",
+        label: "verdict",
+        role: "proof",
+        status: "verified",
+      }),
+    ).toBe("proof_shard");
+
+    const marker = makeTrainingRunArtifactMarker(
+      "settlement_vault",
+      0xffd166,
+    );
+    const geometryTypes: string[] = [];
+    marker.traverse((object) => {
+      if (object instanceof Three.Mesh) {
+        geometryTypes.push(object.geometry.type);
+      }
+    });
+
+    expect(marker.name).toBe("training-run-settlement-vault");
+    expect(geometryTypes).toContain("CylinderGeometry");
+    expect(geometryTypes).toContain("TorusGeometry");
+    expect(geometryTypes).toContain("OctahedronGeometry");
+    expect(
+      geometryTypes.filter((type) => type === "CircleGeometry"),
+    ).toHaveLength(0);
   });
 
   test("recognizes evidence-bound motion source refs", () => {

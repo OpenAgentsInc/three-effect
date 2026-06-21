@@ -149,6 +149,13 @@ export type TrainingRunEntityDefinition = Readonly<{
   position?: TrainingRunVector;
 }>;
 
+export type TrainingRunArtifactKind =
+  | "activity_beacon"
+  | "blocked_gate"
+  | "proof_shard"
+  | "receipt_slab"
+  | "settlement_vault";
+
 export type TrainingRunMotionKind =
   | "presence"
   | "assignment"
@@ -1516,6 +1523,18 @@ const makeRing = (
     }),
   );
 
+const translucentBasicMaterial = (
+  color: number,
+  opacity: number,
+): Three.MeshBasicMaterial =>
+  new Three.MeshBasicMaterial({
+    color,
+    opacity,
+    transparent: opacity < 1,
+    depthWrite: false,
+    side: Three.DoubleSide,
+  });
+
 export const makeTrainingRunPylonLandmark = (
   color: number,
   options: Readonly<{ scale?: number; opacity?: number }> = {},
@@ -1571,6 +1590,181 @@ export const makeTrainingRunPylonLandmark = (
     group.add(vane);
   }
 
+  return group;
+};
+
+type ArtifactSelection = Pick<TrainingRunNodeSelection, "id" | "label"> &
+  Partial<Pick<TrainingRunNodeSelection, "detail" | "role" | "status">>;
+
+export const trainingRunArtifactKindForSelection = (
+  selection: ArtifactSelection,
+): TrainingRunArtifactKind => {
+  const text = [
+    selection.id,
+    selection.label,
+    selection.detail ?? "",
+    selection.role ?? "",
+    selection.status ?? "",
+  ]
+    .join(" ")
+    .toLowerCase();
+  if (
+    text.includes("settlement") ||
+    text.includes("settled") ||
+    text.includes("payout") ||
+    text.includes("recipient") ||
+    text.includes("sats")
+  ) {
+    return "settlement_vault";
+  }
+  if (
+    text.includes("receipt") ||
+    text.includes("closeout") ||
+    selection.role === "receipt"
+  ) {
+    return "receipt_slab";
+  }
+  if (
+    text.includes("proof") ||
+    text.includes("trace") ||
+    text.includes("replay") ||
+    text.includes("verdict") ||
+    text.includes("freivalds") ||
+    text.includes("seal") ||
+    selection.role === "proof"
+  ) {
+    return "proof_shard";
+  }
+  if (selection.status === "blocked" || text.includes("blocked")) {
+    return "blocked_gate";
+  }
+  return "activity_beacon";
+};
+
+export const makeTrainingRunArtifactMarker = (
+  kind: TrainingRunArtifactKind,
+  color: number,
+  options: Readonly<{ scale?: number; opacity?: number }> = {},
+): Three.Group => {
+  const scale = options.scale ?? 1;
+  const opacity = options.opacity ?? 0.84;
+  const group = new Three.Group();
+  group.name = `training-run-${kind.replace(/_/g, "-")}`;
+  const material = (nextColor: number, nextOpacity = opacity) =>
+    translucentBasicMaterial(nextColor, nextOpacity);
+
+  const base = makeRing(0.16 * scale, color, opacity * 0.35);
+  base.position.z = 0.015 * scale;
+  group.add(base);
+
+  if (kind === "settlement_vault") {
+    const plinth = new Three.Mesh(
+      new Three.CylinderGeometry(0.16 * scale, 0.2 * scale, 0.08 * scale, 8),
+      material(color, opacity * 0.58),
+    );
+    plinth.rotation.x = Math.PI / 2;
+    plinth.position.z = 0.08 * scale;
+    group.add(plinth);
+
+    const vault = new Three.Mesh(
+      new Three.CylinderGeometry(0.1 * scale, 0.14 * scale, 0.44 * scale, 8),
+      material(0xffd166, opacity * 0.72),
+    );
+    vault.rotation.x = Math.PI / 2;
+    vault.position.z = 0.32 * scale;
+    group.add(vault);
+
+    const seal = new Three.Mesh(
+      new Three.TorusGeometry(0.12 * scale, 0.012 * scale, 8, 28),
+      material(0xfff3a3, opacity * 0.76),
+    );
+    seal.position.z = 0.52 * scale;
+    group.add(seal);
+
+    const cap = new Three.Mesh(
+      new Three.OctahedronGeometry(0.105 * scale, 0),
+      material(0xffffff, opacity * 0.72),
+    );
+    cap.position.z = 0.66 * scale;
+    group.add(cap);
+    return group;
+  }
+
+  if (kind === "proof_shard") {
+    for (const x of [-0.09, 0.09]) {
+      const post = new Three.Mesh(
+        new Three.BoxGeometry(0.035 * scale, 0.05 * scale, 0.44 * scale),
+        material(color, opacity * 0.56),
+      );
+      post.position.set(x * scale, 0, 0.28 * scale);
+      group.add(post);
+    }
+    const lintel = new Three.Mesh(
+      new Three.BoxGeometry(0.25 * scale, 0.045 * scale, 0.055 * scale),
+      material(color, opacity * 0.5),
+    );
+    lintel.position.z = 0.52 * scale;
+    group.add(lintel);
+    const shard = new Three.Mesh(
+      new Three.OctahedronGeometry(0.09 * scale, 0),
+      material(0xffffff, opacity * 0.68),
+    );
+    shard.position.z = 0.35 * scale;
+    group.add(shard);
+    return group;
+  }
+
+  if (kind === "receipt_slab") {
+    const slab = new Three.Mesh(
+      new Three.BoxGeometry(0.22 * scale, 0.04 * scale, 0.36 * scale),
+      material(color, opacity * 0.62),
+    );
+    slab.rotation.z = 0.08;
+    slab.position.z = 0.28 * scale;
+    group.add(slab);
+    for (const z of [0.2, 0.29, 0.38]) {
+      const rule = new Three.Mesh(
+        new Three.BoxGeometry(0.15 * scale, 0.018 * scale, 0.012 * scale),
+        material(0xffffff, opacity * 0.42),
+      );
+      rule.position.z = z * scale;
+      group.add(rule);
+    }
+    return group;
+  }
+
+  if (kind === "blocked_gate") {
+    for (const rotation of [Math.PI / 4, -Math.PI / 4]) {
+      const bar = new Three.Mesh(
+        new Three.BoxGeometry(0.27 * scale, 0.035 * scale, 0.05 * scale),
+        material(color, opacity * 0.62),
+      );
+      bar.rotation.z = rotation;
+      bar.position.z = 0.32 * scale;
+      group.add(bar);
+    }
+    const core = new Three.Mesh(
+      new Three.BoxGeometry(0.09 * scale, 0.09 * scale, 0.32 * scale),
+      material(0xffffff, opacity * 0.32),
+    );
+    core.position.z = 0.26 * scale;
+    group.add(core);
+    return group;
+  }
+
+  const mast = new Three.Mesh(
+    new Three.CylinderGeometry(0.035 * scale, 0.055 * scale, 0.34 * scale, 6),
+    material(color, opacity * 0.6),
+  );
+  mast.rotation.x = Math.PI / 2;
+  mast.position.z = 0.24 * scale;
+  group.add(mast);
+  const beacon = new Three.Mesh(
+    new Three.OctahedronGeometry(0.085 * scale, 0),
+    material(0xffffff, opacity * 0.62),
+  );
+  beacon.position.z = 0.48 * scale;
+  group.add(beacon);
   return group;
 };
 
@@ -2357,7 +2551,10 @@ export const mountTrainingRunVisualization = (
         0x8ef6ff,
         0.72,
       );
-      const selectedTargetBeacon = makeCircle(0.085, 0x8ef6ff, 0.92);
+      const selectedTargetBeacon = new Three.Mesh(
+        new Three.OctahedronGeometry(0.105, 0),
+        translucentBasicMaterial(0x8ef6ff, 0.92),
+      );
       selectedTargetBeacon.position.z = 0.9;
       const selectedTargetLight = new Three.PointLight(0x8ef6ff, 1.65, 2.8);
       selectedTargetLight.position.z = 1.04;
@@ -2421,11 +2618,13 @@ export const mountTrainingRunVisualization = (
           selectedTargetHighlight.remove(selectedTargetLabel);
           disposeObject(selectedTargetLabel);
         }
+        const targetLabel = trainingRunSelectionIsPylon(
+          target.candidate.selection,
+        )
+          ? `${target.candidate.selection.label} · ${target.candidate.selection.status}`
+          : target.candidate.selection.label;
         selectedTargetLabel = makeTextSprite(
-          compactWorldLabel(
-            `${target.candidate.selection.label} · ${target.candidate.selection.status}`,
-            26,
-          ),
+          compactWorldLabel(targetLabel, 26),
           {
             color: "#ffffff",
             fontSize: 18,
@@ -2557,11 +2756,15 @@ export const mountTrainingRunVisualization = (
             pylon.position.z = 0.52;
             group.add(pylon);
           } else {
-            const marker =
-              node.status === "blocked"
-                ? makeRing(0.08, statusColor, 0.6)
-                : makeCircle(0.055, statusColor, 0.92);
-            marker.position.z = 0.62;
+            const marker = makeTrainingRunArtifactMarker(
+              trainingRunArtifactKindForSelection(selection),
+              statusColor,
+              {
+                opacity: node.status === "planned" ? 0.48 : 0.78,
+                scale: node.role === "receipt" ? 0.7 : 0.62,
+              },
+            );
+            marker.position.z = 0.42;
             group.add(marker);
           }
 
@@ -2612,7 +2815,16 @@ export const mountTrainingRunVisualization = (
           pylon.position.z = 0.46;
           group.add(pylon);
         } else {
-          group.add(makeCircle(radius * 0.32, statusColor, 0.95));
+          const marker = makeTrainingRunArtifactMarker(
+            trainingRunArtifactKindForSelection(selection),
+            statusColor,
+            {
+              opacity: node.status === "planned" ? 0.5 : 0.82,
+              scale: node.role === "receipt" ? 0.92 : 0.78,
+            },
+          );
+          marker.position.z = 0.08;
+          group.add(marker);
         }
 
         const labelText = visibleWorldLabelText(
@@ -2953,9 +3165,6 @@ export const mountTrainingRunVisualization = (
           scale: 1,
         });
         pool.mesh.position.z = 0.36;
-        if (resolved.worldLabelDensity !== "pylons") {
-          root.add(pool.mesh);
-        }
         entityPool = pool;
 
         const presence = bindEntityPresence(pool, {
@@ -2986,6 +3195,17 @@ export const mountTrainingRunVisualization = (
             });
             pylon.position.set(position[0], position[1], position[2] + 0.08);
             root.add(pylon);
+          } else {
+            const marker = makeTrainingRunArtifactMarker(
+              trainingRunArtifactKindForSelection(selection),
+              color,
+              {
+                opacity: entity.status === "planned" ? 0.42 : 0.72,
+                scale: 0.54,
+              },
+            );
+            marker.position.set(position[0], position[1], position[2] + 0.02);
+            root.add(marker);
           }
 
           const hitTarget = makeCircle(0.16, color, 0.001);
