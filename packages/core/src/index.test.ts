@@ -206,12 +206,14 @@ import {
   raycastHitTargetRegistry,
   relaxMinimumDistanceLayout,
   SpatialHashGrid,
+  threePlayerControllerLookDeltaToOrbitDelta,
   thirdPersonCameraDistanceAfterWheel,
   thirdPersonCameraOffsetAtDistance,
   thirdPersonCameraOffsetDistance,
   thirdPersonFollowSmoothingFactor,
   thirdPersonIdealLookAt,
   thirdPersonIdealOffset,
+  thirdPersonOrbitOffset,
   updateMmorpgCharacterController,
   updateThirdPersonFollowCamera,
   wheelDeltaPixels,
@@ -2310,6 +2312,25 @@ describe("player controller primitives", () => {
     expect(thirdPersonCameraDistanceAfterWheel(5, 100, 0, options)).toBe(6);
     expect(thirdPersonCameraDistanceAfterWheel(5, -1000, 0, options)).toBe(2);
     expect(thirdPersonCameraDistanceAfterWheel(5, 1000, 0, options)).toBe(8);
+  });
+
+  test("uses the original three-player-controller drag orbit math", () => {
+    expect(threePlayerControllerLookDeltaToOrbitDelta(100)).toBeCloseTo(-0.05);
+    expect(threePlayerControllerLookDeltaToOrbitDelta(-40)).toBeCloseTo(0.02);
+
+    const offset = thirdPersonOrbitOffset(
+      [0, 2, 4],
+      threePlayerControllerLookDeltaToOrbitDelta(100),
+      threePlayerControllerLookDeltaToOrbitDelta(-40),
+    );
+    expect(thirdPersonCameraOffsetDistance(offset)).toBeCloseTo(
+      thirdPersonCameraOffsetDistance([0, 2, 4]),
+    );
+    expect(offset[0]).toBeLessThan(0);
+    expect(offset[1]).toBeLessThan(2);
+
+    const clampedUp = thirdPersonOrbitOffset([0, 4, 0.01], 0, -100);
+    expect(clampedUp[1]).toBeLessThan(thirdPersonCameraOffsetDistance(clampedUp));
   });
 
   test("updates a third-person follow camera with smoothing", () => {

@@ -71,6 +71,7 @@ export type ThirdPersonCameraTarget = Readonly<{
 
 export type ThirdPersonFollowCameraOptions = Readonly<{
   offset?: readonly [number, number, number];
+  offsetSpace?: "target" | "world";
   lookAtOffset?: readonly [number, number, number];
   smoothing?: number;
   minDistance?: number;
@@ -82,6 +83,7 @@ export type ThirdPersonFollowCameraOptions = Readonly<{
 
 export type ResolvedThirdPersonFollowCameraOptions = Readonly<{
   offset: readonly [number, number, number];
+  offsetSpace: "target" | "world";
   lookAtOffset: readonly [number, number, number];
   smoothing: number;
   minDistance: number;
@@ -265,6 +267,7 @@ export const defaultWasdMouseLookControllerOptions = (
 export const defaultThirdPersonFollowCameraOptions: ResolvedThirdPersonFollowCameraOptions =
   {
     offset: [0, 3.2, 6.2],
+    offsetSpace: "target",
     lookAtOffset: [0, 1.25, -2.2],
     smoothing: 0.01,
     minDistance: 2.2,
@@ -559,14 +562,41 @@ export const thirdPersonCameraDistanceAfterWheel = (
     options.maxDistance,
   );
 
+export const threePlayerControllerLookDeltaToOrbitDelta = (
+  delta: number,
+  sensitivity: number = 5,
+  speed: number = 0.0001,
+): number => -delta * speed * sensitivity;
+
+export const thirdPersonOrbitOffset = (
+  offset: readonly [number, number, number],
+  deltaX: number,
+  deltaY: number,
+): readonly [number, number, number] => {
+  const distance = thirdPersonCameraOffsetDistance(offset);
+  if (distance <= 0) return offset;
+  const theta = Math.atan2(offset[0], offset[2]) + deltaX;
+  const phi = Three.MathUtils.clamp(
+    Math.acos(Three.MathUtils.clamp(offset[1] / distance, -1, 1)) + deltaY,
+    0.1,
+    Math.PI - 0.1,
+  );
+  return [
+    distance * Math.sin(phi) * Math.sin(theta),
+    distance * Math.cos(phi),
+    distance * Math.sin(phi) * Math.cos(theta),
+  ];
+};
+
 export const thirdPersonIdealOffset = (
   target: ThirdPersonCameraTarget,
   options: ResolvedThirdPersonFollowCameraOptions,
 ): Three.Vector3 => {
-  thirdPersonOffset
-    .set(options.offset[0], options.offset[1], options.offset[2])
-    .applyQuaternion(target.quaternion)
-    .add(target.position);
+  thirdPersonOffset.set(options.offset[0], options.offset[1], options.offset[2]);
+  if (options.offsetSpace === "target") {
+    thirdPersonOffset.applyQuaternion(target.quaternion);
+  }
+  thirdPersonOffset.add(target.position);
   thirdPersonOffset.y = Math.max(
     thirdPersonOffset.y,
     options.groundHeightAt(thirdPersonOffset.x, thirdPersonOffset.z) +
@@ -1081,12 +1111,14 @@ export const createThreePlayerController = (
         cameraOptions.minDistance,
         cameraOptions.maxDistance,
       );
+      let cameraOffset = thirdPersonCameraOffsetAtDistance(
+        cameraBaseOffset,
+        cameraDistance,
+      );
       const cameraOptionsAtDistance = (): ThirdPersonFollowCameraOptions => ({
         ...cameraOptions,
-        offset: thirdPersonCameraOffsetAtDistance(
-          cameraBaseOffset,
-          cameraDistance,
-        ),
+        offset: cameraOffset,
+        offsetSpace: "world",
       });
       const cameraHandle = createThirdPersonFollowCamera(
         camera,
@@ -1095,6 +1127,7 @@ export const createThreePlayerController = (
       );
       const removers: Array<() => void> = [];
       let disposed = false;
+      let dragPointerId: number | null = null;
       let verticalVelocity = 0;
       let lastAction: ThreePlayerControllerAvatarAction = "idle";
 
@@ -1133,7 +1166,34 @@ export const createThreePlayerController = (
         if (nextDistance === cameraDistance) return;
         event.preventDefault();
         cameraDistance = nextDistance;
+        cameraOffset = thirdPersonCameraOffsetAtDistance(
+          cameraOffset,
+          cameraDistance,
+        );
         Effect.runSync(cameraHandle.setOptions(cameraOptionsAtDistance()));
+      };
+      const onPointerDown = (event: PointerEvent) => {
+        if (!resolved.enabled || isEditableInputTarget(event.target)) return;
+        if (dragPointerId !== null) return;
+        dragPointerId = event.pointerId;
+        domElement.setPointerCapture?.(event.pointerId);
+        event.preventDefault();
+      };
+      const onPointerMove = (event: PointerEvent) => {
+        if (dragPointerId !== event.pointerId) return;
+        event.preventDefault();
+        cameraOffset = thirdPersonOrbitOffset(
+          cameraOffset,
+          threePlayerControllerLookDeltaToOrbitDelta(event.movementX),
+          threePlayerControllerLookDeltaToOrbitDelta(event.movementY),
+        );
+        cameraDistance = thirdPersonCameraOffsetDistance(cameraOffset);
+        Effect.runSync(cameraHandle.setOptions(cameraOptionsAtDistance()));
+      };
+      const onPointerUp = (event: PointerEvent) => {
+        if (dragPointerId !== event.pointerId) return;
+        dragPointerId = null;
+        domElement.releasePointerCapture?.(event.pointerId);
       };
       resolved.inputTarget.addEventListener("keydown", onKeyDown as EventListener, {
         passive: false,
@@ -1142,10 +1202,24 @@ export const createThreePlayerController = (
         passive: false,
       });
       domElement.addEventListener("wheel", onWheel, { passive: false });
+      domElement.addEventListener("pointerdown", onPointerDown, {
+        passive: false,
+      });
+      domElement.addEventListener("pointermove", onPointerMove, {
+        passive: false,
+      });
+      domElement.addEventListener("pointerup", onPointerUp, { passive: false });
+      domElement.addEventListener("pointercancel", onPointerUp, {
+        passive: false,
+      });
       removers.push(() => {
         resolved.inputTarget.removeEventListener("keydown", onKeyDown as EventListener);
         resolved.inputTarget.removeEventListener("keyup", onKeyUp as EventListener);
         domElement.removeEventListener("wheel", onWheel);
+        domElement.removeEventListener("pointerdown", onPointerDown);
+        domElement.removeEventListener("pointermove", onPointerMove);
+        domElement.removeEventListener("pointerup", onPointerUp);
+        domElement.removeEventListener("pointercancel", onPointerUp);
       });
 
       return {
