@@ -1596,6 +1596,15 @@ describe("training run visualization", () => {
     });
   });
 
+  test("preserves the local pose callback through option resolution", () => {
+    const onLocalPoseChange = () => undefined;
+    const resolved = resolveTrainingRunVisualizationOptions({
+      onLocalPoseChange,
+    });
+
+    expect(resolved.onLocalPoseChange).toBe(onLocalPoseChange);
+  });
+
   test("does not apply a stale pose to a different controller mode", () => {
     const refreshed = trainingRunVisualizationOptionsWithLocalPose(
       {

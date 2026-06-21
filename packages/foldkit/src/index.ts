@@ -11,6 +11,7 @@ import {
   trainingRunVisualizationOptionsWithLocalPose,
   type MokshaOptions,
   type TrainingRunLocalPoseSnapshot,
+  type TrainingRunLocalPoseUpdate,
   type TrainingRunNodeSelection,
   type TrainingRunPresenceZone,
   type TrainingRunVisualizationHandle,
@@ -73,6 +74,13 @@ const trainingRunElement = defineCustomElement({
     "presence-zone-changed": S.Struct({
       zone: S.NullOr(S.Literal("tassadar_area")),
     }),
+    "local-pose-changed": S.Struct({
+      controller: S.Literals(["third_person_character", "wasd_mouselook"]),
+      position: S.Array(S.Number),
+      yaw: S.Number,
+      action: S.Literals(["idle", "jump", "run", "walk"]),
+      capturedAtMs: S.Number,
+    }),
   },
 })
 
@@ -122,6 +130,19 @@ const dispatchTrainingPresenceZoneChanged = (
       bubbles: true,
       composed: true,
       detail: { zone },
+    }),
+  )
+}
+
+const dispatchTrainingLocalPoseChanged = (
+  element: HTMLElement,
+  pose: TrainingRunLocalPoseUpdate,
+): void => {
+  element.dispatchEvent(
+    new CustomEvent("local-pose-changed", {
+      bubbles: true,
+      composed: true,
+      detail: pose,
     }),
   )
 }
@@ -366,6 +387,8 @@ const makeTrainingRunElement = (): CustomElementConstructor => {
           onNodeClick: node => dispatchTrainingNodeSelected(this, node),
           onPresenceZoneChange: zone =>
             dispatchTrainingPresenceZoneChanged(this, zone),
+          onLocalPoseChange: pose =>
+            dispatchTrainingLocalPoseChanged(this, pose),
         }),
       )
       this.#handle = handle
@@ -482,6 +505,7 @@ export const trainingRunView = <Message>(
   visualization?: TrainingRunVisualizationOptions,
   onNodeSelected?: (node: TrainingRunNodeSelection) => Message,
   onPresenceZoneChanged?: (zone: TrainingRunPresenceZone | null) => Message,
+  onLocalPoseChanged?: (pose: TrainingRunLocalPoseUpdate) => Message,
 ): Html => {
   registerTrainingRunElement()
   const element = trainingRunElement.withMessage<Message>()
@@ -498,10 +522,27 @@ export const trainingRunView = <Message>(
             onPresenceZoneChanged(zone),
           ),
         ]
+  const attributesWithLocalPose =
+    onLocalPoseChanged === undefined
+      ? attributesWithPresence
+      : [
+          ...attributesWithPresence,
+          element.OnLocalPoseChanged((pose) => onLocalPoseChanged({
+            controller: pose.controller,
+            position: [
+              pose.position[0] ?? 0,
+              pose.position[1] ?? 0,
+              pose.position[2] ?? 0,
+            ],
+            yaw: pose.yaw,
+            action: pose.action,
+            capturedAtMs: pose.capturedAtMs,
+          })),
+        ]
   return element(
     visualization === undefined
-      ? attributesWithPresence
-      : [...attributesWithPresence, element.Visualization(visualization)],
+      ? attributesWithLocalPose
+      : [...attributesWithLocalPose, element.Visualization(visualization)],
     [],
   )
 }

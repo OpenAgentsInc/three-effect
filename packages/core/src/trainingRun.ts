@@ -7,6 +7,7 @@ import { createFlowBeam, createPayoutBurst } from "./flowEffectPrimitives";
 import {
   createThreePlayerController,
   createWasdMouseLookController,
+  type ThreePlayerControllerAvatarAction,
   type ThreePlayerControllerHandle,
   type ThreePlayerControllerOptions,
   type WasdMouseLookControllerHandle,
@@ -285,6 +286,7 @@ export type TrainingRunVisualizationOptions = Readonly<{
   walkController?: WasdMouseLookControllerOptions;
   onNodeClick?: (node: TrainingRunNodeSelection) => void;
   onPresenceZoneChange?: (zone: TrainingRunPresenceZone | null) => void;
+  onLocalPoseChange?: (pose: TrainingRunLocalPoseUpdate) => void;
   pulseSpeed?: number;
 }>;
 
@@ -334,6 +336,20 @@ export type TrainingRunLocalPoseSnapshot = Readonly<{
     "third_person_character" | "wasd_mouselook"
   >;
   position: TrainingRunVector;
+  yaw?: number;
+  action?: ThreePlayerControllerAvatarAction;
+  capturedAtMs?: number;
+}>;
+
+export type TrainingRunLocalPoseUpdate = Readonly<{
+  controller: Extract<
+    TrainingRunControllerMode,
+    "third_person_character" | "wasd_mouselook"
+  >;
+  position: TrainingRunVector;
+  yaw: number;
+  action: ThreePlayerControllerAvatarAction;
+  capturedAtMs: number;
 }>;
 
 export type ResolvedTrainingRunVisualizationOptions = Readonly<{
@@ -359,6 +375,7 @@ export type ResolvedTrainingRunVisualizationOptions = Readonly<{
   walkController: WasdMouseLookControllerOptions;
   onNodeClick?: (node: TrainingRunNodeSelection) => void;
   onPresenceZoneChange?: (zone: TrainingRunPresenceZone | null) => void;
+  onLocalPoseChange?: (pose: TrainingRunLocalPoseUpdate) => void;
   pulseSpeed: number;
 }>;
 
@@ -665,6 +682,9 @@ export const resolveTrainingRunVisualizationOptions = (
     ...(options.onPresenceZoneChange === undefined
       ? {}
       : { onPresenceZoneChange: options.onPresenceZoneChange }),
+    ...(options.onLocalPoseChange === undefined
+      ? {}
+      : { onLocalPoseChange: options.onLocalPoseChange }),
   };
 };
 
@@ -3541,6 +3561,8 @@ export const mountTrainingRunVisualization = (
       let walkController: WasdMouseLookControllerHandle | undefined;
       let threePlayerController: ThreePlayerControllerHandle | undefined;
       let threePlayerAvatar: ThreePlayerAvatarAnimationHandle | undefined;
+      let threePlayerAction: ThreePlayerControllerAvatarAction = "idle";
+      const localPoseEuler = new Three.Euler(0, 0, 0, "YXZ");
       const centerReticle =
         perspectiveWalk && camera instanceof Three.PerspectiveCamera
           ? makeCenterReticle()
@@ -3592,6 +3614,7 @@ export const mountTrainingRunVisualization = (
             },
             ...resolved.thirdPersonController,
             onActionChange: (action) => {
+              threePlayerAction = action;
               threePlayerAvatar?.playAction(action);
               externalActionChange?.(action);
             },
@@ -3614,12 +3637,22 @@ export const mountTrainingRunVisualization = (
         }
         return [camera.position.x, camera.position.y, camera.position.z];
       };
+      const yawForObject = (object: Three.Object3D): number => {
+        localPoseEuler.setFromQuaternion(object.quaternion, "YXZ");
+        return localPoseEuler.y;
+      };
       const captureLocalPose = (): TrainingRunLocalPoseSnapshot | undefined => {
         if (threePlayerController !== undefined) {
           const position = Effect.runSync(threePlayerController.getPosition);
           return {
             controller: "third_person_character",
             position: [position.x, position.y, position.z],
+            yaw:
+              threePlayerAvatar === undefined
+                ? 0
+                : yawForObject(threePlayerAvatar.group),
+            action: threePlayerAction,
+            capturedAtMs: Date.now(),
           };
         }
         if (walkController !== undefined) {
@@ -3627,9 +3660,34 @@ export const mountTrainingRunVisualization = (
           return {
             controller: "wasd_mouselook",
             position: [position.x, position.y, position.z],
+            yaw: camera.rotation.y,
+            action: "idle",
+            capturedAtMs: Date.now(),
           };
         }
         return undefined;
+      };
+      let lastLocalPoseEmitMs = 0;
+      const emitLocalPose = (time: number): void => {
+        if (resolved.onLocalPoseChange === undefined) return;
+        if (time - lastLocalPoseEmitMs < 100) return;
+        const pose = captureLocalPose();
+        if (
+          pose === undefined ||
+          pose.yaw === undefined ||
+          pose.action === undefined ||
+          pose.capturedAtMs === undefined
+        ) {
+          return;
+        }
+        lastLocalPoseEmitMs = time;
+        resolved.onLocalPoseChange({
+          controller: pose.controller,
+          position: pose.position,
+          yaw: pose.yaw,
+          action: pose.action,
+          capturedAtMs: pose.capturedAtMs,
+        });
       };
       let currentPresenceZone: TrainingRunPresenceZone | null | undefined;
       const emitPresenceZone = (
@@ -3845,6 +3903,7 @@ export const mountTrainingRunVisualization = (
         if (threePlayerController !== undefined) {
           Effect.runSync(threePlayerController.update(delta));
         }
+        emitLocalPose(time);
         updatePresenceZone();
         threePlayerAvatar?.update(delta);
         renderer.render(scene, camera);
