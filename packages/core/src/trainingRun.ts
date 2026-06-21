@@ -221,7 +221,7 @@ export type TrainingRunSceneChrome = Readonly<{
   statusChart?: TrainingRunSceneChromeVisibility;
 }>;
 
-export type TrainingRunWorldLabelDensity = "full" | "compact";
+export type TrainingRunWorldLabelDensity = "full" | "compact" | "pylons";
 
 export type TrainingRunCameraMode = "orthographic_map" | "perspective_walk";
 
@@ -651,6 +651,20 @@ export const trainingRunPointerClickIntent = ({
   if (button !== 0) return "none";
   if (selection !== undefined) return "select";
   return walkControllerEnabled && !pointerLocked ? "lock" : "none";
+};
+
+export const trainingRunWorldLabelVisibleForSelection = (
+  selection: Pick<TrainingRunNodeSelection, "id" | "label">,
+  density: TrainingRunWorldLabelDensity,
+): boolean => {
+  if (density === "full" || density === "compact") return true;
+  const id = selection.id.toLowerCase();
+  const label = selection.label.toLowerCase();
+  return (
+    id.startsWith("pylon.") ||
+    id.startsWith("pylon:") ||
+    label.includes("pylon")
+  );
 };
 
 const finiteNonNegative = (value: number | undefined): number =>
@@ -1976,6 +1990,18 @@ export const mountTrainingRunVisualization = (
       const showStatusChart = resolved.sceneChrome.statusChart === "visible";
       const perspectiveWalk = resolved.cameraMode === "perspective_walk";
       const compactWorldLabels = resolved.worldLabelDensity === "compact";
+      const visibleWorldLabelText = (
+        selection: Pick<TrainingRunNodeSelection, "id" | "label">,
+        maxLength: number,
+      ): string | undefined =>
+        trainingRunWorldLabelVisibleForSelection(
+          selection,
+          resolved.worldLabelDensity,
+        )
+          ? compactWorldLabels || resolved.worldLabelDensity === "pylons"
+            ? compactWorldLabel(selection.label, maxLength)
+            : selection.label
+          : undefined;
       const canvas = document.createElement("canvas");
       canvas.style.display = "block";
       canvas.style.width = "100%";
@@ -2282,18 +2308,18 @@ export const mountTrainingRunVisualization = (
           marker.position.z = 0.62;
           group.add(marker);
 
-          const label = makeTextSprite(
-            compactWorldLabels ? compactWorldLabel(node.label, 16) : node.label,
-            {
-            color: "#ffffff",
-            fontSize: 21,
-            width: 336,
-            },
-          );
-          label.position.set(0, -0.18, 0.55);
-          group.add(label);
+          const labelText = visibleWorldLabelText(selection, 16);
+          if (labelText !== undefined) {
+            const label = makeTextSprite(labelText, {
+              color: "#ffffff",
+              fontSize: 21,
+              width: 336,
+            });
+            label.position.set(0, -0.18, 0.55);
+            group.add(label);
+          }
 
-          if (!compactWorldLabels) {
+          if (resolved.worldLabelDensity === "full") {
             const detail = makeTextSprite(node.detail, {
               color: "#a3a3a3",
               fontSize: 16,
@@ -2324,18 +2350,21 @@ export const mountTrainingRunVisualization = (
         });
         group.add(makeCircle(radius * 0.32, statusColor, 0.95));
 
-        const label = makeTextSprite(
-          compactWorldLabels ? compactWorldLabel(node.label, node.role === "run" ? 18 : 14) : node.label,
-          {
-          color: "#ffffff",
-          fontSize: node.role === "run" ? 32 : 28,
-          width: node.role === "run" ? 512 : 384,
-          },
+        const labelText = visibleWorldLabelText(
+          selection,
+          node.role === "run" ? 18 : 14,
         );
-        label.position.set(0, -radius - 0.25, 0.55);
-        group.add(label);
+        if (labelText !== undefined) {
+          const label = makeTextSprite(labelText, {
+            color: "#ffffff",
+            fontSize: node.role === "run" ? 32 : 28,
+            width: node.role === "run" ? 512 : 384,
+          });
+          label.position.set(0, -radius - 0.25, 0.55);
+          group.add(label);
+        }
 
-        if (!compactWorldLabels) {
+        if (resolved.worldLabelDensity === "full") {
           const detail = makeTextSprite(node.detail, {
             color: "#a3a3a3",
             fontSize: 22,
@@ -2362,14 +2391,16 @@ export const mountTrainingRunVisualization = (
         dot.position.set(Math.cos(angle) * radius, Math.sin(angle) * radius, 0);
         contributorGroup.add(dot);
 
-        const label = makeTextSprite(contributor.label, {
-          color: "#d4d4d4",
-          fontSize: 18,
-          height: 80,
-          width: 220,
-        });
-        label.position.set(dot.position.x, dot.position.y - 0.16, 0.3);
-        contributorGroup.add(label);
+        if (resolved.worldLabelDensity !== "pylons") {
+          const label = makeTextSprite(contributor.label, {
+            color: "#d4d4d4",
+            fontSize: 18,
+            height: 80,
+            width: 220,
+          });
+          label.position.set(dot.position.x, dot.position.y - 0.16, 0.3);
+          contributorGroup.add(label);
+        }
       }
       root.add(contributorGroup);
 
@@ -2675,8 +2706,10 @@ export const mountTrainingRunVisualization = (
           });
 
           if (entity.label !== undefined) {
+            const labelText = visibleWorldLabelText(selection, 18);
+            if (labelText === undefined) continue;
             const label = createTextLabel({
-              text: compactWorldLabels ? compactWorldLabel(entity.label, 18) : entity.label,
+              text: labelText,
               color: "#e5e7eb",
               fontSize: 36,
               worldHeight: 0.2,

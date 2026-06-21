@@ -129,6 +129,7 @@ import {
   trainingRunMotionHasEvidence,
   trainingRunMotionSourceRefs,
   trainingRunPointerClickIntent,
+  trainingRunWorldLabelVisibleForSelection,
   trainingRunVisualizationOptionsFromSnapshot,
   updateScrollMetrics,
   useMaskMaterialProps,
@@ -1785,6 +1786,38 @@ describe("training run visualization", () => {
       statusChart: "hidden",
     });
     expect(resolved.stageNodeGlyph).toBe("compact_gate");
+  });
+
+  test("can restrict world labels to pylon landmarks", () => {
+    const resolved = resolveTrainingRunVisualizationOptions({
+      worldLabelDensity: "pylons",
+    });
+
+    expect(resolved.worldLabelDensity).toBe("pylons");
+    expect(
+      trainingRunWorldLabelVisibleForSelection(
+        { id: "pylon.operator.mac", label: "M1" },
+        "pylons",
+      ),
+    ).toBe(true);
+    expect(
+      trainingRunWorldLabelVisibleForSelection(
+        { id: "pylon:local", label: "My Pylon Base" },
+        "pylons",
+      ),
+    ).toBe(true);
+    expect(
+      trainingRunWorldLabelVisibleForSelection(
+        { id: "training.trace.accepted", label: "trace" },
+        "pylons",
+      ),
+    ).toBe(false);
+    expect(
+      trainingRunWorldLabelVisibleForSelection(
+        { id: "training.verdict", label: "verdict" },
+        "compact",
+      ),
+    ).toBe(true);
   });
 
   test("recognizes evidence-bound motion source refs", () => {
