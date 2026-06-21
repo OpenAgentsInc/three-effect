@@ -1671,11 +1671,19 @@ export const metaverseStreetParcelPositions = (
   for (let index = 0; index < count; index += 1) {
     const z = -10.8 + index * 1.08;
     const stagger = index % 2 === 0 ? 0 : 0.22;
-    positions.push(new Three.Vector3(-5.1 - stagger, 0, z));
-    positions.push(new Three.Vector3(5.1 + stagger, 0, z));
+    positions.push(new Three.Vector3(-5.8 - stagger, 0, z));
+    positions.push(new Three.Vector3(5.8 + stagger, 0, z));
   }
   return positions;
 };
+
+export const metaverseStreetBuildingDimensions = (
+  index: number,
+): Readonly<{ depth: number; height: number; width: number }> => ({
+  depth: 1.0 + (index % 4) * 0.2,
+  height: 2.1 + (index % 5) * 0.72,
+  width: 1.15 + (index % 3) * 0.25,
+});
 
 export const makeMetaverseStreetDistrict = (): Three.Group => {
   const group = new Three.Group();
@@ -1722,10 +1730,8 @@ export const makeMetaverseStreetDistrict = (): Three.Group => {
 
   for (const [index, position] of metaverseStreetParcelPositions().entries()) {
     const side = position.x < 0 ? -1 : 1;
-    const width = 0.55 + (index % 3) * 0.13;
-    const height = 0.55 + (index % 5) * 0.28;
-    const depth = 0.5 + (index % 4) * 0.11;
-    const parcel = makeHorizontalPlane(1.25, 0.82, 0x1f2937, 0.38);
+    const { depth, height, width } = metaverseStreetBuildingDimensions(index);
+    const parcel = makeHorizontalPlane(1.9, 1.36, 0x1f2937, 0.38);
     parcel.position.set(position.x, -0.246, position.z);
     group.add(parcel);
 
@@ -1738,7 +1744,11 @@ export const makeMetaverseStreetDistrict = (): Three.Group => {
         depthWrite: false,
       }),
     );
-    building.position.set(position.x + side * 0.08, height / 2 - 0.22, position.z);
+    building.position.set(
+      position.x + side * 0.12,
+      height / 2 - 0.22,
+      position.z,
+    );
     group.add(building);
 
     const frontage = makeLine(

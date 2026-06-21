@@ -81,6 +81,7 @@ import {
   isWorldPointOccluded,
   maskMaterialProps,
   mergeBufferGeometries,
+  metaverseStreetBuildingDimensions,
   metaverseStreetParcelPositions,
   metaverseStreetSourceRefs,
   makeTrainingRunPylonLandmark,
@@ -1747,9 +1748,19 @@ describe("training run visualization", () => {
     const parcels = metaverseStreetParcelPositions(3);
 
     expect(parcels).toHaveLength(6);
-    expect(parcels[0]).toMatchObject({ x: -5.1, y: 0, z: -10.8 });
-    expect(parcels[1]).toMatchObject({ x: 5.1, y: 0, z: -10.8 });
+    expect(parcels[0]).toMatchObject({ x: -5.8, y: 0, z: -10.8 });
+    expect(parcels[1]).toMatchObject({ x: 5.8, y: 0, z: -10.8 });
     expect(parcels[2]?.z).toBeGreaterThan(parcels[0]!.z);
+  });
+
+  test("scales Street buildings as skyline mass instead of tiny blocks", () => {
+    expect(metaverseStreetBuildingDimensions(0)).toEqual({
+      depth: 1,
+      height: 2.1,
+      width: 1.15,
+    });
+    expect(metaverseStreetBuildingDimensions(4).height).toBeGreaterThan(4.5);
+    expect(metaverseStreetBuildingDimensions(5).width).toBeGreaterThan(1.5);
   });
 
   test("uses the imported controller GLB for the default third-person avatar", () => {
