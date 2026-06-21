@@ -724,7 +724,7 @@ export const mmorpgCharacterActionForKeyboard = (
   keyboard: WasdKeyboardState,
 ): MmorpgCharacterAction => {
   if (!keyboard.forward && !keyboard.backward) return "idle";
-  return keyboard.sprint && keyboard.forward ? "run" : "walk";
+  return keyboard.sprint ? "run" : "walk";
 };
 
 export const mmorpgCharacterForwardDirection = (
@@ -855,7 +855,7 @@ export const updateCameraRelativeMmorpgCharacterController = (
 
   const targetAction: MmorpgCharacterAction = !hasInput
     ? "idle"
-    : keyboard.sprint && keyboard.forward
+    : keyboard.sprint
       ? "run"
       : "walk";
   const targetSpeed =

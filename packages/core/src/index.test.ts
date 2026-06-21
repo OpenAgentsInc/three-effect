@@ -3405,6 +3405,13 @@ describe("player controller primitives", () => {
         sprint: true,
       }),
     ).toBe("run");
+    expect(
+      mmorpgCharacterActionForKeyboard({
+        ...defaultWasdKeyboardState(),
+        backward: true,
+        sprint: true,
+      }),
+    ).toBe("run");
   });
 
   test("moves a Quick-style character by turning the object and walking forward", () => {
@@ -3468,6 +3475,51 @@ describe("player controller primitives", () => {
     const forward = mmorpgCharacterForwardDirection(object);
     expect(forward.x).toBeGreaterThan(0.99);
     expect(Math.abs(forward.z)).toBeLessThan(0.000001);
+  });
+
+  test("runs camera-relative backward when sprint is held with S", () => {
+    const camera = new Three.PerspectiveCamera();
+    camera.position.set(0, 1, 6);
+    camera.lookAt(0, 1, 0);
+    const options = {
+      acceleration: 100,
+      backwardSpeedMultiplier: 1,
+      runSpeed: 8,
+      turnSpeed: 100,
+      walkSpeed: 4,
+    };
+
+    const walkingObject = new Three.Object3D();
+    const walking = updateCameraRelativeMmorpgCharacterController(
+      walkingObject,
+      camera,
+      {
+        ...defaultWasdKeyboardState(),
+        backward: true,
+      },
+      defaultMmorpgCharacterControllerState(),
+      0.1,
+      options,
+    );
+
+    const runningObject = new Three.Object3D();
+    const running = updateCameraRelativeMmorpgCharacterController(
+      runningObject,
+      camera,
+      {
+        ...defaultWasdKeyboardState(),
+        backward: true,
+        sprint: true,
+      },
+      defaultMmorpgCharacterControllerState(),
+      0.1,
+      options,
+    );
+
+    expect(walking.action).toBe("walk");
+    expect(running.action).toBe("run");
+    expect(running.velocity.z).toBeGreaterThan(0);
+    expect(running.velocity.z).toBeGreaterThan(walking.velocity.z);
   });
 
   test("keeps default A/D third-person turning calm", () => {
