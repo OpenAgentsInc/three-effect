@@ -24,6 +24,24 @@ export const defaultThreePlayerAvatarModelUrl = new URL(
   import.meta.url,
 ).href;
 
+export const defaultThreePlayerAvatarAnimationClips = {
+  idle: "idle",
+  jumpEnd: "jumpEnd",
+  jumpLoop: "jumpLoop",
+  jumpStart: "jumpStart",
+  run: "run",
+  walk: "walk",
+} as const;
+
+type ThreePlayerAvatarClipKey =
+  keyof typeof defaultThreePlayerAvatarAnimationClips;
+
+type ThreePlayerAvatarAnimationHandle = Readonly<{
+  group: Three.Group;
+  playAction: (action: "idle" | "jump" | "run" | "walk") => void;
+  update: (delta: number) => void;
+}>;
+
 export class TrainingRunMountError extends Data.TaggedError(
   "TrainingRunMountError",
 )<{
@@ -1391,10 +1409,11 @@ const makePerspectiveFloorGrid = (): Three.Group => {
 
 const makeThreePlayerAvatar = (
   modelUrl: string = defaultThreePlayerAvatarModelUrl,
-): Three.Group => {
+): ThreePlayerAvatarAnimationHandle => {
   const group = new Three.Group();
   group.name = "three-player-controller-avatar";
   group.userData["sourceModelUrl"] = modelUrl;
+  group.userData["animationClips"] = defaultThreePlayerAvatarAnimationClips;
 
   const ring = makeRing(0.42, 0x8ef6ff, 0.34);
   ring.rotation.x = Math.PI / 2;
@@ -1402,9 +1421,60 @@ const makeThreePlayerAvatar = (
   group.add(ring);
 
   const loader = new GLTFLoader();
+  let mixer: Three.AnimationMixer | undefined;
+  let currentAction: Three.AnimationAction | undefined;
+  let currentKey: ThreePlayerAvatarClipKey | undefined;
+  let queuedGroundKey: ThreePlayerAvatarClipKey | undefined;
+  const actions = new Map<ThreePlayerAvatarClipKey, Three.AnimationAction>();
+
+  const playClip = (key: ThreePlayerAvatarClipKey, fade = 0.18): void => {
+    const next = actions.get(key);
+    if (next === undefined || next === currentAction) return;
+
+    const previous = currentAction;
+    next.reset();
+    next.enabled = true;
+    next.setEffectiveWeight(1);
+    next.play();
+    if (previous !== undefined) {
+      previous.fadeOut(fade);
+      next.fadeIn(fade);
+    } else {
+      next.fadeIn(fade);
+    }
+    currentAction = next;
+    currentKey = key;
+    group.userData["currentAnimation"] = key;
+  };
+
+  const playAction = (action: "idle" | "jump" | "run" | "walk"): void => {
+    if (action === "jump") {
+      if (actions.has("jumpStart")) {
+        queuedGroundKey = undefined;
+        playClip("jumpStart");
+        return;
+      }
+      playClip(actions.has("jumpLoop") ? "jumpLoop" : "idle");
+      return;
+    }
+
+    const nextGroundKey = action === "run" ? "run" : action === "walk" ? "walk" : "idle";
+    if (
+      currentKey !== undefined &&
+      (currentKey === "jumpStart" || currentKey === "jumpLoop") &&
+      actions.has("jumpEnd")
+    ) {
+      queuedGroundKey = nextGroundKey;
+      playClip("jumpEnd");
+      return;
+    }
+    playClip(nextGroundKey);
+  };
+
   loader.load(
     modelUrl,
     (gltf) => {
+      mixer = new Three.AnimationMixer(gltf.scene);
       const model = gltf.scene;
       model.name = "three-player-controller-UEPerson-model";
       model.scale.setScalar(0.86);
@@ -1419,7 +1489,33 @@ const makeThreePlayerAvatar = (
         mesh.castShadow = true;
         mesh.receiveShadow = true;
       });
+      for (const [key, clipName] of Object.entries(
+        defaultThreePlayerAvatarAnimationClips,
+      ) as Array<[ThreePlayerAvatarClipKey, string]>) {
+        const clip = gltf.animations.find((animation) => animation.name === clipName);
+        if (clip === undefined || mixer === undefined) continue;
+        const action = mixer.clipAction(clip);
+        const isOneShot = key === "jumpStart" || key === "jumpEnd";
+        action.setLoop(isOneShot ? Three.LoopOnce : Three.LoopRepeat, isOneShot ? 1 : Infinity);
+        action.clampWhenFinished = isOneShot;
+        action.setEffectiveTimeScale(key === "jumpStart" ? 1.2 : 1);
+        action.enabled = true;
+        action.setEffectiveWeight(0);
+        actions.set(key, action);
+      }
+      mixer.addEventListener("finished", (event) => {
+        if (event.action === actions.get("jumpStart")) {
+          playClip("jumpLoop");
+          return;
+        }
+        if (event.action === actions.get("jumpEnd")) {
+          playClip(queuedGroundKey ?? "idle");
+          queuedGroundKey = undefined;
+        }
+      });
       group.add(model);
+      playClip("idle", 0);
+      mixer.update(0);
     },
     undefined,
     (error) => {
@@ -1428,7 +1524,13 @@ const makeThreePlayerAvatar = (
     },
   );
 
-  return group;
+  return {
+    group,
+    playAction,
+    update: (delta) => {
+      mixer?.update(Math.max(0, Math.min(delta, 0.1)));
+    },
+  };
 };
 
 const makeCenterReticle = (): Three.Group => {
@@ -1710,11 +1812,26 @@ export const mountTrainingRunVisualization = (
         alpha: false,
       });
       renderer.setClearColor(resolved.backgroundColor, 1);
+      renderer.outputColorSpace = Three.SRGBColorSpace;
+      renderer.toneMapping = Three.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = perspectiveWalk ? 1.35 : 1;
       renderer.setPixelRatio(
         Math.min(window.devicePixelRatio || 1, resolved.pixelRatio),
       );
 
       const scene = new Three.Scene();
+      if (perspectiveWalk) {
+        const ambient = new Three.AmbientLight(0xffffff, 2.6);
+        scene.add(ambient);
+        const hemisphere = new Three.HemisphereLight(0xdceeff, 0x101923, 2.2);
+        scene.add(hemisphere);
+        const keyLight = new Three.DirectionalLight(0xffffff, 4.8);
+        keyLight.position.set(2.8, 5.2, 4.4);
+        scene.add(keyLight);
+        const rimLight = new Three.DirectionalLight(0x7dd3fc, 1.8);
+        rimLight.position.set(-4.5, 2.6, -2.2);
+        scene.add(rimLight);
+      }
       const camera = perspectiveWalk
         ? new Three.PerspectiveCamera(62, 1, 0.05, 120)
         : new Three.OrthographicCamera(-5, 5, 3, -3, 0.1, 100);
@@ -2326,7 +2443,7 @@ export const mountTrainingRunVisualization = (
 
       let walkController: WasdMouseLookControllerHandle | undefined;
       let threePlayerController: ThreePlayerControllerHandle | undefined;
-      let threePlayerAvatar: Three.Group | undefined;
+      let threePlayerAvatar: ThreePlayerAvatarAnimationHandle | undefined;
       const centerReticle =
         perspectiveWalk && camera instanceof Three.PerspectiveCamera
           ? makeCenterReticle()
@@ -2362,9 +2479,11 @@ export const mountTrainingRunVisualization = (
         camera instanceof Three.PerspectiveCamera
       ) {
         threePlayerAvatar = makeThreePlayerAvatar();
-        scene.add(threePlayerAvatar);
+        scene.add(threePlayerAvatar.group);
+        const externalActionChange =
+          resolved.thirdPersonController.onActionChange;
         threePlayerController = Effect.runSync(
-          createThreePlayerController(camera, threePlayerAvatar, canvas, {
+          createThreePlayerController(camera, threePlayerAvatar.group, canvas, {
             initialPosition: [0, 0, 4.4],
             character: {
               bounds: {
@@ -2375,6 +2494,10 @@ export const mountTrainingRunVisualization = (
               },
             },
             ...resolved.thirdPersonController,
+            onActionChange: (action) => {
+              threePlayerAvatar?.playAction(action);
+              externalActionChange?.(action);
+            },
           }),
         );
       }
@@ -2533,6 +2656,7 @@ export const mountTrainingRunVisualization = (
         if (threePlayerController !== undefined) {
           Effect.runSync(threePlayerController.update(delta));
         }
+        threePlayerAvatar?.update(delta);
         renderer.render(scene, camera);
         frame = requestAnimationFrame(render);
       };

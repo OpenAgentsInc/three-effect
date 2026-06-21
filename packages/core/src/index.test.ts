@@ -171,6 +171,7 @@ import {
   createThirdPersonFollowCameraState,
   defaultMmorpgCharacterControllerOptions,
   defaultMmorpgCharacterControllerState,
+  defaultThreePlayerAvatarAnimationClips,
   defaultThreePlayerAvatarModelUrl,
   defaultThreePlayerControllerOptions,
   integrateWasdVelocity,
@@ -1609,6 +1610,14 @@ describe("training run visualization", () => {
     expect(defaultThreePlayerAvatarModelUrl).toContain(
       "/assets/three-player-controller/UEPerson.glb",
     );
+    expect(defaultThreePlayerAvatarAnimationClips).toEqual({
+      idle: "idle",
+      jumpEnd: "jumpEnd",
+      jumpLoop: "jumpLoop",
+      jumpStart: "jumpStart",
+      run: "run",
+      walk: "walk",
+    });
   });
 
   test("resolves explicit motion policy overrides", () => {
