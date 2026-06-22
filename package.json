@@ -37,6 +37,10 @@
     "build:demo:moksha": "bun build examples/moksha/src/main.ts --outdir examples/moksha/dist --target browser && mkdir -p examples/moksha/dist/assets/moksha && cp packages/core/src/assets/moksha/* examples/moksha/dist/assets/moksha/",
     "build:demo:training": "bun build examples/training-run/src/main.ts --outdir examples/training-run/dist --target browser",
     "build:demo:character-spawner": "bun build examples/character-spawner/src/main.ts --outdir examples/character-spawner/dist --target browser",
+    "build:demo:crackling": "bun build examples/crackling-arc-standalone/src/main.ts --outdir examples/crackling-arc-standalone/dist --target browser",
+    "dev:demo:crackling": "bun run build:demo:crackling && vite --host 127.0.0.1",
+    "scene:crackling": "bun run scripts/scene-crackling.ts",
+    "scene:crackling:capture": "bun run scripts/capture-crackling-headless.ts",
     "dev:demo:three-player-controller": "vite --host 127.0.0.1",
     "verify:demo:three-player-controller": "bun scripts/verify-three-player-controller-repro.ts",
     "test": "bun test",
@@ -72,6 +76,7 @@
     "@sparkjsdev/spark": "^2.1.0",
     "@types/bun": "1.1.14",
     "firebase": "^12.14.0",
+    "playwright": "^1.61.0",
     "three-mesh-bvh": "^0.9.9",
     "typescript": "6.0.3",
     "vite": "^7.3.0"
