@@ -74,6 +74,7 @@ const statusToneFor = (
   if (
     normalized.includes("work") ||
     normalized.includes("trace") ||
+    normalized.includes("tracing") ||
     normalized.includes("replay") ||
     normalized.includes("active")
   ) {

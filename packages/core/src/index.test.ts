@@ -458,6 +458,13 @@ describe("camera and overlay primitives", () => {
           anchorOffset: [0, 1.8, 0],
         },
         {
+          id: "run.tassadar",
+          kind: "run",
+          label: "Tassadar Run",
+          position: [1.3, 0, 0],
+          status: "tracing",
+        },
+        {
           id: "agent.bravo",
           kind: "agent",
           label: "Bravo",
@@ -475,6 +482,11 @@ describe("camera and overlay primitives", () => {
     });
     expect(projections[0]!.screen.y).toBeLessThan(100);
     expect(projections[1]).toMatchObject({
+      id: "run.tassadar",
+      visible: true,
+      statusBar: { value: 0.78, tone: "working" },
+    });
+    expect(projections[2]).toMatchObject({
       id: "agent.bravo",
       visible: false,
       degraded: "hud_overlap",
