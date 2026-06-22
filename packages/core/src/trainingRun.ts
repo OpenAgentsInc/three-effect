@@ -5,6 +5,11 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { createEntityPool } from "./entityPoolPrimitives";
 import { createFlowBeam, createPayoutBurst } from "./flowEffectPrimitives";
 import {
+  createCracklingArc,
+  createGatewayPortal,
+  type InferenceGatewayLane,
+} from "./inferenceGatewayPrimitives";
+import {
   createManagedFrameClock,
   type ManagedFrameClockFrame,
 } from "./frameClockPrimitives";
@@ -176,6 +181,8 @@ export type TrainingRunEntityDefinition = Readonly<{
   status: string;
   label?: string;
   position?: TrainingRunVector;
+  visualKind?: "default" | "gateway_portal";
+  gatewayLane?: InferenceGatewayLane;
 }>;
 
 export type TrainingRunArtifactKind =
@@ -216,6 +223,7 @@ export type TrainingRunBeamDefinition = Readonly<
   TrainingRunMotionEvidence & {
     fromId: string;
     toId: string;
+    style?: "crackling_arc" | "flow";
   }
 >;
 
@@ -1440,6 +1448,15 @@ const hostSize = (element: HTMLElement): { width: number; height: number } => {
 
 const vector = (point: TrainingRunVector): Three.Vector3 =>
   new Three.Vector3(point[0], point[1], point[2]);
+
+const stableStringSeed = (value: string): number => {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+};
 
 const nodeSelection = (
   node: TrainingRunNodeDefinition,
@@ -4350,6 +4367,7 @@ export const mountTrainingRunVisualization = (
       const entityLabels: TextLabelHandle[] = [];
       const flowBeams: Array<{ update: (deltaSeconds: number) => void }> = [];
       const beamDisposers: Array<() => void> = [];
+      const portalHandles: Array<{ update: (deltaSeconds: number) => void; dispose: () => void }> = [];
       type BurstHandle = ReturnType<typeof createPayoutBurst>;
       const burstSlots: Array<{
         handle: BurstHandle;
@@ -4401,6 +4419,15 @@ export const mountTrainingRunVisualization = (
               margin: 0.04,
               worldHeight: 0.2,
             });
+          } else if (entity.visualKind === "gateway_portal") {
+            const portal = createGatewayPortal({
+              position: [position[0], position[1], position[2] + 0.18],
+              lane: entity.gatewayLane,
+              status: entity.status,
+              radius: 0.32,
+            });
+            root.add(portal.object3D);
+            portalHandles.push(portal);
           } else {
             const marker = makeTrainingRunArtifactMarker(
               trainingRunArtifactKindForSelection(selection),
@@ -4451,6 +4478,23 @@ export const mountTrainingRunVisualization = (
         const from = entityPositions.get(beam.fromId);
         const to = entityPositions.get(beam.toId);
         if (from === undefined || to === undefined) continue;
+        if (beam.style === "crackling_arc") {
+          const crackling = createCracklingArc({
+            from,
+            to,
+            color: 0x93c5fd,
+            secondaryColor: 0xf8fafc,
+            bend: 0.22,
+            opacity: 0.72,
+            seed: beam.motionId === undefined
+              ? undefined
+              : stableStringSeed(beam.motionId),
+          });
+          root.add(crackling.object3D);
+          flowBeams.push({ update: crackling.update });
+          beamDisposers.push(crackling.dispose);
+          continue;
+        }
         const handle = createFlowBeam({
           from,
           to,
@@ -4945,6 +4989,9 @@ export const mountTrainingRunVisualization = (
         for (const beam of flowBeams) {
           beam.update(delta);
         }
+        for (const portal of portalHandles) {
+          portal.update(delta);
+        }
         for (const label of entityLabels) {
           label.faceCamera(camera);
         }
@@ -5001,6 +5048,7 @@ export const mountTrainingRunVisualization = (
         for (const label of entityLabels) label.dispose();
         for (const slot of burstSlots) slot.handle.dispose();
         for (const disposeBeam of beamDisposers) disposeBeam();
+        for (const portal of portalHandles) portal.dispose();
         entityPresence?.dispose();
         entityPool?.dispose();
         sceneScope.dispose();

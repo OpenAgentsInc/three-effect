@@ -2982,9 +2982,23 @@ describe("training run entity layer", () => {
   test("passes provided entity layer arrays through resolution", () => {
     const entities = [
       { id: "pylon.a", status: "active", label: "A" },
-      { id: "pylon.b", status: "warmup" },
+      {
+        gatewayLane: "fireworks",
+        id: "gateway.fireworks",
+        label: "Fireworks",
+        status: "working",
+        visualKind: "gateway_portal",
+      },
     ] as const;
-    const beams = [{ fromId: "pylon.a", toId: "pylon.b" }] as const;
+    const beams = [
+      {
+        fromId: "pylon.a",
+        motionId: "khala:receipt:1",
+        sourceRefs: ["khala:receipt:1"],
+        style: "crackling_arc",
+        toId: "gateway.fireworks",
+      },
+    ] as const;
     const bursts = [{ atId: "pylon.a" }] as const;
 
     const resolved = resolveTrainingRunVisualizationOptions({
@@ -2994,6 +3008,14 @@ describe("training run entity layer", () => {
     });
     expect(resolved.entities).toEqual(entities);
     expect(resolved.beams).toEqual(beams);
+    expect(resolved.entities[1]).toMatchObject({
+      gatewayLane: "fireworks",
+      visualKind: "gateway_portal",
+    });
+    expect(resolved.beams[0]).toMatchObject({
+      sourceRefs: ["khala:receipt:1"],
+      style: "crackling_arc",
+    });
     expect(resolved.bursts).toEqual(bursts);
   });
 
