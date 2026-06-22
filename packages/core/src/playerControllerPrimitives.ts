@@ -123,6 +123,42 @@ export type ThirdPersonFollowCameraHandle = Readonly<{
   setOptions: (options: ThirdPersonFollowCameraOptions) => Effect.Effect<void>;
 }>;
 
+export type ThirdPersonAutoSettleBehindInput = Readonly<{
+  currentYaw: number;
+  deltaSeconds: number;
+  manualCamera: boolean;
+  moving: boolean;
+  targetYaw: number;
+  maxYawSpeed?: number;
+}>;
+
+export type CameraOcclusionEasingInput = Readonly<{
+  currentDistance: number;
+  desiredDistance: number;
+  deltaSeconds: number;
+  hitDistance?: number;
+  breathingRoom?: number;
+  easeInSpeed?: number;
+  easeOutSpeed?: number;
+  fovCompensation?: number;
+  minDistance?: number;
+}>;
+
+export type PointerClickPickGesture = Readonly<{
+  buttonDown: number;
+  buttonUp: number;
+  downAtMs: number;
+  downX: number;
+  downY: number;
+  pointerLocked: boolean;
+  releasedOnCanvas: boolean;
+  upAtMs: number;
+  upX: number;
+  upY: number;
+  maxDragPx?: number;
+  maxDurationMs?: number;
+}>;
+
 export type ThreePlayerControllerAvatarAction =
   | "idle"
   | "jump"
@@ -634,6 +670,81 @@ export const thirdPersonCameraDistanceAfterWheel = (
     options.minDistance,
     options.maxDistance,
   );
+
+export const shortestAngleDelta = (from: number, to: number): number => {
+  const twoPi = Math.PI * 2;
+  return ((((to - from) % twoPi) + Math.PI * 3) % twoPi) - Math.PI;
+};
+
+export const thirdPersonAutoSettleBehindYaw = ({
+  currentYaw,
+  deltaSeconds,
+  manualCamera,
+  maxYawSpeed = 3.6,
+  moving,
+  targetYaw,
+}: ThirdPersonAutoSettleBehindInput): number => {
+  if (!moving || manualCamera || deltaSeconds <= 0 || maxYawSpeed <= 0) {
+    return currentYaw;
+  }
+  const delta = shortestAngleDelta(currentYaw, targetYaw);
+  const step = Three.MathUtils.clamp(
+    delta,
+    -maxYawSpeed * deltaSeconds,
+    maxYawSpeed * deltaSeconds,
+  );
+  return currentYaw + step;
+};
+
+export const cameraOcclusionEasedDistance = ({
+  breathingRoom = 0.35,
+  currentDistance,
+  desiredDistance,
+  deltaSeconds,
+  easeInSpeed = 18,
+  easeOutSpeed = 6,
+  fovCompensation = 1,
+  hitDistance,
+  minDistance = 0.75,
+}: CameraOcclusionEasingInput): number => {
+  const occludedDistance =
+    hitDistance === undefined
+      ? desiredDistance
+      : Math.min(desiredDistance, hitDistance - Math.max(0, breathingRoom));
+  const targetDistance = Three.MathUtils.clamp(
+    occludedDistance * Math.max(0.1, fovCompensation),
+    Math.max(0, minDistance),
+    Math.max(Math.max(0, minDistance), desiredDistance),
+  );
+  const speed = targetDistance < currentDistance ? easeInSpeed : easeOutSpeed;
+  const alpha =
+    deltaSeconds <= 0 || speed <= 0
+      ? 1
+      : 1 - Math.exp(-speed * deltaSeconds);
+  return Number(
+    Three.MathUtils.lerp(currentDistance, targetDistance, alpha).toFixed(4),
+  );
+};
+
+export const pointerClickPickFromGesture = ({
+  buttonDown,
+  buttonUp,
+  downAtMs,
+  downX,
+  downY,
+  maxDragPx = 18,
+  maxDurationMs = 280,
+  pointerLocked,
+  releasedOnCanvas,
+  upAtMs,
+  upX,
+  upY,
+}: PointerClickPickGesture): boolean => {
+  if (buttonDown !== buttonUp) return false;
+  if (!pointerLocked && !releasedOnCanvas) return false;
+  if (upAtMs - downAtMs > maxDurationMs) return false;
+  return Math.hypot(upX - downX, upY - downY) <= maxDragPx;
+};
 
 export const threePlayerControllerLookDeltaToOrbitDelta = (
   delta: number,

@@ -18,6 +18,7 @@ import {
 import {
   createThreePlayerController,
   createWasdMouseLookController,
+  pointerClickPickFromGesture,
   type ThreePlayerControllerAvatarAction,
   type ThreePlayerControllerHandle,
   type ThreePlayerControllerOptions,
@@ -4782,6 +4783,9 @@ export const mountTrainingRunVisualization = (
         resolved.onNodeClick?.(selection);
         return true;
       };
+      let lastPointerGesture:
+        | Readonly<{ atMs: number; button: number; x: number; y: number }>
+        | undefined;
 
       const handleKeyDown = (event: KeyboardEvent) => {
         const direction = trainingRunKeyboardTargetingDirectionFromEvent(
@@ -4796,6 +4800,12 @@ export const mountTrainingRunVisualization = (
       };
 
       const handlePointerDown = (event: PointerEvent) => {
+        lastPointerGesture = {
+          button: event.button,
+          x: event.clientX,
+          y: event.clientY,
+          atMs: event.timeStamp,
+        };
         if (!pointerLockActive()) return;
         const selection = selectionAtPointer(event);
         const intent = trainingRunPointerClickIntent({
@@ -4814,6 +4824,26 @@ export const mountTrainingRunVisualization = (
 
       const handleClick = (event: MouseEvent) => {
         const pointerLocked = pointerLockActive();
+        const clickPick =
+          lastPointerGesture === undefined
+            ? true
+            : pointerClickPickFromGesture({
+                buttonDown: lastPointerGesture.button,
+                buttonUp: event.button,
+                downAtMs: lastPointerGesture.atMs,
+                downX: lastPointerGesture.x,
+                downY: lastPointerGesture.y,
+                pointerLocked,
+                releasedOnCanvas: event.target === canvas,
+                upAtMs: event.timeStamp,
+                upX: event.clientX,
+                upY: event.clientY,
+              });
+        lastPointerGesture = undefined;
+        if (!clickPick) {
+          event.preventDefault();
+          return;
+        }
         if (pointerLocked) {
           event.preventDefault();
           return;

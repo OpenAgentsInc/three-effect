@@ -11,6 +11,7 @@ import {
   applyMaskMaterial,
   attachObjectToBone,
   applyBillboard,
+  cameraOcclusionEasedDistance,
   collectBoneMap,
   createEquipmentAttachmentManager,
   cubicBezierPoints,
@@ -225,6 +226,7 @@ import {
   pmndrsPlayerControllerPrimitiveSourceRefs,
   pmndrsPresenceBindingPrimitiveSourceRefs,
   pmndrsTextLabelPrimitiveSourceRefs,
+  pointerClickPickFromGesture,
   quickMmorpgAttachmentPrimitiveSourceRefs,
   quickMmorpgBillboardPrimitiveSourceRefs,
   quickMmorpgEntityPrimitiveSourceRefs,
@@ -249,6 +251,7 @@ import {
   relaxMinimumDistanceLayout,
   SpatialHashGrid,
   threePlayerControllerLookDeltaToOrbitDelta,
+  thirdPersonAutoSettleBehindYaw,
   thirdPersonCameraDistanceAfterWheel,
   thirdPersonCameraOffsetAtDistance,
   thirdPersonCameraOffsetDistance,
@@ -3373,6 +3376,119 @@ describe("player controller primitives", () => {
 
     const clampedUp = thirdPersonOrbitOffset([0, 4, 0.01], 0, -100);
     expect(clampedUp[1]).toBeLessThan(thirdPersonCameraOffsetDistance(clampedUp));
+  });
+
+  test("ports WoC auto-settle-behind camera yaw as pure capped math", () => {
+    const yaw = thirdPersonAutoSettleBehindYaw({
+      currentYaw: 0,
+      targetYaw: Math.PI / 2,
+      deltaSeconds: 0.25,
+      moving: true,
+      manualCamera: false,
+      maxYawSpeed: 2,
+    });
+    expect(yaw).toBeCloseTo(0.5);
+    expect(
+      thirdPersonAutoSettleBehindYaw({
+        currentYaw: 1,
+        targetYaw: 0,
+        deltaSeconds: 1,
+        moving: true,
+        manualCamera: true,
+      }),
+    ).toBe(1);
+    expect(
+      thirdPersonAutoSettleBehindYaw({
+        currentYaw: 1,
+        targetYaw: 0,
+        deltaSeconds: 1,
+        moving: false,
+        manualCamera: false,
+      }),
+    ).toBe(1);
+  });
+
+  test("ports WoC camera occlusion easing with fast pull-in and slower release", () => {
+    const pulledIn = cameraOcclusionEasedDistance({
+      currentDistance: 6,
+      desiredDistance: 6,
+      hitDistance: 3,
+      breathingRoom: 0.5,
+      deltaSeconds: 0.1,
+      easeInSpeed: 20,
+      easeOutSpeed: 4,
+    });
+    expect(pulledIn).toBeLessThan(4);
+    expect(pulledIn).toBeGreaterThan(2.5);
+
+    const released = cameraOcclusionEasedDistance({
+      currentDistance: pulledIn,
+      desiredDistance: 6,
+      deltaSeconds: 0.1,
+      easeInSpeed: 20,
+      easeOutSpeed: 4,
+    });
+    expect(released).toBeGreaterThan(pulledIn);
+    expect(released).toBeLessThan(6);
+  });
+
+  test("ports WoC click-vs-drag disambiguation for pointer picking", () => {
+    expect(
+      pointerClickPickFromGesture({
+        buttonDown: 0,
+        buttonUp: 0,
+        downAtMs: 100,
+        upAtMs: 180,
+        downX: 100,
+        downY: 100,
+        upX: 110,
+        upY: 106,
+        pointerLocked: false,
+        releasedOnCanvas: true,
+      }),
+    ).toBe(true);
+    expect(
+      pointerClickPickFromGesture({
+        buttonDown: 0,
+        buttonUp: 0,
+        downAtMs: 100,
+        upAtMs: 180,
+        downX: 100,
+        downY: 100,
+        upX: 140,
+        upY: 106,
+        pointerLocked: false,
+        releasedOnCanvas: true,
+      }),
+    ).toBe(false);
+    expect(
+      pointerClickPickFromGesture({
+        buttonDown: 0,
+        buttonUp: 0,
+        downAtMs: 100,
+        upAtMs: 450,
+        downX: 100,
+        downY: 100,
+        upX: 102,
+        upY: 102,
+        pointerLocked: false,
+        releasedOnCanvas: true,
+      }),
+    ).toBe(false);
+    expect(
+      pointerClickPickFromGesture({
+        buttonDown: 0,
+        buttonUp: 0,
+        downAtMs: 100,
+        upAtMs: 180,
+        downX: 100,
+        downY: 100,
+        upX: 102,
+        upY: 102,
+        pointerLocked: true,
+        releasedOnCanvas: false,
+      }),
+    ).toBe(true);
   });
 
   test("defaults the harvested controller to snap-follow and stronger click drag", () => {
