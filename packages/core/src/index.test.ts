@@ -3019,6 +3019,29 @@ describe("training run entity layer", () => {
     expect(resolved.bursts).toEqual(bursts);
   });
 
+  test("retains per-beam crackling-arc appearance knobs through resolution", () => {
+    const beams = [
+      {
+        appearance: {
+          jitter: 0.42,
+          opacity: 0.95,
+          strandCount: 12,
+        },
+        fromId: "pylon.a",
+        motionId: "verse-spawned:crackling-energy",
+        sourceRefs: ["github:OpenAgentsInc/openagents#6033"],
+        style: "crackling_arc",
+        toId: "pylon.b",
+      },
+    ] as const;
+
+    const resolved = resolveTrainingRunVisualizationOptions({ beams });
+    expect(resolved.beams[0]).toMatchObject({
+      appearance: { jitter: 0.42, opacity: 0.95, strandCount: 12 },
+      style: "crackling_arc",
+    });
+  });
+
   test("retains the scene across transient local pose restore updates", () => {
     const base = {
       cameraMode: "perspective_walk",

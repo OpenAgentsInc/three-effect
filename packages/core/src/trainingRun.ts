@@ -219,11 +219,30 @@ export type TrainingRunMotionEvidence = Readonly<{
   simulated?: boolean;
 }>;
 
+/**
+ * Optional render-appearance knobs a `crackling_arc` beam can carry so a scene
+ * can dial the arc UP (more strands, thicker jitter, higher opacity, brighter
+ * color) without the renderer hardcoding one faint default. Mirrors the
+ * `createCracklingArc` options the standalone demo already exposes. Unset
+ * fields fall back to the renderer defaults, so existing beams are unchanged.
+ */
+export type TrainingRunBeamAppearance = Readonly<{
+  strandCount?: number;
+  opacity?: number;
+  jitter?: number;
+  rate?: number;
+  bend?: number;
+  color?: number;
+  secondaryColor?: number;
+}>;
+
 export type TrainingRunBeamDefinition = Readonly<
   TrainingRunMotionEvidence & {
     fromId: string;
     toId: string;
     style?: "crackling_arc" | "flow";
+    /** Per-beam crackling-arc render knobs; only read for `crackling_arc`. */
+    appearance?: TrainingRunBeamAppearance;
   }
 >;
 
@@ -4481,13 +4500,25 @@ export const mountTrainingRunVisualization = (
         const to = entityPositions.get(beam.toId);
         if (from === undefined || to === undefined) continue;
         if (beam.style === "crackling_arc") {
+          // Per-beam appearance knobs let a scene dial the arc UP so it reads as
+          // real crackling energy in a dark world instead of a faint hairline.
+          // Unset knobs fall back to the visible defaults below (already louder
+          // than the old 4-strand/0.11-jitter primitive default).
+          const appearance = beam.appearance ?? {};
           const crackling = createCracklingArc({
             from,
             to,
-            color: 0x93c5fd,
-            secondaryColor: 0xf8fafc,
-            bend: 0.22,
-            opacity: 0.72,
+            color: appearance.color ?? 0x93c5fd,
+            secondaryColor: appearance.secondaryColor ?? 0xf8fafc,
+            bend: appearance.bend ?? 0.22,
+            opacity: appearance.opacity ?? 0.72,
+            ...(appearance.strandCount === undefined
+              ? {}
+              : { strandCount: appearance.strandCount }),
+            ...(appearance.jitter === undefined
+              ? {}
+              : { jitter: appearance.jitter }),
+            ...(appearance.rate === undefined ? {} : { rate: appearance.rate }),
             ...(beam.motionId === undefined
               ? {}
               : { seed: stableStringSeed(beam.motionId) }),
