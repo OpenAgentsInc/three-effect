@@ -4422,9 +4422,11 @@ export const mountTrainingRunVisualization = (
           } else if (entity.visualKind === "gateway_portal") {
             const portal = createGatewayPortal({
               position: [position[0], position[1], position[2] + 0.18],
-              lane: entity.gatewayLane,
               status: entity.status,
               radius: 0.32,
+              ...(entity.gatewayLane === undefined
+                ? {}
+                : { lane: entity.gatewayLane }),
             });
             root.add(portal.object3D);
             portalHandles.push(portal);
@@ -4486,9 +4488,9 @@ export const mountTrainingRunVisualization = (
             secondaryColor: 0xf8fafc,
             bend: 0.22,
             opacity: 0.72,
-            seed: beam.motionId === undefined
-              ? undefined
-              : stableStringSeed(beam.motionId),
+            ...(beam.motionId === undefined
+              ? {}
+              : { seed: stableStringSeed(beam.motionId) }),
           });
           root.add(crackling.object3D);
           flowBeams.push({ update: crackling.update });
