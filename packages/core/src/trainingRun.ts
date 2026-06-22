@@ -274,9 +274,41 @@ export type TrainingRunPointerClickDecisionInput = Readonly<{
   walkControllerEnabled: boolean;
 }>;
 
+export type TrainingRunKeyboardTargetingAction = "next" | "previous";
+
+export type TrainingRunKeyboardTargetingBinding = Readonly<{
+  code?: string;
+  key?: string;
+  altKey?: boolean;
+  ctrlKey?: boolean;
+  metaKey?: boolean;
+  shiftKey?: boolean;
+}>;
+
+export type TrainingRunKeyboardTargetingBindingMap = Readonly<
+  Partial<
+    Record<
+      TrainingRunKeyboardTargetingAction,
+      readonly TrainingRunKeyboardTargetingBinding[]
+    >
+  >
+>;
+
 export type TrainingRunKeyboardTargeting = Readonly<{
   enabled?: boolean;
   maxTargets?: number;
+  bindings?: TrainingRunKeyboardTargetingBindingMap;
+}>;
+
+export type ResolvedTrainingRunKeyboardTargeting = Readonly<{
+  enabled: boolean;
+  maxTargets: number;
+  bindings: Readonly<
+    Record<
+      TrainingRunKeyboardTargetingAction,
+      readonly TrainingRunKeyboardTargetingBinding[]
+    >
+  >;
 }>;
 
 export type TrainingRunPresenceZone = "tassadar_area";
@@ -456,7 +488,7 @@ export type ResolvedTrainingRunVisualizationOptions = Readonly<{
   stageNodeGlyph: TrainingRunStageNodeGlyph;
   sceneChrome: Required<TrainingRunSceneChrome>;
   worldLabelDensity: TrainingRunWorldLabelDensity;
-  keyboardTargeting: Required<TrainingRunKeyboardTargeting>;
+  keyboardTargeting: ResolvedTrainingRunKeyboardTargeting;
   thirdPersonController: ThreePlayerControllerOptions;
   walkController: WasdMouseLookControllerOptions;
   onNodeClick?: (node: TrainingRunNodeSelection) => void;
@@ -704,6 +736,10 @@ export const defaultTrainingRunVisualizationOptions: ResolvedTrainingRunVisualiz
     keyboardTargeting: {
       enabled: false,
       maxTargets: 24,
+      bindings: {
+        next: [{ key: "Tab", shiftKey: false }],
+        previous: [{ key: "Tab", shiftKey: true }],
+      },
     },
     thirdPersonController: {},
     walkController: {},
@@ -726,10 +762,62 @@ const resolveTrainingRunSceneChrome = (
 
 const resolveTrainingRunKeyboardTargeting = (
   targeting: TrainingRunKeyboardTargeting | undefined,
-): Required<TrainingRunKeyboardTargeting> => ({
-  ...defaultTrainingRunVisualizationOptions.keyboardTargeting,
-  ...(targeting ?? {}),
-});
+): ResolvedTrainingRunKeyboardTargeting => {
+  const defaults = defaultTrainingRunVisualizationOptions.keyboardTargeting;
+  return {
+    ...defaults,
+    ...(targeting ?? {}),
+    bindings: {
+      next: targeting?.bindings?.next ?? defaults.bindings.next,
+      previous: targeting?.bindings?.previous ?? defaults.bindings.previous,
+    },
+  };
+};
+
+const trainingRunKeyboardTargetingBindingMatchesEvent = (
+  binding: TrainingRunKeyboardTargetingBinding,
+  event: KeyboardEvent,
+): boolean => {
+  const hasPrimaryMatch =
+    (binding.code !== undefined && binding.code === event.code) ||
+    (binding.key !== undefined && binding.key === event.key);
+  if (!hasPrimaryMatch) return false;
+  if (binding.altKey !== undefined && binding.altKey !== event.altKey) {
+    return false;
+  }
+  if (binding.ctrlKey !== undefined && binding.ctrlKey !== event.ctrlKey) {
+    return false;
+  }
+  if (binding.metaKey !== undefined && binding.metaKey !== event.metaKey) {
+    return false;
+  }
+  if (binding.shiftKey !== undefined && binding.shiftKey !== event.shiftKey) {
+    return false;
+  }
+  return true;
+};
+
+export const trainingRunKeyboardTargetingDirectionFromEvent = (
+  event: KeyboardEvent,
+  targeting: ResolvedTrainingRunKeyboardTargeting,
+): 1 | -1 | undefined => {
+  if (!targeting.enabled) return undefined;
+  if (
+    targeting.bindings.previous.some((binding) =>
+      trainingRunKeyboardTargetingBindingMatchesEvent(binding, event),
+    )
+  ) {
+    return -1;
+  }
+  if (
+    targeting.bindings.next.some((binding) =>
+      trainingRunKeyboardTargetingBindingMatchesEvent(binding, event),
+    )
+  ) {
+    return 1;
+  }
+  return undefined;
+};
 
 export const resolveTrainingRunVisualizationOptions = (
   options: TrainingRunVisualizationOptions = {},
@@ -4642,10 +4730,14 @@ export const mountTrainingRunVisualization = (
       };
 
       const handleKeyDown = (event: KeyboardEvent) => {
-        if (!resolved.keyboardTargeting.enabled || event.key !== "Tab") return;
+        const direction = trainingRunKeyboardTargetingDirectionFromEvent(
+          event,
+          resolved.keyboardTargeting,
+        );
+        if (direction === undefined) return;
         event.preventDefault();
         event.stopPropagation();
-        selectNextTarget(event.shiftKey ? -1 : 1);
+        selectNextTarget(direction);
         canvas.focus({ preventScroll: true });
       };
 

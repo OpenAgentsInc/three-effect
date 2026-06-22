@@ -157,6 +157,7 @@ import {
   trainingRunRemoteAvatarSelection,
   trainingRunVisualizationRetainedStructuralSignature,
   trainingRunVisualizationOptionsWithLocalPose,
+  trainingRunKeyboardTargetingDirectionFromEvent,
   trainingRunWorldLabelVisibleForSelection,
   trainingRunVisualizationOptionsFromSnapshot,
   canRetainTrainingRunVisualization,
@@ -202,6 +203,7 @@ import {
   createPayoutBurst,
   createSplineParticleEmitter,
   defaultTextLabelOptions,
+  defaultWasdKeyboardBindings,
   defaultWasdKeyboardState,
   createThirdPersonFollowCamera,
   createThirdPersonFollowCameraState,
@@ -233,6 +235,8 @@ import {
   resolveProofReplayVisualizationOptions,
   normalizeMmoEntityTransformSnapshot,
   resolveThreePlayerControllerOptions,
+  resolveWasdKeyboardBindings,
+  resolveWasdMouseLookControllerOptions,
   resolveThirdPersonFollowCameraOptions,
   resolveTextLabelOptions,
   proofReplayCameraPoseWithOverride,
@@ -1881,6 +1885,10 @@ describe("training run visualization", () => {
     expect(resolved.stageNodeGlyph).toBe("orb");
     expect(resolved.keyboardTargeting).toEqual({
       enabled: false,
+      bindings: {
+        next: [{ key: "Tab", shiftKey: false }],
+        previous: [{ key: "Tab", shiftKey: true }],
+      },
       maxTargets: 24,
     });
     expect(resolved.walkController).toEqual({});
@@ -3146,6 +3154,48 @@ describe("player controller primitives", () => {
     expect(setWasdKeyState(state, "Escape", true)).toBe(false);
   });
 
+  test("keeps WASD bindings configurable without changing defaults", () => {
+    expect(resolveWasdKeyboardBindings()).toEqual(defaultWasdKeyboardBindings);
+
+    const bindings = resolveWasdKeyboardBindings({
+      backward: [],
+      forward: ["KeyI"],
+      left: ["KeyJ"],
+      right: ["KeyL"],
+    });
+
+    expect(keyCodeToWasdAction("KeyI", bindings)).toBe("forward");
+    expect(keyCodeToWasdAction("KeyJ", bindings)).toBe("left");
+    expect(keyCodeToWasdAction("KeyL", bindings)).toBe("right");
+    expect(keyCodeToWasdAction("KeyW", bindings)).toBeUndefined();
+    expect(keyCodeToWasdAction("KeyS", bindings)).toBeUndefined();
+
+    const state = defaultWasdKeyboardState();
+    expect(setWasdKeyState(state, "KeyI", true, bindings)).toBe(true);
+    expect(setWasdKeyState(state, "KeyW", true, bindings)).toBe(false);
+    expect(state.forward).toBe(true);
+    expect(state.backward).toBe(false);
+  });
+
+  test("resolves custom key maps through player controller options", () => {
+    const bindings = {
+      forward: ["KeyI"],
+      sprint: ["AltLeft"],
+    };
+
+    const thirdPerson = resolveThreePlayerControllerOptions({} as Window, {
+      keyboardBindings: bindings,
+    });
+    const mouseLook = resolveWasdMouseLookControllerOptions({} as Window, {
+      keyboardBindings: bindings,
+    });
+
+    expect(thirdPerson.keyboardBindings.forward).toEqual(["KeyI"]);
+    expect(thirdPerson.keyboardBindings.sprint).toEqual(["AltLeft"]);
+    expect(mouseLook.keyboardBindings.forward).toEqual(["KeyI"]);
+    expect(mouseLook.keyboardBindings.sprint).toEqual(["AltLeft"]);
+  });
+
   test("computes camera-yaw-relative desired movement", () => {
     const camera = new Three.PerspectiveCamera();
     camera.rotation.y = Math.PI / 2;
@@ -3520,6 +3570,73 @@ describe("player controller primitives", () => {
     expect(running.action).toBe("run");
     expect(running.velocity.z).toBeGreaterThan(0);
     expect(running.velocity.z).toBeGreaterThan(walking.velocity.z);
+  });
+
+  test("runs camera-relative backward with custom backward and sprint keys", () => {
+    const camera = new Three.PerspectiveCamera();
+    camera.position.set(0, 1, 6);
+    camera.lookAt(0, 1, 0);
+    const options = {
+      acceleration: 100,
+      backwardSpeedMultiplier: 1,
+      runSpeed: 8,
+      turnSpeed: 100,
+      walkSpeed: 4,
+    };
+    const bindings = resolveWasdKeyboardBindings({
+      backward: ["KeyK"],
+      sprint: ["AltLeft"],
+    });
+    const keyboard = defaultWasdKeyboardState();
+
+    expect(setWasdKeyState(keyboard, "KeyK", true, bindings)).toBe(true);
+    expect(setWasdKeyState(keyboard, "AltLeft", true, bindings)).toBe(true);
+    expect(keyboard.backward).toBe(true);
+    expect(keyboard.sprint).toBe(true);
+
+    const object = new Three.Object3D();
+    const running = updateCameraRelativeMmorpgCharacterController(
+      object,
+      camera,
+      keyboard,
+      defaultMmorpgCharacterControllerState(),
+      0.1,
+      options,
+    );
+
+    expect(running.action).toBe("run");
+    expect(running.velocity.z).toBeGreaterThan(0);
+  });
+
+  test("resolves configurable training-run target cycling bindings", () => {
+    const resolved = resolveTrainingRunVisualizationOptions({
+      keyboardTargeting: {
+        enabled: true,
+        bindings: {
+          next: [{ code: "KeyE" }],
+          previous: [{ code: "KeyQ" }],
+        },
+      },
+    });
+
+    expect(
+      trainingRunKeyboardTargetingDirectionFromEvent(
+        { code: "KeyE", key: "e" } as KeyboardEvent,
+        resolved.keyboardTargeting,
+      ),
+    ).toBe(1);
+    expect(
+      trainingRunKeyboardTargetingDirectionFromEvent(
+        { code: "KeyQ", key: "q" } as KeyboardEvent,
+        resolved.keyboardTargeting,
+      ),
+    ).toBe(-1);
+    expect(
+      trainingRunKeyboardTargetingDirectionFromEvent(
+        { code: "Tab", key: "Tab", shiftKey: false } as KeyboardEvent,
+        resolved.keyboardTargeting,
+      ),
+    ).toBeUndefined();
   });
 
   test("keeps default A/D third-person turning calm", () => {

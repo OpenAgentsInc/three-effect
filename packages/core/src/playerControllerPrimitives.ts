@@ -35,9 +35,27 @@ export type WasdAction =
   | "rise"
   | "sprint";
 
+export const wasdActions = [
+  "backward",
+  "fall",
+  "forward",
+  "left",
+  "right",
+  "rise",
+  "sprint",
+] as const satisfies readonly WasdAction[];
+
 export type WasdKeyboardState = Readonly<Record<WasdAction, boolean>>;
 
 export type MutableWasdKeyboardState = Record<WasdAction, boolean>;
+
+export type WasdKeyboardBindingMap = Readonly<
+  Partial<Record<WasdAction, readonly string[]>>
+>;
+
+export type ResolvedWasdKeyboardBindingMap = Readonly<
+  Record<WasdAction, readonly string[]>
+>;
 
 export type WasdMouseLookDebugSnapshot = Readonly<{
   event:
@@ -175,6 +193,7 @@ export type ThreePlayerControllerOptions = Readonly<{
   enabled?: boolean;
   inputTarget?: HTMLElement | Window;
   initialPosition?: readonly [number, number, number];
+  keyboardBindings?: WasdKeyboardBindingMap;
   camera?: ThirdPersonFollowCameraOptions;
   character?: MmorpgCharacterControllerOptions;
   dragSensitivity?: number;
@@ -189,6 +208,7 @@ export type ResolvedThreePlayerControllerOptions = Readonly<{
   enabled: boolean;
   inputTarget: HTMLElement | Window;
   initialPosition: readonly [number, number, number];
+  keyboardBindings: ResolvedWasdKeyboardBindingMap;
   camera: ThirdPersonFollowCameraOptions;
   character: MmorpgCharacterControllerOptions;
   dragSensitivity: number;
@@ -212,6 +232,7 @@ export type WasdMouseLookControllerOptions = Readonly<{
   lockSelector?: string;
   inputTarget?: HTMLElement | Window;
   initialPosition?: readonly [number, number, number];
+  keyboardBindings?: WasdKeyboardBindingMap;
   eyeHeight?: number;
   movementSpeed?: number;
   sprintMultiplier?: number;
@@ -231,6 +252,7 @@ export type ResolvedWasdMouseLookControllerOptions = Readonly<{
   lockSelector?: string;
   inputTarget: HTMLElement | Window;
   initialPosition: readonly [number, number, number];
+  keyboardBindings: ResolvedWasdKeyboardBindingMap;
   eyeHeight: number;
   movementSpeed: number;
   sprintMultiplier: number;
@@ -267,12 +289,35 @@ export const defaultWasdKeyboardState = (): MutableWasdKeyboardState => ({
   sprint: false,
 });
 
+export const defaultWasdKeyboardBindings = {
+  backward: ["KeyS", "ArrowDown"],
+  fall: ["KeyC"],
+  forward: ["KeyW", "ArrowUp"],
+  left: ["KeyA", "ArrowLeft"],
+  right: ["KeyD", "ArrowRight"],
+  rise: ["Space"],
+  sprint: ["ShiftLeft", "ShiftRight"],
+} as const satisfies ResolvedWasdKeyboardBindingMap;
+
+export const resolveWasdKeyboardBindings = (
+  bindings: WasdKeyboardBindingMap = {},
+): ResolvedWasdKeyboardBindingMap => ({
+  backward: bindings.backward ?? defaultWasdKeyboardBindings.backward,
+  fall: bindings.fall ?? defaultWasdKeyboardBindings.fall,
+  forward: bindings.forward ?? defaultWasdKeyboardBindings.forward,
+  left: bindings.left ?? defaultWasdKeyboardBindings.left,
+  right: bindings.right ?? defaultWasdKeyboardBindings.right,
+  rise: bindings.rise ?? defaultWasdKeyboardBindings.rise,
+  sprint: bindings.sprint ?? defaultWasdKeyboardBindings.sprint,
+});
+
 export const defaultWasdMouseLookControllerOptions = (
   inputTarget: HTMLElement | Window,
 ): ResolvedWasdMouseLookControllerOptions => ({
   enabled: true,
   inputTarget,
   initialPosition: [0, 1.65, 6],
+  keyboardBindings: defaultWasdKeyboardBindings,
   eyeHeight: 1.65,
   movementSpeed: 4,
   sprintMultiplier: 1.8,
@@ -317,6 +362,7 @@ export const defaultThreePlayerControllerOptions = (
   enabled: true,
   inputTarget,
   initialPosition: [0, 0, 4.4],
+  keyboardBindings: defaultWasdKeyboardBindings,
   camera: {
     offset: [0, 2.4, 4.8],
     lookAtOffset: [0, 0.9, 0],
@@ -343,14 +389,16 @@ export const defaultThreePlayerControllerOptions = (
 export const resolveWasdMouseLookControllerOptions = (
   inputTarget: HTMLElement | Window,
   options: WasdMouseLookControllerOptions = {},
-): ResolvedWasdMouseLookControllerOptions => ({
-  ...defaultWasdMouseLookControllerOptions(inputTarget),
-  ...options,
-  inputTarget: options.inputTarget ?? inputTarget,
-  groundHeightAt:
-    options.groundHeightAt ??
-    defaultWasdMouseLookControllerOptions(inputTarget).groundHeightAt,
-});
+): ResolvedWasdMouseLookControllerOptions => {
+  const defaults = defaultWasdMouseLookControllerOptions(inputTarget);
+  return {
+    ...defaults,
+    ...options,
+    inputTarget: options.inputTarget ?? inputTarget,
+    keyboardBindings: resolveWasdKeyboardBindings(options.keyboardBindings),
+    groundHeightAt: options.groundHeightAt ?? defaults.groundHeightAt,
+  };
+};
 
 export const resolveThirdPersonFollowCameraOptions = (
   options: ThirdPersonFollowCameraOptions = {},
@@ -388,6 +436,7 @@ export const resolveThreePlayerControllerOptions = (
     ...options,
     inputTarget: options.inputTarget ?? inputTarget,
     initialPosition: options.initialPosition ?? defaults.initialPosition,
+    keyboardBindings: resolveWasdKeyboardBindings(options.keyboardBindings),
     camera: {
       ...defaults.camera,
       ...(options.camera ?? {}),
@@ -408,30 +457,12 @@ export const resolveThreePlayerControllerOptions = (
   };
 };
 
-export const keyCodeToWasdAction = (code: string): WasdAction | undefined => {
-  switch (code) {
-    case "KeyW":
-    case "ArrowUp":
-      return "forward";
-    case "KeyS":
-    case "ArrowDown":
-      return "backward";
-    case "KeyA":
-    case "ArrowLeft":
-      return "left";
-    case "KeyD":
-    case "ArrowRight":
-      return "right";
-    case "ShiftLeft":
-    case "ShiftRight":
-      return "sprint";
-    case "Space":
-      return "rise";
-    case "KeyC":
-      return "fall";
-    default:
-      return undefined;
-  }
+export const keyCodeToWasdAction = (
+  code: string,
+  bindings: WasdKeyboardBindingMap = defaultWasdKeyboardBindings,
+): WasdAction | undefined => {
+  const resolved = resolveWasdKeyboardBindings(bindings);
+  return wasdActions.find((action) => resolved[action].includes(code));
 };
 
 export const isEditableInputTarget = (target: EventTarget | null): boolean => {
@@ -450,8 +481,9 @@ export const setWasdKeyState = (
   state: MutableWasdKeyboardState,
   code: string,
   pressed: boolean,
+  bindings: WasdKeyboardBindingMap = defaultWasdKeyboardBindings,
 ): boolean => {
-  const action = keyCodeToWasdAction(code);
+  const action = keyCodeToWasdAction(code, bindings);
   if (action === undefined) return false;
   state[action] = pressed;
   return true;
@@ -1046,10 +1078,23 @@ export const createWasdMouseLookController = (
       };
       const onKeyDown = (event: KeyboardEvent) => {
         if (!resolved.enabled || isEditableInputTarget(event.target)) return;
-        if (setWasdKeyState(keyboard, event.code, true)) event.preventDefault();
+        if (
+          setWasdKeyState(keyboard, event.code, true, resolved.keyboardBindings)
+        ) {
+          event.preventDefault();
+        }
       };
       const onKeyUp = (event: KeyboardEvent) => {
-        if (setWasdKeyState(keyboard, event.code, false)) event.preventDefault();
+        if (
+          setWasdKeyState(
+            keyboard,
+            event.code,
+            false,
+            resolved.keyboardBindings,
+          )
+        ) {
+          event.preventDefault();
+        }
       };
       keyTarget.addEventListener("keydown", onKeyDown as EventListener, {
         passive: false,
@@ -1310,12 +1355,21 @@ export const createThreePlayerController = (
       };
       const onKeyDown = (event: KeyboardEvent) => {
         if (!resolved.enabled || isEditableInputTarget(event.target)) return;
-        if (setWasdKeyState(keyboard, event.code, true)) {
+        if (
+          setWasdKeyState(keyboard, event.code, true, resolved.keyboardBindings)
+        ) {
           event.preventDefault();
         }
       };
       const onKeyUp = (event: KeyboardEvent) => {
-        if (setWasdKeyState(keyboard, event.code, false)) {
+        if (
+          setWasdKeyState(
+            keyboard,
+            event.code,
+            false,
+            resolved.keyboardBindings,
+          )
+        ) {
           event.preventDefault();
         }
       };
