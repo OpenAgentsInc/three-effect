@@ -222,6 +222,9 @@ export type ResolvedThreePlayerControllerOptions = Readonly<{
 export type ThreePlayerControllerHandle = Readonly<{
   keyboard: WasdKeyboardState;
   update: (delta: number) => Effect.Effect<void>;
+  updateKeyboardBindings: (
+    bindings: WasdKeyboardBindingMap,
+  ) => Effect.Effect<void>;
   getPosition: Effect.Effect<Three.Vector3>;
   setPosition: (position: Three.Vector3) => Effect.Effect<void>;
   dispose: Effect.Effect<void>;
@@ -271,6 +274,9 @@ export type WasdMouseLookControllerHandle = Readonly<{
   controls: PointerLockControls;
   keyboard: WasdKeyboardState;
   update: (delta: number) => Effect.Effect<void>;
+  updateKeyboardBindings: (
+    bindings: WasdKeyboardBindingMap,
+  ) => Effect.Effect<void>;
   lock: Effect.Effect<void>;
   unlock: Effect.Effect<void>;
   isLocked: Effect.Effect<boolean>;
@@ -288,6 +294,14 @@ export const defaultWasdKeyboardState = (): MutableWasdKeyboardState => ({
   rise: false,
   sprint: false,
 });
+
+export const clearWasdKeyboardState = (
+  state: MutableWasdKeyboardState,
+): void => {
+  for (const key of wasdActions) {
+    state[key] = false;
+  }
+};
 
 export const defaultWasdKeyboardBindings = {
   backward: ["KeyS", "ArrowDown"],
@@ -1014,7 +1028,7 @@ export const createWasdMouseLookController = (
         createPointerLockControls(camera, domElement),
       );
       pointerLockHandle.controls.pointerSpeed = 0;
-      const resolved = resolveWasdMouseLookControllerOptions(
+      let resolved = resolveWasdMouseLookControllerOptions(
         typeof window === "undefined" ? domElement : window,
         options,
       );
@@ -1258,6 +1272,14 @@ export const createWasdMouseLookController = (
               resolved.eyeHeight;
             camera.updateMatrixWorld();
           }),
+        updateKeyboardBindings: (bindings: WasdKeyboardBindingMap) =>
+          Effect.sync(() => {
+            resolved = {
+              ...resolved,
+              keyboardBindings: resolveWasdKeyboardBindings(bindings),
+            };
+            clearWasdKeyboardState(keyboard);
+          }),
         lock: Effect.sync(requestLock),
         unlock: pointerLockHandle.unlock,
         isLocked: pointerLockHandle.isLocked,
@@ -1271,9 +1293,7 @@ export const createWasdMouseLookController = (
           if (disposed) return;
           disposed = true;
           for (const remove of removers.splice(0)) remove();
-          for (const key of Object.keys(keyboard) as WasdAction[]) {
-            keyboard[key] = false;
-          }
+          clearWasdKeyboardState(keyboard);
           pointerLockHandle.controls.unlock();
           Effect.runSync(pointerLockHandle.dispose);
         }),
@@ -1291,7 +1311,7 @@ export const createThreePlayerController = (
 ): Effect.Effect<ThreePlayerControllerHandle, ThreePlayerControllerCreateError> =>
   Effect.try({
     try: () => {
-      const resolved = resolveThreePlayerControllerOptions(
+      let resolved = resolveThreePlayerControllerOptions(
         typeof window === "undefined" ? domElement : window,
         options,
       );
@@ -1490,6 +1510,14 @@ export const createThreePlayerController = (
             Effect.runSync(cameraHandle.update(safeDelta));
             emitAction(target.position.y > groundY + 0.01 ? "jump" : snapshot.action);
           }),
+        updateKeyboardBindings: (bindings: WasdKeyboardBindingMap) =>
+          Effect.sync(() => {
+            resolved = {
+              ...resolved,
+              keyboardBindings: resolveWasdKeyboardBindings(bindings),
+            };
+            clearWasdKeyboardState(keyboard);
+          }),
         getPosition: Effect.sync(() => target.position.clone()),
         setPosition: (position: Three.Vector3) =>
           Effect.sync(() => {
@@ -1502,9 +1530,7 @@ export const createThreePlayerController = (
           if (disposed) return;
           disposed = true;
           for (const remove of removers.splice(0)) remove();
-          for (const key of Object.keys(keyboard) as WasdAction[]) {
-            keyboard[key] = false;
-          }
+          clearWasdKeyboardState(keyboard);
         }),
       };
     },

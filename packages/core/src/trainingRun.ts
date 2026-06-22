@@ -924,8 +924,30 @@ const withoutInitialPose = (value: unknown): unknown => {
   return copy;
 };
 
+const withoutRetainedControllerBindings = (value: unknown): unknown => {
+  const copy = withoutInitialPose(value);
+  if (typeof copy !== "object" || copy === null || Array.isArray(copy)) {
+    return copy;
+  }
+  const mutableCopy: Record<string, unknown> = {
+    ...(copy as Record<string, unknown>),
+  };
+  delete mutableCopy["keyboardBindings"];
+  return mutableCopy;
+};
+
+const withoutKeyboardTargetingBindings = (
+  value: ResolvedTrainingRunKeyboardTargeting,
+): Omit<ResolvedTrainingRunKeyboardTargeting, "bindings"> => {
+  const { bindings: _bindings, ...rest } = value;
+  return rest;
+};
+
 const structuralJsonReplacer = (_key: string, value: unknown): unknown =>
   typeof value === "function" ? "[function]" : value;
+
+const retainedInputBindingsSignature = (value: unknown): string =>
+  JSON.stringify(value, structuralJsonReplacer);
 
 export const trainingRunVisualizationRetainedStructuralSignature = (
   options: TrainingRunVisualizationOptions = {},
@@ -941,12 +963,14 @@ export const trainingRunVisualizationRetainedStructuralSignature = (
       stageNodeGlyph: resolved.stageNodeGlyph,
       sceneChrome: resolved.sceneChrome,
       worldLabelDensity: resolved.worldLabelDensity,
-      keyboardTargeting: resolved.keyboardTargeting,
+      keyboardTargeting: withoutKeyboardTargetingBindings(
+        resolved.keyboardTargeting,
+      ),
       remoteAvatarInterpolation: resolved.remoteAvatarInterpolation,
-      thirdPersonController: withoutInitialPose(
+      thirdPersonController: withoutRetainedControllerBindings(
         resolved.thirdPersonController,
       ),
-      walkController: withoutInitialPose(resolved.walkController),
+      walkController: withoutRetainedControllerBindings(resolved.walkController),
     },
     structuralJsonReplacer,
   );
@@ -4654,7 +4678,37 @@ export const mountTrainingRunVisualization = (
         if (!canRetainTrainingRunVisualization(resolved, options)) {
           return false;
         }
-        resolved = resolveTrainingRunVisualizationOptions(options);
+        const previousThirdPersonBindings = retainedInputBindingsSignature(
+          resolved.thirdPersonController.keyboardBindings,
+        );
+        const previousWalkBindings = retainedInputBindingsSignature(
+          resolved.walkController.keyboardBindings,
+        );
+        const next = resolveTrainingRunVisualizationOptions(options);
+        resolved = next;
+        if (
+          threePlayerController !== undefined &&
+          retainedInputBindingsSignature(
+            resolved.thirdPersonController.keyboardBindings,
+          ) !== previousThirdPersonBindings
+        ) {
+          Effect.runSync(
+            threePlayerController.updateKeyboardBindings(
+              resolved.thirdPersonController.keyboardBindings ?? {},
+            ),
+          );
+        }
+        if (
+          walkController !== undefined &&
+          retainedInputBindingsSignature(resolved.walkController.keyboardBindings) !==
+            previousWalkBindings
+        ) {
+          Effect.runSync(
+            walkController.updateKeyboardBindings(
+              resolved.walkController.keyboardBindings ?? {},
+            ),
+          );
+        }
         updateRemoteAvatars(resolved.remoteAvatars);
         updateWorldItems(resolved.worldItems);
         currentWorldItemProximityId = undefined;

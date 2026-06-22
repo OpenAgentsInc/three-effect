@@ -206,6 +206,7 @@ import {
   defaultWasdKeyboardBindings,
   defaultWasdKeyboardState,
   createThirdPersonFollowCamera,
+  createThreePlayerController,
   createThirdPersonFollowCameraState,
   defaultMmorpgCharacterControllerOptions,
   defaultMmorpgCharacterControllerState,
@@ -3637,6 +3638,107 @@ describe("player controller primitives", () => {
         resolved.keyboardTargeting,
       ),
     ).toBeUndefined();
+  });
+
+  test("treats keybinding changes as retained training-run updates", () => {
+    const base = {
+      cameraMode: "perspective_walk" as const,
+      controller: "third_person_character" as const,
+      keyboardTargeting: {
+        enabled: true,
+        bindings: {
+          next: [{ code: "Tab" }],
+          previous: [{ code: "Tab", shiftKey: true }],
+        },
+      },
+      thirdPersonController: {
+        keyboardBindings: {
+          forward: ["KeyW"],
+        },
+      },
+    };
+    const rebound = {
+      ...base,
+      keyboardTargeting: {
+        ...base.keyboardTargeting,
+        bindings: {
+          next: [{ code: "KeyE" }],
+          previous: [{ code: "KeyQ" }],
+        },
+      },
+      thirdPersonController: {
+        ...base.thirdPersonController,
+        keyboardBindings: {
+          forward: ["KeyI"],
+        },
+      },
+    };
+
+    expect(canRetainTrainingRunVisualization(base, rebound)).toBe(true);
+    expect(trainingRunVisualizationRetainedStructuralSignature(base)).toBe(
+      trainingRunVisualizationRetainedStructuralSignature(rebound),
+    );
+  });
+
+  test("updates third-person key bindings in place and clears held state", () => {
+    const makeEventTarget = () => {
+      const listeners = new Map<string, Set<(event: KeyboardEvent) => void>>();
+      return {
+        addEventListener(type: string, listener: EventListener): void {
+          const set = listeners.get(type) ?? new Set();
+          set.add(listener as (event: KeyboardEvent) => void);
+          listeners.set(type, set);
+        },
+        removeEventListener(type: string, listener: EventListener): void {
+          listeners.get(type)?.delete(listener as (event: KeyboardEvent) => void);
+        },
+        dispatch(type: string, event: KeyboardEvent): void {
+          for (const listener of listeners.get(type) ?? []) {
+            listener(event);
+          }
+        },
+        releasePointerCapture(): void {},
+        setPointerCapture(): void {},
+      };
+    };
+    const inputTarget = makeEventTarget();
+    const domElement = makeEventTarget();
+    const handle = Effect.runSync(
+      createThreePlayerController(
+        new Three.PerspectiveCamera(),
+        new Three.Object3D(),
+        domElement as unknown as HTMLElement,
+        {
+          inputTarget: inputTarget as unknown as Window,
+          keyboardBindings: {
+            forward: ["KeyW"],
+          },
+        },
+      ),
+    );
+    const event = (code: string): KeyboardEvent =>
+      ({
+        code,
+        preventDefault: () => undefined,
+        target: null,
+      }) as KeyboardEvent;
+
+    inputTarget.dispatch("keydown", event("KeyW"));
+    expect(handle.keyboard.forward).toBe(true);
+
+    Effect.runSync(
+      handle.updateKeyboardBindings({
+        forward: ["KeyI"],
+      }),
+    );
+    expect(handle.keyboard).toEqual(defaultWasdKeyboardState());
+
+    inputTarget.dispatch("keydown", event("KeyW"));
+    expect(handle.keyboard.forward).toBe(false);
+    inputTarget.dispatch("keydown", event("KeyI"));
+    expect(handle.keyboard.forward).toBe(true);
+
+    Effect.runSync(handle.dispose);
   });
 
   test("keeps default A/D third-person turning calm", () => {
