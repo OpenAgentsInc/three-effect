@@ -129,6 +129,7 @@ import {
   pmndrsStagingPrimitiveSourceRefs,
   pmndrsTrainingDatavizSourceRefs,
   pointerNdcFromClientPoint,
+  projectVerseNameplates,
   projectWorldToScreen,
   quadraticBezierPoints,
   resolveMokshaOptions,
@@ -227,6 +228,7 @@ import {
   pmndrsPresenceBindingPrimitiveSourceRefs,
   pmndrsTextLabelPrimitiveSourceRefs,
   pointerClickPickFromGesture,
+  createVerseNameplatePool,
   quickMmorpgAttachmentPrimitiveSourceRefs,
   quickMmorpgBillboardPrimitiveSourceRefs,
   quickMmorpgEntityPrimitiveSourceRefs,
@@ -433,6 +435,70 @@ describe("camera and overlay primitives", () => {
     expect(style.transform).toContain("translate3d(100px, 50px, 0)");
     expect(style.display).toBe("block");
     expect(Number(style.zIndex)).toBeGreaterThan(0);
+  });
+
+  test("projects Verse nameplates with status bars and HUD-safe degradation", () => {
+    const camera = createPerspectiveCamera({
+      fov: 50,
+      aspect: 1,
+      position: [0, 0, 5],
+      target: [0, 0, 0],
+    });
+    const projections = projectVerseNameplates({
+      camera,
+      size: { width: 200, height: 200 },
+      hudExclusionRects: [{ x: 85, y: 60, width: 30, height: 80 }],
+      items: [
+        {
+          id: "pylon.alpha",
+          kind: "pylon",
+          label: "Alpha Pylon",
+          position: [0, 0, 0],
+          status: "working",
+          anchorOffset: [0, 1.8, 0],
+        },
+        {
+          id: "agent.bravo",
+          kind: "agent",
+          label: "Bravo",
+          position: [0, 0, 0],
+          status: "offline",
+        },
+      ],
+    });
+
+    expect(projections[0]).toMatchObject({
+      id: "pylon.alpha",
+      visible: true,
+      statusBar: { value: 0.78, tone: "working" },
+      worldPosition: [0, 1.8, 0],
+    });
+    expect(projections[0]!.screen.y).toBeLessThan(100);
+    expect(projections[1]).toMatchObject({
+      id: "agent.bravo",
+      visible: false,
+      degraded: "hud_overlap",
+      statusBar: { value: 0.28, tone: "offline" },
+    });
+  });
+
+  test("reconciles Verse nameplate pools without recreating stable labels", () => {
+    const pool = createVerseNameplatePool();
+
+    expect(pool.reconcile([{ id: "pylon.alpha" }, { id: "agent.bravo" }]))
+      .toEqual({
+        created: ["pylon.alpha", "agent.bravo"],
+        reused: [],
+        removed: [],
+        activeIds: ["pylon.alpha", "agent.bravo"],
+      });
+    expect(pool.reconcile([{ id: "agent.bravo" }, { id: "run.tassadar" }]))
+      .toEqual({
+        created: ["run.tassadar"],
+        reused: ["agent.bravo"],
+        removed: ["pylon.alpha"],
+        activeIds: ["agent.bravo", "run.tassadar"],
+      });
   });
 
   test("detects raycast occlusion for projected HTML targets", () => {

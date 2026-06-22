@@ -51,6 +51,7 @@ export * from "./textLabelPrimitives"
 export * from "./terrainPrimitives"
 export * from "./trainingRun"
 export * from "./verseIconPrimitives"
+export * from "./verseNameplatePrimitives"
 
 export class SpinningCubeMountError extends Data.TaggedError(
   "SpinningCubeMountError",
