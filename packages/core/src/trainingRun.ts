@@ -3,12 +3,18 @@ import * as Three from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
 import { createEntityPool } from "./entityPoolPrimitives";
+import { createGlowLine, type GlowLineHandle } from "./fatLinePrimitives";
 import { createFlowBeam, createPayoutBurst } from "./flowEffectPrimitives";
 import {
   createCracklingArc,
   createGatewayPortal,
   type InferenceGatewayLane,
 } from "./inferenceGatewayPrimitives";
+import {
+  createEffectComposerResources,
+  type EffectComposerResources,
+} from "./renderPrimitives";
+import { createSparkBurst, type SparkBurstHandle } from "./sparkBurstPrimitives";
 import {
   createManagedFrameClock,
   type ManagedFrameClockFrame,
@@ -234,6 +240,12 @@ export type TrainingRunBeamAppearance = Readonly<{
   bend?: number;
   color?: number;
   secondaryColor?: number;
+  /**
+   * A2: HDR emissive multiplier for the arc strands (the arc strike-peak — the
+   * brightest tier of the Verse emissive hierarchy). When bloom is on the
+   * renderer supplies a strong default; a scene can override per beam.
+   */
+  emissiveStrength?: number;
 }>;
 
 export type TrainingRunBeamDefinition = Readonly<
@@ -431,6 +443,34 @@ export type TrainingRunVisualizationOptions = Readonly<{
   onPresenceZoneChange?: (zone: TrainingRunPresenceZone | null) => void;
   onLocalPoseChange?: (pose: TrainingRunLocalPoseUpdate) => void;
   pulseSpeed?: number;
+  /**
+   * HDR bloom for the Verse energy (A1). Route the render loop through an
+   * `EffectComposer` + `UnrealBloomPass`, with `OutputPass` owning the ACES
+   * tone-map (so we never double tone-map). Pylon stations, connection lines,
+   * gateway portals, and crackling arcs are pushed into HDR (A2/A3) so the
+   * thresholded bloom extracts them as glowing energy in the dark `0x050505`
+   * scene. The base scene still renders correctly with `enabled: false`
+   * (the bloom skill's acceptance check), and HUD/world text stays below the
+   * HDR threshold so it never smears.
+   */
+  bloom?: TrainingRunBloomOptions;
+}>;
+
+/** HDR bloom configuration for the Verse render path (A1). */
+export type TrainingRunBloomOptions = Readonly<{
+  /** Master switch. Default true; `false` renders the base scene un-bloomed. */
+  enabled?: boolean;
+  /** Bloom strength. Tuned to OUR exposure, not the reference's raw numbers. */
+  strength?: number;
+  /** Bloom spread radius. */
+  radius?: number;
+  /**
+   * Luminance threshold. Kept near the display ceiling (~1.0) so ONLY the HDR
+   * emitters (arcs/portals/connection cores/active pylon glows above 1.0) bloom,
+   * while ordinary clamped surfaces and HUD/world text stay below it and do not
+   * smear.
+   */
+  threshold?: number;
 }>;
 
 export type TrainingRunVisualizationSnapshot = Readonly<{
@@ -526,6 +566,7 @@ export type ResolvedTrainingRunVisualizationOptions = Readonly<{
   onPresenceZoneChange?: (zone: TrainingRunPresenceZone | null) => void;
   onLocalPoseChange?: (pose: TrainingRunLocalPoseUpdate) => void;
   pulseSpeed: number;
+  bloom: Required<TrainingRunBloomOptions>;
 }>;
 
 export type TrainingRunVisualizationHandle = Readonly<{
@@ -772,7 +813,22 @@ export const defaultTrainingRunVisualizationOptions: ResolvedTrainingRunVisualiz
     thirdPersonController: {},
     walkController: {},
     pulseSpeed: 0.17,
+    // Bloom OFF by default so every existing caller renders byte-for-byte the
+    // base scene (the acceptance check); callers opt in (the pylon network does).
+    bloom: {
+      enabled: false,
+      strength: 0.9,
+      radius: 0.5,
+      threshold: 1,
+    },
   };
+
+const resolveTrainingRunBloom = (
+  bloom: TrainingRunBloomOptions | undefined,
+): Required<TrainingRunBloomOptions> => ({
+  ...defaultTrainingRunVisualizationOptions.bloom,
+  ...(bloom ?? {}),
+});
 
 const resolveTrainingRunMotionPolicy = (
   policy: TrainingRunMotionPolicy | undefined,
@@ -897,6 +953,7 @@ export const resolveTrainingRunVisualizationOptions = (
       ...defaultTrainingRunVisualizationOptions.walkController,
       ...(options.walkController ?? {}),
     },
+    bloom: resolveTrainingRunBloom(options.bloom),
   };
 
   return {
@@ -2177,37 +2234,76 @@ export const makeTrainingRunBulletinBoard = (
 
 export const makeTrainingRunPylonLandmark = (
   color: number,
-  options: Readonly<{ scale?: number; opacity?: number }> = {},
+  options: Readonly<{
+    scale?: number;
+    opacity?: number;
+    /**
+     * A2 / "nicer pylons". HDR emissive multiplier for the pylon station. With a
+     * value above 1 the station's structural shells become `toneMapped = false`
+     * emitters whose color is `color * emissiveStrength` — a glowing tower with a
+     * white-hot core/cap that a bloom pass picks up, instead of the flat
+     * `MeshBasicMaterial` stub. The cap + core sit at the top of the station's
+     * own emissive tier (an ACTIVE pylon burns brighter; see `coreBoost`); the
+     * shells and base ring are dimmer. Defaults to 1 (the previous flat look).
+     */
+    emissiveStrength?: number;
+    /** Extra multiplier on the white-hot core/cap (active pylons burn hotter). */
+    coreBoost?: number;
+  }> = {},
 ): Three.Group => {
   const scale = options.scale ?? 1;
   const opacity = options.opacity ?? 0.9;
+  const emissiveStrength = Math.max(1, options.emissiveStrength ?? 1);
+  const hdr = emissiveStrength > 1;
+  const coreBoost = Math.max(0, options.coreBoost ?? 1);
   const group = new Three.Group();
   group.name = "training-run-pylon-landmark";
 
-  const material = (nextColor: number, nextOpacity: number) =>
-    new Three.MeshBasicMaterial({
-      color: nextColor,
+  // HDR-aware material: in plain mode this is the original flat
+  // `MeshBasicMaterial`; in HDR mode the color is multiplied past the display
+  // range and tone-mapping is disabled so the shell carries bloom signal.
+  const material = (
+    nextColor: number,
+    nextOpacity: number,
+    tierStrength = emissiveStrength,
+  ): Three.MeshBasicMaterial => {
+    const tinted = hdr
+      ? new Three.Color(nextColor).multiplyScalar(tierStrength)
+      : new Three.Color(nextColor);
+    return new Three.MeshBasicMaterial({
+      color: tinted,
       opacity: nextOpacity,
       transparent: true,
       depthWrite: false,
       side: Three.DoubleSide,
+      toneMapped: !hdr,
+      ...(hdr ? { blending: Three.AdditiveBlending } : {}),
     });
+  };
 
   const base = makeRing(0.2 * scale, color, opacity * 0.55);
+  if (hdr) {
+    const baseMat = base.material as Three.MeshBasicMaterial;
+    baseMat.color.copy(new Three.Color(color).multiplyScalar(emissiveStrength * 0.7));
+    baseMat.toneMapped = false;
+    baseMat.blending = Three.AdditiveBlending;
+  }
   base.position.z = 0.02 * scale;
   group.add(base);
 
   const tower = new Three.Mesh(
     new Three.CylinderGeometry(0.055 * scale, 0.13 * scale, 0.62 * scale, 5),
-    material(color, opacity * 0.76),
+    material(color, opacity * 0.76, emissiveStrength * 0.8),
   );
   tower.rotation.x = Math.PI / 2;
   tower.position.z = 0.34 * scale;
   group.add(tower);
 
+  // The white-hot inner core: the brightest tier of the station, lifted by
+  // `coreBoost` so an ACTIVE pylon visibly burns hotter than a steady one.
   const core = new Three.Mesh(
     new Three.CylinderGeometry(0.026 * scale, 0.04 * scale, 0.74 * scale, 5),
-    material(0xffffff, opacity * 0.5),
+    material(0xffffff, opacity * 0.5, emissiveStrength * 1.35 * (hdr ? coreBoost : 1)),
   );
   core.rotation.x = Math.PI / 2;
   core.position.z = 0.4 * scale;
@@ -2215,7 +2311,7 @@ export const makeTrainingRunPylonLandmark = (
 
   const cap = new Three.Mesh(
     new Three.OctahedronGeometry(0.12 * scale, 0),
-    material(0xffffff, opacity * 0.82),
+    material(0xffffff, opacity * 0.82, emissiveStrength * 1.5 * (hdr ? coreBoost : 1)),
   );
   cap.position.z = 0.76 * scale;
   group.add(cap);
@@ -2223,7 +2319,7 @@ export const makeTrainingRunPylonLandmark = (
   for (const rotation of [0, Math.PI / 2]) {
     const vane = new Three.Mesh(
       new Three.BoxGeometry(0.38 * scale, 0.018 * scale, 0.08 * scale),
-      material(color, opacity * 0.48),
+      material(color, opacity * 0.48, emissiveStrength * 0.6),
     );
     vane.rotation.z = rotation;
     vane.position.z = 0.56 * scale;
@@ -3330,6 +3426,18 @@ export const mountTrainingRunVisualization = (
       });
       renderer.setClearColor(resolved.backgroundColor, 1);
       renderer.outputColorSpace = Three.SRGBColorSpace;
+      // Tone-map ownership (A1 / image-pipeline "one owner"). The renderer's
+      // `toneMapping` stays `ACESFilmicToneMapping` in BOTH paths, but it is
+      // applied in exactly one place:
+      //  - bloom OFF: the renderer renders straight to the screen, so the ACES
+      //    tone-map is applied once on the final pixels (unchanged from before).
+      //  - bloom ON: the `RenderPass` renders the scene into an HDR float target
+      //    (`currentRenderTarget !== null`), and three.js only applies per-
+      //    material tone-mapping when rendering to the *screen* — so the scene
+      //    enters the bloom chain un-tone-mapped (correct: bloom wants HDR). The
+      //    composer's `OutputPass` then reads `renderer.toneMapping` and applies
+      //    ACES once when it writes to the screen. One owner, no double tone-map.
+      const bloomEnabled = resolved.bloom.enabled;
       renderer.toneMapping = Three.ACESFilmicToneMapping;
       renderer.toneMappingExposure = perspectiveWalk ? 0.86 : 1;
       renderer.shadowMap.enabled = perspectiveWalk;
@@ -3375,6 +3483,95 @@ export const mountTrainingRunVisualization = (
         scene.add(makeMetaverseStreetDistrict());
       }
       scene.add(root);
+
+      // ---------------------------------------------------------------------
+      // A1: HDR bloom composer. Only built when bloom is enabled; otherwise the
+      // render loop keeps the direct `renderer.render` path (zero change for
+      // existing callers). When built, OutputPass owns the ACES tone-map +
+      // exposure, the renderer is in NoToneMapping (set above), and the bloom
+      // threshold near 1.0 means only the HDR emitters (A2/A3) bloom while HUD/
+      // world text — which clamps at/below 1.0 — never smears.
+      // ---------------------------------------------------------------------
+      let composer: EffectComposerResources | undefined;
+      // Fat glow connection lines (A3) need their screen-space resolution kept
+      // in sync with the drawing buffer on resize.
+      const glowLineHandles = new Set<GlowLineHandle>();
+      if (bloomEnabled) {
+        composer = createEffectComposerResources(renderer, scene, camera, {
+          bloom: {
+            strength: resolved.bloom.strength,
+            radius: resolved.bloom.radius,
+            threshold: resolved.bloom.threshold,
+          },
+          bloomEnabled: true,
+          output: true,
+        });
+        // OutputPass reads `renderer.toneMapping` (ACES, set above) +
+        // `renderer.toneMappingExposure` at render time, so it is the single
+        // tone-map owner. Nothing to set on the pass itself.
+        sceneScope.add(() => composer?.dispose());
+      }
+
+      // A2 / "nicer pylons": HDR emissive options for a pylon station, driven by
+      // status when bloom is on (an `active` pylon burns hottest). Returns the
+      // previous flat options when bloom is off so non-bloom callers are
+      // unchanged. `spark` flags the active pylons that also get a spark accent.
+      const pylonLandmarkHdr = (
+        status?: string,
+      ): { emissiveStrength?: number; coreBoost?: number; spark: boolean } => {
+        if (!bloomEnabled) return { spark: false };
+        switch (status) {
+          case "active":
+            return { emissiveStrength: 2.6, coreBoost: 1.7, spark: true };
+          case "verified":
+          case "sync":
+            return { emissiveStrength: 2.1, coreBoost: 1.2, spark: false };
+          case "sealed":
+          case "reconciled":
+            return { emissiveStrength: 1.9, coreBoost: 1.1, spark: false };
+          case "blocked":
+            return { emissiveStrength: 2.0, coreBoost: 1.0, spark: false };
+          default:
+            return { emissiveStrength: 1.55, coreBoost: 1.0, spark: false };
+        }
+      };
+      // Spark accents rising off ACTIVE pylons (A4 reuse). Tracked so the loop
+      // can advance them and dispose cleans them up.
+      const pylonSparkHandles = new Set<SparkBurstHandle>();
+      const attachPylonSpark = (
+        host: Three.Object3D,
+        color: number,
+        seed: number,
+      ): void => {
+        if (!bloomEnabled) return;
+        const spark = createSparkBurst({
+          capacity: 48,
+          // Emit from the emitter origin; the emitter is positioned + oriented on
+          // the host below, so sparks rise off the pylon cap.
+          color,
+          secondaryColor: 0x0a0a0a,
+          emissiveStrength: 9,
+          rate: 14,
+          speed: 0.55,
+          spread: 0.5,
+          lifetime: 1.1,
+          gravity: -0.35,
+          size: 0.05,
+          seed,
+        });
+        // The spark pool emits along its local +Y; the pylon's "up" is local +Z,
+        // so rotate the emitter (+Y → +Z) and lift it to the cap so sparks rise
+        // up the tower rather than sideways.
+        spark.object3D.rotation.x = -Math.PI / 2;
+        spark.object3D.position.set(0, 0, 0.84);
+        host.add(spark.object3D);
+        pylonSparkHandles.add(spark);
+        sceneScope.add(() => {
+          pylonSparkHandles.delete(spark);
+          spark.dispose();
+        });
+      };
+
       const raycaster = new Three.Raycaster();
       const pointer = new Three.Vector2();
       const hitTargets = new HitTargetRegistry<TrainingRunNodeSelection>();
@@ -3882,10 +4079,40 @@ export const mountTrainingRunVisualization = (
               ? 0.24
               : -0.18;
         const points = curvedEdgePoints(edge.source, edge.target, bend);
-        const edgeColor = colorForStatus(
-          nodeStatusById.get(edge.targetId) ?? "planned",
-        );
-        root.add(makeLine(points, edgeColor, perspectiveWalk ? 0.025 : 0.13));
+        const edgeStatus = nodeStatusById.get(edge.targetId) ?? "planned";
+        const edgeColor = colorForStatus(edgeStatus);
+        if (bloomEnabled) {
+          // A3: a fat, glowing connection (bright HDR core + soft additive
+          // envelope) instead of the faint 1px line. Status drives the
+          // brightness so a busy/active edge reads hotter than a planned one.
+          // The HDR core sits ABOVE the steady-ring tier in the emissive
+          // hierarchy but below the portal core and arc strike-peak.
+          const edgeHdr =
+            edgeStatus === "active"
+              ? 3.2
+              : edgeStatus === "verified" || edgeStatus === "sync"
+                ? 2.4
+                : edgeStatus === "blocked"
+                  ? 2.6
+                  : 1.7;
+          const glow = createGlowLine({
+            points,
+            color: edgeColor,
+            coreWidth: perspectiveWalk ? 1.8 : 2.6,
+            envelopeWidth: perspectiveWalk ? 6 : 9,
+            opacity: perspectiveWalk ? 0.55 : 0.92,
+            envelopeOpacity: perspectiveWalk ? 0.12 : 0.2,
+            emissiveStrength: edgeHdr,
+          });
+          glowLineHandles.add(glow);
+          root.add(glow.object3D);
+          sceneScope.add(() => {
+            glowLineHandles.delete(glow);
+            glow.dispose();
+          });
+        } else {
+          root.add(makeLine(points, edgeColor, perspectiveWalk ? 0.025 : 0.13));
+        }
         const flowLine = makeDashedLine(
           points,
           edgeColor,
@@ -3971,12 +4198,22 @@ export const mountTrainingRunVisualization = (
           const labelText = visibleWorldLabelText(selection, 16);
           let labelAnchor: Three.Vector3 | undefined;
           if (trainingRunSelectionIsPylon(selection)) {
+            const pylonHdr = pylonLandmarkHdr(node.status);
             const pylon = makeTrainingRunPylonLandmark(statusColor, {
               opacity: 0.88,
               scale: 0.58,
+              ...(pylonHdr.emissiveStrength === undefined
+                ? {}
+                : {
+                    emissiveStrength: pylonHdr.emissiveStrength,
+                    coreBoost: pylonHdr.coreBoost,
+                  }),
             });
             pylon.position.z = 0.52;
             group.add(pylon);
+            if (pylonHdr.spark) {
+              attachPylonSpark(pylon, statusColor, stableStringSeed(node.id));
+            }
             labelAnchor = trainingRunHeadLabelPositionForObject(pylon, group, {
               margin: 0.06,
               worldHeight: 0.42,
@@ -4037,12 +4274,22 @@ export const mountTrainingRunVisualization = (
         });
         let labelAnchor: Three.Vector3 | undefined;
         if (trainingRunSelectionIsPylon(selection)) {
+          const pylonHdr = pylonLandmarkHdr(node.status);
           const pylon = makeTrainingRunPylonLandmark(statusColor, {
             opacity: 0.88,
             scale: node.role === "run" ? 0.72 : 0.58,
+            ...(pylonHdr.emissiveStrength === undefined
+              ? {}
+              : {
+                  emissiveStrength: pylonHdr.emissiveStrength,
+                  coreBoost: pylonHdr.coreBoost,
+                }),
           });
           pylon.position.z = 0.46;
           group.add(pylon);
+          if (pylonHdr.spark) {
+            attachPylonSpark(pylon, statusColor, stableStringSeed(node.id));
+          }
           labelAnchor = trainingRunHeadLabelPositionForObject(pylon, group, {
             margin: node.role === "run" ? 0.07 : 0.06,
             worldHeight: 0.42,
@@ -4107,12 +4354,25 @@ export const mountTrainingRunVisualization = (
             label: contributor.label,
           })
         ) {
+          const contributorActive = contributor.lifecycleState === "active";
+          const contributorHdr = pylonLandmarkHdr(
+            contributorActive ? "active" : "verified",
+          );
           const pylon = makeTrainingRunPylonLandmark(0xffffff, {
             opacity: contributor.lifecycleState === "sync_reentry" ? 0.48 : 0.78,
-            scale: contributor.lifecycleState === "active" ? 0.33 : 0.27,
+            scale: contributorActive ? 0.33 : 0.27,
+            ...(contributorHdr.emissiveStrength === undefined
+              ? {}
+              : {
+                  emissiveStrength: contributorHdr.emissiveStrength,
+                  coreBoost: contributorHdr.coreBoost,
+                }),
           });
           pylon.position.copy(position);
           contributorGroup.add(pylon);
+          if (contributorHdr.spark) {
+            attachPylonSpark(pylon, 0xffffff, stableStringSeed(contributor.id));
+          }
           contributorLabelAnchor = trainingRunHeadLabelPositionForObject(
             pylon,
             contributorGroup,
@@ -4520,13 +4780,23 @@ export const mountTrainingRunVisualization = (
         objects.push(ring);
         let labelAnchor: Three.Vector3 | undefined;
         if (trainingRunSelectionIsPylon(selection)) {
+          const entityPylonHdr = pylonLandmarkHdr(entity.status);
           const pylon = makeTrainingRunPylonLandmark(color, {
             opacity: 0.84,
             scale: 0.52,
+            ...(entityPylonHdr.emissiveStrength === undefined
+              ? {}
+              : {
+                  emissiveStrength: entityPylonHdr.emissiveStrength,
+                  coreBoost: entityPylonHdr.coreBoost,
+                }),
           });
           pylon.position.set(position[0], position[1], position[2] + 0.08);
           root.add(pylon);
           objects.push(pylon);
+          if (entityPylonHdr.spark) {
+            attachPylonSpark(pylon, color, stableStringSeed(entity.id));
+          }
           labelAnchor = trainingRunHeadLabelPositionForObject(pylon, root, {
             margin: 0.04,
             worldHeight: 0.2,
@@ -4536,6 +4806,10 @@ export const mountTrainingRunVisualization = (
             position: [position[0], position[1], position[2] + 0.18],
             status: entity.status,
             radius: 0.32,
+            // A2: HDR portal core/rings/sparks when bloom is on, so the gateway
+            // blooms in the dark scene. The portal-core tier sits above the
+            // pylon/connection tiers but below the arc strike-peak.
+            ...(bloomEnabled ? { emissiveStrength: 4 } : {}),
             ...(entity.gatewayLane === undefined
               ? {}
               : { lane: entity.gatewayLane }),
@@ -4603,6 +4877,12 @@ export const mountTrainingRunVisualization = (
           // Per-beam appearance knobs let a scene dial the arc UP so it reads as
           // real crackling energy in a dark world instead of a faint hairline.
           const appearance = beam.appearance ?? {};
+          // A2: the arc strike-peak is the BRIGHTEST tier of the Verse emissive
+          // hierarchy. When bloom is on, push the strands into HDR (toneMapped
+          // false + additive, inside `createCracklingArc`) so they bloom into a
+          // bright core. A per-beam `appearance.emissiveStrength` overrides.
+          const arcEmissive =
+            appearance.emissiveStrength ?? (bloomEnabled ? 6 : 1);
           const crackling = createCracklingArc({
             from,
             to,
@@ -4610,6 +4890,7 @@ export const mountTrainingRunVisualization = (
             secondaryColor: appearance.secondaryColor ?? 0xf8fafc,
             bend: appearance.bend ?? 0.22,
             opacity: appearance.opacity ?? 0.72,
+            emissiveStrength: arcEmissive,
             ...(appearance.strandCount === undefined
               ? {}
               : { strandCount: appearance.strandCount }),
@@ -5228,6 +5509,20 @@ export const mountTrainingRunVisualization = (
           camera.bottom = -viewHeight / 2;
         }
         camera.updateProjectionMatrix();
+        // A1: keep the composer's render targets + bloom mip chain matched to
+        // the drawing buffer. `setSize` takes CSS pixels and the renderer's
+        // pixel ratio so the internal HDR targets are full resolution.
+        composer?.setSize(width, height, renderer.getPixelRatio());
+        // A3: fat glow lines compute screen-space width from the DRAWING-buffer
+        // resolution, so feed them CSS size × pixel ratio.
+        if (glowLineHandles.size > 0) {
+          const ratio = renderer.getPixelRatio();
+          const bufferWidth = Math.max(1, Math.floor(width * ratio));
+          const bufferHeight = Math.max(1, Math.floor(height * ratio));
+          for (const handle of glowLineHandles) {
+            handle.setResolution(bufferWidth, bufferHeight);
+          }
+        }
       };
 
       const render = ({ delta, time }: ManagedFrameClockFrame) => {
@@ -5265,6 +5560,9 @@ export const mountTrainingRunVisualization = (
         for (const portal of portalHandles) {
           portal.update(delta);
         }
+        for (const spark of pylonSparkHandles) {
+          spark.update(delta);
+        }
         for (const runtime of entityRuntimes.values()) {
           runtime.label?.faceCamera(camera);
         }
@@ -5292,7 +5590,13 @@ export const mountTrainingRunVisualization = (
         updatePresenceZone();
         updateWorldItemProximity();
         threePlayerAvatar?.update(delta);
-        renderer.render(scene, camera);
+        // A1: when bloom is wired, the composer drives the frame (RenderPass →
+        // UnrealBloomPass → OutputPass). Otherwise the direct path is unchanged.
+        if (composer !== undefined) {
+          composer.render(delta);
+        } else {
+          renderer.render(scene, camera);
+        }
       };
 
       const observer =

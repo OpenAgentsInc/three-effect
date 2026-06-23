@@ -111,6 +111,76 @@ describe("Inference gateway primitives", () => {
     twin.dispose()
   })
 
+  test("createCracklingArc HDR emissive pushes strands above 1.0 and unsets toneMapped (A2)", () => {
+    const flat = createCracklingArc({
+      from: [0, 0, 0],
+      to: [2, 0, 0],
+      color: 0x3366ff,
+      seed: 1,
+    })
+    const flatLine = flat.object3D.children.find(
+      (child): child is Three.Line => child instanceof Three.Line,
+    )
+    if (flatLine === undefined) throw new Error("expected a line child")
+    const flatMat = flatLine.material as Three.LineBasicMaterial
+    // Default (emissiveStrength 1): unchanged flat look, tone-mapped, max channel <= 1.
+    expect(flatMat.toneMapped).toBe(true)
+    expect(Math.max(flatMat.color.r, flatMat.color.g, flatMat.color.b)).toBeLessThanOrEqual(1)
+
+    const hdr = createCracklingArc({
+      from: [0, 0, 0],
+      to: [2, 0, 0],
+      color: 0x3366ff,
+      emissiveStrength: 6,
+      seed: 1,
+    })
+    const hdrLine = hdr.object3D.children.find(
+      (child): child is Three.Line => child instanceof Three.Line,
+    )
+    if (hdrLine === undefined) throw new Error("expected a line child")
+    const hdrMat = hdrLine.material as Three.LineBasicMaterial
+    // HDR: emitter is tone-map-exempt and carries values above the display
+    // ceiling so an UnrealBloomPass thresholded near 1.0 extracts it.
+    expect(hdrMat.toneMapped).toBe(false)
+    expect(hdrMat.blending).toBe(Three.AdditiveBlending)
+    expect(Math.max(hdrMat.color.r, hdrMat.color.g, hdrMat.color.b)).toBeGreaterThan(1)
+
+    flat.dispose()
+    hdr.dispose()
+  })
+
+  test("createGatewayPortal HDR makes the core the brightest tier and blooms (A2)", () => {
+    const portal = createGatewayPortal({
+      position: [0, 0, 0],
+      status: "working",
+      ringCount: 2,
+      sparkCount: 4,
+      emissiveStrength: 4,
+      seed: 3,
+    })
+    const core = portal.object3D.children.find(
+      (child): child is Three.Mesh =>
+        child instanceof Three.Mesh && child.geometry instanceof Three.CircleGeometry,
+    )
+    const ring = portal.object3D.children.find(
+      (child): child is Three.Mesh =>
+        child instanceof Three.Mesh && child.geometry instanceof Three.TorusGeometry,
+    )
+    if (core === undefined || ring === undefined) {
+      throw new Error("expected core + ring meshes")
+    }
+    const coreMat = core.material as Three.MeshBasicMaterial
+    const ringMat = ring.material as Three.MeshBasicMaterial
+    expect(coreMat.toneMapped).toBe(false)
+    expect(ringMat.toneMapped).toBe(false)
+    const coreMax = Math.max(coreMat.color.r, coreMat.color.g, coreMat.color.b)
+    const ringMax = Math.max(ringMat.color.r, ringMat.color.g, ringMat.color.b)
+    // HDR signal present, and the core tier is at least as bright as the ring tier.
+    expect(coreMax).toBeGreaterThan(1)
+    expect(coreMax).toBeGreaterThanOrEqual(ringMax)
+    portal.dispose()
+  })
+
   test("strict evidence wrappers refuse unbacked live motion", () => {
     expect(inferenceVisualHasEvidence({})).toBe(false)
     expect(inferenceVisualHasEvidence({ simulated: true })).toBe(true)
