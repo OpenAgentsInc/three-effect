@@ -44,6 +44,19 @@ export type CracklingArcOptions = Readonly<{
   seed?: number
   strandCount?: number
   jitter?: number
+  /**
+   * HDR emissive multiplier applied to the strand colors so the arc reads as
+   * energy and feeds a bloom pass (A2). The strand color becomes
+   * `color * emissiveStrength` and the material is `toneMapped = false`, so the
+   * arc carries values above 1.0 that an `UnrealBloomPass` thresholded near 1.0
+   * will pick up while ordinary clamped surfaces stay below it. The per-strand
+   * brightness still pulses, so the arc strike-peak is the brightest energy in
+   * the Verse emissive hierarchy. A value of 1 (default) preserves the previous
+   * flat appearance for callers that have not opted in.
+   */
+  emissiveStrength?: number
+  /** Convenience alias for `emissiveStrength`. */
+  hdrBoost?: number
 }>
 
 export type CracklingArcHandle = Readonly<{
@@ -63,6 +76,18 @@ export type GatewayPortalOptions = Readonly<{
   seed?: number
   color?: Three.ColorRepresentation
   accentColor?: Three.ColorRepresentation
+  /**
+   * HDR emissive multiplier (A2). With a value above 1 the portal core, rings,
+   * and sparks become `toneMapped = false` emitters whose color is
+   * `color * emissiveStrength`, so a bloom pass extracts a glowing portal in the
+   * dark Verse. The emissive hierarchy lives BELOW the arc strike-peak: the core
+   * burns brightest, the steady rings dimmer, sparks dimmer still. Status scales
+   * the whole portal — a `working` gateway burns visibly hotter than `offline`.
+   * Defaults to 1 (the previous unlit look) so existing callers are unchanged.
+   */
+  emissiveStrength?: number
+  /** Convenience alias for `emissiveStrength`. */
+  hdrBoost?: number
 }>
 
 export type GatewayPortalHandle = Readonly<{
@@ -187,6 +212,18 @@ export const createCracklingArc = (
   const opacity = clamp01(options.opacity ?? 0.72)
   const color = options.color ?? 0x93c5fd
   const secondaryColor = options.secondaryColor ?? 0xf8fafc
+  // HDR multiplier (default 1 = previous flat look). Above 1 the strand colors
+  // exceed the display range so a bloom pass can extract them; the materials go
+  // `toneMapped = false` so the renderer's tone-map does not clamp them first.
+  const emissiveStrength = finitePositive(
+    options.hdrBoost ?? options.emissiveStrength ?? 1,
+    1,
+  )
+  const hdr = emissiveStrength > 1
+  const baseColor = new Three.Color(color).multiplyScalar(emissiveStrength)
+  const baseSecondary = new Three.Color(secondaryColor).multiplyScalar(
+    emissiveStrength,
+  )
   const random = seededRandom(options.seed ?? 1)
   const scratch = new Three.Vector3()
 
@@ -233,10 +270,15 @@ export const createCracklingArc = (
       new Three.BufferAttribute(new Float32Array((segments + 1) * 3), 3),
     )
     const material = new Three.LineBasicMaterial({
-      color: index % 2 === 0 ? color : secondaryColor,
+      color: index % 2 === 0 ? baseColor : baseSecondary,
       transparent: true,
       opacity,
       depthWrite: false,
+      toneMapped: !hdr,
+      // Additive so overlapping strands and their HDR cores accumulate into a
+      // bright lightning core that blooms, rather than alpha-occluding each
+      // other. Only when HDR is opted in; plain mode keeps the old blend.
+      ...(hdr ? { blending: Three.AdditiveBlending } : {}),
     })
     const line = new Three.Line(geometry, material)
     const strand: Strand = {
@@ -321,6 +363,27 @@ export const createGatewayPortal = (
   let tone = statusAccent(status)
   let elapsed = 0
 
+  // HDR emissive (A2). `emissiveStrength` of 1 keeps the old unlit look; above 1
+  // the portal carries HDR signal for bloom. The CORE burns brightest, then the
+  // rings, then the sparks — the portal-core tier of the Verse emissive
+  // hierarchy (below the arc strike-peak). `statusBrightness` lets a `working`
+  // gateway glow visibly hotter than an `offline` one.
+  const emissiveStrength = finitePositive(
+    options.hdrBoost ?? options.emissiveStrength ?? 1,
+    1,
+  )
+  const hdr = emissiveStrength > 1
+  // Relative tier multipliers (relationships, not the reference's raw numbers):
+  // core 1.0 > ring 0.62 > spark 0.5 of the configured strength.
+  const coreHdr = hdr ? emissiveStrength : 1
+  const ringHdr = hdr ? emissiveStrength * 0.62 : 1
+  const sparkHdr = hdr ? emissiveStrength * 0.5 : 1
+  const statusBrightness = (): number => (hdr ? 0.4 + tone.opacity * 0.9 : 1)
+  const tint = (
+    representation: Three.ColorRepresentation,
+    scale: number,
+  ): Three.Color => new Three.Color(representation).multiplyScalar(scale)
+
   const baseColor = options.color ?? laneColor(lane)
   const accentColor = options.accentColor ?? tone.color
   const materials: Three.Material[] = []
@@ -328,11 +391,13 @@ export const createGatewayPortal = (
   const rings: Three.Mesh[] = []
 
   const coreMaterial = new Three.MeshBasicMaterial({
-    color: baseColor,
+    color: hdr ? tint(baseColor, coreHdr * statusBrightness()) : baseColor,
     transparent: true,
     opacity: tone.opacity * 0.18,
     depthWrite: false,
     side: Three.DoubleSide,
+    toneMapped: !hdr,
+    ...(hdr ? { blending: Three.AdditiveBlending } : {}),
   })
   materials.push(coreMaterial)
   const core = new Three.Mesh(new Three.CircleGeometry(radius * 0.7, 48), coreMaterial)
@@ -345,11 +410,14 @@ export const createGatewayPortal = (
       8,
       64,
     )
+    const ringColor = index === 0 ? baseColor : accentColor
     const material = new Three.MeshBasicMaterial({
-      color: index === 0 ? baseColor : accentColor,
+      color: hdr ? tint(ringColor, ringHdr * statusBrightness()) : ringColor,
       transparent: true,
       opacity: tone.opacity * (0.95 - index * 0.18),
       depthWrite: false,
+      toneMapped: !hdr,
+      ...(hdr ? { blending: Three.AdditiveBlending } : {}),
     })
     const ring = new Three.Mesh(geometry, material)
     ring.rotation.set(index * 0.62, index * 0.43, index * 0.27)
@@ -373,12 +441,14 @@ export const createGatewayPortal = (
   }
   sparkGeometry.setAttribute("position", new Three.BufferAttribute(sparkPositions, 3))
   const sparkMaterial = new Three.PointsMaterial({
-    color: accentColor,
+    color: hdr ? tint(accentColor, sparkHdr * statusBrightness()) : accentColor,
     size: radius * 0.055,
     transparent: true,
     opacity: tone.opacity,
     depthWrite: false,
     sizeAttenuation: true,
+    toneMapped: !hdr,
+    ...(hdr ? { blending: Three.AdditiveBlending } : {}),
   })
   materials.push(sparkMaterial)
   const sparks = new Three.Points(sparkGeometry, sparkMaterial)
@@ -387,12 +457,19 @@ export const createGatewayPortal = (
   const applyStatus = (): void => {
     group.userData.gatewayStatus = status
     tone = statusAccent(status)
+    const brightness = statusBrightness()
     coreMaterial.opacity = tone.opacity * 0.18
+    if (hdr) coreMaterial.color.copy(tint(baseColor, coreHdr * brightness))
     ringMaterials.forEach((material, index) => {
-      material.color.set(index === 0 ? baseColor : tone.color)
+      const ringColor = index === 0 ? baseColor : tone.color
+      material.color.copy(
+        hdr ? tint(ringColor, ringHdr * brightness) : new Three.Color(ringColor),
+      )
       material.opacity = Math.max(0.08, tone.opacity * (0.95 - index * 0.18))
     })
-    sparkMaterial.color.set(tone.color)
+    sparkMaterial.color.copy(
+      hdr ? tint(tone.color, sparkHdr * brightness) : new Three.Color(tone.color),
+    )
     sparkMaterial.opacity = tone.opacity
   }
 
