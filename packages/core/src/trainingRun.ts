@@ -2284,21 +2284,26 @@ export const makeTrainingRunGameScreen = (
       ? null
       : gameScreenCanvasFor(item.screenCanvasId);
 
+  const width = item.screenWidth ?? 2.6;
+  const height = item.screenHeight ?? 1.7;
   const screen = createCanvasScreenBoard({
     canvas,
     // Late-bind the source canvas: the board is often built before the (async)
     // game canvas registers, so the board picks it up on a later frame.
     ...(item.screenCanvasId === undefined ? {} : { canvasId: item.screenCanvasId }),
-    width: item.screenWidth ?? 2.6,
-    height: item.screenHeight ?? 1.7,
+    width,
+    height,
   });
 
-  // The screen board is authored in the XY plane (face along +Z). In the
-  // perspective-walk world the `root` group is rotated -90° about X, so to make
-  // the screen STAND UP and face the avatar we rotate its local frame +90° about
-  // X (cancelling the root tilt) and lift it to eye height.
+  // Orient EXACTLY like the bulletin board (whose readable text faces the
+  // avatar): the board face is authored normal-+Z; rotating it +90° about X maps
+  // that normal to -Y in the group-local frame, and the perspective-walk `root`
+  // is rotated -90° about X, so -Y points back toward the camera/avatar. Lift the
+  // face to standing eye height (z ≈ height/2 + base). The bulletin board uses
+  // the same `rotation.x = π/2` + negative-Y face offset convention.
   screen.object3D.rotation.x = Math.PI / 2;
-  screen.object3D.position.set(0, 0, 1.5);
+  // Nudge the face a hair toward the viewer (-Y) so it never z-fights the bezel.
+  screen.object3D.position.set(0, -0.01, height / 2 + 0.32);
   group.add(screen.object3D);
 
   // Two posts under the screen so it reads as a standing arcade cabinet, not a
@@ -2309,12 +2314,12 @@ export const makeTrainingRunGameScreen = (
     metalness: 0.08,
     roughness: 0.72,
   });
-  for (const x of [-1.0, 1.0]) {
+  for (const x of [-width / 2 + 0.2, width / 2 - 0.2]) {
     const post = new Three.Mesh(
-      new Three.BoxGeometry(0.16, 0.16, 1.5),
+      new Three.BoxGeometry(0.16, 0.16, height / 2 + 0.32),
       postMaterial,
     );
-    post.position.set(x, 0.04, 0.75);
+    post.position.set(x, 0.04, (height / 2 + 0.32) / 2);
     post.castShadow = true;
     group.add(post);
   }
