@@ -1948,6 +1948,25 @@ describe("training run visualization", () => {
     );
   });
 
+  test("HDR bloom is OFF by default and opt-in, with a threshold above 1.0 (A1)", () => {
+    // Default: bloom disabled so every existing caller renders the base scene.
+    const base = resolveTrainingRunVisualizationOptions();
+    expect(base.bloom.enabled).toBe(false);
+    // Threshold above the display ceiling so only HDR emitters bloom and HUD/
+    // world text (<=1.0) never smears.
+    expect(base.bloom.threshold).toBeGreaterThan(1);
+    expect(base.bloom.strength).toBeGreaterThan(0);
+
+    // Opt-in merges over the defaults (partial override keeps the rest).
+    const on = resolveTrainingRunVisualizationOptions({
+      bloom: { enabled: true, strength: 0.4 },
+    });
+    expect(on.bloom.enabled).toBe(true);
+    expect(on.bloom.strength).toBe(0.4);
+    expect(on.bloom.threshold).toBe(base.bloom.threshold);
+    expect(on.bloom.radius).toBe(base.bloom.radius);
+  });
+
   test("keeps anonymous training-run motion disabled by default", () => {
     const resolved = resolveTrainingRunVisualizationOptions();
     expect(resolved.cameraMode).toBe("orthographic_map");

@@ -815,11 +815,14 @@ export const defaultTrainingRunVisualizationOptions: ResolvedTrainingRunVisualiz
     pulseSpeed: 0.17,
     // Bloom OFF by default so every existing caller renders byte-for-byte the
     // base scene (the acceptance check); callers opt in (the pylon network does).
+    // Tuned to OUR exposure: a restrained strength + a threshold just above the
+    // display ceiling so ONLY the HDR emitters (>1) bloom into a soft halo, not
+    // a white blowout, and HUD/world text (<=1) never smears.
     bloom: {
       enabled: false,
-      strength: 0.9,
-      radius: 0.5,
-      threshold: 1,
+      strength: 0.16,
+      radius: 0.3,
+      threshold: 1.1,
     },
   };
 
@@ -2262,10 +2265,15 @@ export const makeTrainingRunPylonLandmark = (
   // HDR-aware material: in plain mode this is the original flat
   // `MeshBasicMaterial`; in HDR mode the color is multiplied past the display
   // range and tone-mapping is disabled so the shell carries bloom signal.
+  // HDR shells stay on NORMAL alpha blend (not additive) so the many overlapping
+  // station parts do not accumulate into a white blowout; `toneMapped = false`
+  // plus the color multiplier is enough to carry bloom signal on the bright
+  // core/cap. `additive` is reserved for the white-hot core + cap only.
   const material = (
     nextColor: number,
     nextOpacity: number,
     tierStrength = emissiveStrength,
+    additive = false,
   ): Three.MeshBasicMaterial => {
     const tinted = hdr
       ? new Three.Color(nextColor).multiplyScalar(tierStrength)
@@ -2277,7 +2285,7 @@ export const makeTrainingRunPylonLandmark = (
       depthWrite: false,
       side: Three.DoubleSide,
       toneMapped: !hdr,
-      ...(hdr ? { blending: Three.AdditiveBlending } : {}),
+      ...(hdr && additive ? { blending: Three.AdditiveBlending } : {}),
     });
   };
 
@@ -2286,7 +2294,6 @@ export const makeTrainingRunPylonLandmark = (
     const baseMat = base.material as Three.MeshBasicMaterial;
     baseMat.color.copy(new Three.Color(color).multiplyScalar(emissiveStrength * 0.7));
     baseMat.toneMapped = false;
-    baseMat.blending = Three.AdditiveBlending;
   }
   base.position.z = 0.02 * scale;
   group.add(base);
@@ -2303,7 +2310,12 @@ export const makeTrainingRunPylonLandmark = (
   // `coreBoost` so an ACTIVE pylon visibly burns hotter than a steady one.
   const core = new Three.Mesh(
     new Three.CylinderGeometry(0.026 * scale, 0.04 * scale, 0.74 * scale, 5),
-    material(0xffffff, opacity * 0.5, emissiveStrength * 1.35 * (hdr ? coreBoost : 1)),
+    material(
+      0xffffff,
+      opacity * 0.5,
+      emissiveStrength * 1.35 * (hdr ? coreBoost : 1),
+      true,
+    ),
   );
   core.rotation.x = Math.PI / 2;
   core.position.z = 0.4 * scale;
@@ -2311,7 +2323,12 @@ export const makeTrainingRunPylonLandmark = (
 
   const cap = new Three.Mesh(
     new Three.OctahedronGeometry(0.12 * scale, 0),
-    material(0xffffff, opacity * 0.82, emissiveStrength * 1.5 * (hdr ? coreBoost : 1)),
+    material(
+      0xffffff,
+      opacity * 0.82,
+      emissiveStrength * 1.5 * (hdr ? coreBoost : 1),
+      true,
+    ),
   );
   cap.position.z = 0.76 * scale;
   group.add(cap);
@@ -3426,6 +3443,16 @@ export const mountTrainingRunVisualization = (
       });
       renderer.setClearColor(resolved.backgroundColor, 1);
       renderer.outputColorSpace = Three.SRGBColorSpace;
+      // A1 background fix: when the composer is on, the scene is rendered into a
+      // LINEAR HDR target and the OutputPass does the sRGB encode + ACES at the
+      // end. The renderer's clear into that linear target does NOT sRGB-decode
+      // the configured background, so the dark `backgroundColor` would be
+      // re-encoded (lifting near-black to grey). Pre-decode the background to
+      // linear so OutputPass re-encodes it back to the intended dark color and
+      // the scene background stays as dark as the non-bloom path.
+      const bloomBackground = new Three.Color(resolved.backgroundColor)
+        .clone()
+        .convertSRGBToLinear();
       // Tone-map ownership (A1 / image-pipeline "one owner"). The renderer's
       // `toneMapping` stays `ACESFilmicToneMapping` in BOTH paths, but it is
       // applied in exactly one place:
@@ -3509,6 +3536,11 @@ export const mountTrainingRunVisualization = (
         // OutputPass reads `renderer.toneMapping` (ACES, set above) +
         // `renderer.toneMappingExposure` at render time, so it is the single
         // tone-map owner. Nothing to set on the pass itself.
+        //
+        // Clear the linear HDR target to the LINEAR-decoded background so the
+        // OutputPass re-encode lands back on the intended dark color (otherwise
+        // the near-black background gets re-encoded up to grey).
+        renderer.setClearColor(bloomBackground, 1);
         sceneScope.add(() => composer?.dispose());
       }
 
@@ -3522,17 +3554,17 @@ export const mountTrainingRunVisualization = (
         if (!bloomEnabled) return { spark: false };
         switch (status) {
           case "active":
-            return { emissiveStrength: 2.6, coreBoost: 1.7, spark: true };
+            return { emissiveStrength: 1.5, coreBoost: 1.4, spark: true };
           case "verified":
           case "sync":
-            return { emissiveStrength: 2.1, coreBoost: 1.2, spark: false };
+            return { emissiveStrength: 1.3, coreBoost: 1.2, spark: false };
           case "sealed":
           case "reconciled":
-            return { emissiveStrength: 1.9, coreBoost: 1.1, spark: false };
+            return { emissiveStrength: 1.2, coreBoost: 1.1, spark: false };
           case "blocked":
-            return { emissiveStrength: 2.0, coreBoost: 1.0, spark: false };
+            return { emissiveStrength: 1.25, coreBoost: 1.0, spark: false };
           default:
-            return { emissiveStrength: 1.55, coreBoost: 1.0, spark: false };
+            return { emissiveStrength: 1.08, coreBoost: 1.0, spark: false };
         }
       };
       // Spark accents rising off ACTIVE pylons (A4 reuse). Tracked so the loop
@@ -4089,19 +4121,19 @@ export const mountTrainingRunVisualization = (
           // hierarchy but below the portal core and arc strike-peak.
           const edgeHdr =
             edgeStatus === "active"
-              ? 3.2
+              ? 1.7
               : edgeStatus === "verified" || edgeStatus === "sync"
-                ? 2.4
+                ? 1.45
                 : edgeStatus === "blocked"
-                  ? 2.6
-                  : 1.7;
+                  ? 1.5
+                  : 1.2;
           const glow = createGlowLine({
             points,
             color: edgeColor,
-            coreWidth: perspectiveWalk ? 1.8 : 2.6,
-            envelopeWidth: perspectiveWalk ? 6 : 9,
-            opacity: perspectiveWalk ? 0.55 : 0.92,
-            envelopeOpacity: perspectiveWalk ? 0.12 : 0.2,
+            coreWidth: perspectiveWalk ? 1.5 : 2,
+            envelopeWidth: perspectiveWalk ? 4 : 5.5,
+            opacity: perspectiveWalk ? 0.5 : 0.8,
+            envelopeOpacity: perspectiveWalk ? 0.08 : 0.12,
             emissiveStrength: edgeHdr,
           });
           glowLineHandles.add(glow);
@@ -4809,7 +4841,7 @@ export const mountTrainingRunVisualization = (
             // A2: HDR portal core/rings/sparks when bloom is on, so the gateway
             // blooms in the dark scene. The portal-core tier sits above the
             // pylon/connection tiers but below the arc strike-peak.
-            ...(bloomEnabled ? { emissiveStrength: 4 } : {}),
+            ...(bloomEnabled ? { emissiveStrength: 2.4 } : {}),
             ...(entity.gatewayLane === undefined
               ? {}
               : { lane: entity.gatewayLane }),
@@ -4882,7 +4914,7 @@ export const mountTrainingRunVisualization = (
           // false + additive, inside `createCracklingArc`) so they bloom into a
           // bright core. A per-beam `appearance.emissiveStrength` overrides.
           const arcEmissive =
-            appearance.emissiveStrength ?? (bloomEnabled ? 6 : 1);
+            appearance.emissiveStrength ?? (bloomEnabled ? 3.5 : 1);
           const crackling = createCracklingArc({
             from,
             to,
