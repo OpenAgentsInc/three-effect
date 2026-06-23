@@ -51,6 +51,11 @@ import {
   raycastHitTargetRegistry,
 } from "./spatialPrimitives";
 import { createTextLabel, type TextLabelHandle } from "./textLabelPrimitives";
+import {
+  createCanvasScreenBoard,
+  gameScreenCanvasFor,
+  type CanvasScreenBoardHandle,
+} from "./gameScreenPrimitives";
 
 export const defaultThreePlayerAvatarModelUrl = new URL(
   "./assets/three-player-controller/UEPerson.glb",
@@ -383,7 +388,7 @@ export type TrainingRunRemoteAvatarDefinition = Readonly<{
   labelVisibility?: TrainingRunRemoteAvatarLabelVisibility;
 }>;
 
-export type TrainingRunWorldItemKind = "bulletin_board";
+export type TrainingRunWorldItemKind = "bulletin_board" | "game_screen";
 
 export type TrainingRunWorldItemDefinition = Readonly<{
   id: string;
@@ -397,6 +402,18 @@ export type TrainingRunWorldItemDefinition = Readonly<{
   title?: string;
   lines?: readonly string[];
   sourceRefs?: readonly string[];
+  /**
+   * For `game_screen` items: the registry id of the live source canvas (a game
+   * canvas registered via `registerGameScreenCanvas`). The host textures that
+   * canvas onto the screen face as a live CanvasTexture and dirties it each
+   * frame. When the canvas is not registered the screen shows a neutral
+   * placeholder instead of failing.
+   */
+  screenCanvasId?: string;
+  /** For `game_screen` items: the screen face width in world units. */
+  screenWidth?: number;
+  /** For `game_screen` items: the screen face height in world units. */
+  screenHeight?: number;
 }>;
 
 export type TrainingRunWorldItemSelection = Readonly<{
@@ -2235,6 +2252,73 @@ export const makeTrainingRunBulletinBoard = (
   return group;
 };
 
+export const trainingRunGameScreenSourceRefs = [
+  "packages/core/src/gameScreenPrimitives.ts",
+  "scripts/khala-demo/artifacts/khala-crossy-road-northstar-passing.v1.html",
+] as const;
+
+export type TrainingRunGameScreenHandle = Readonly<{
+  group: Three.Group;
+  screen: CanvasScreenBoardHandle;
+}>;
+
+// Build an in-world "arcade screen" world item that textures a live game canvas
+// (registered under `item.screenCanvasId`) onto a flat board near the avatar.
+// The world item's `position`/`yaw` place + face the board; the board's local
+// +Z face is rotated up to stand vertical in the perspective-walk world (whose
+// `root` is rotated -90° about X), so the screen faces the avatar. Returns the
+// group plus the screen handle so the host can dirty the texture each frame.
+export const makeTrainingRunGameScreen = (
+  item: TrainingRunWorldItemDefinition,
+): TrainingRunGameScreenHandle => {
+  const group = new Three.Group();
+  const yaw = typeof item.yaw === "number" && Number.isFinite(item.yaw)
+    ? item.yaw
+    : 0;
+  group.position.copy(vector(item.position));
+  group.rotation.z = yaw;
+  group.name = `training-run-world-item:${item.id}`;
+
+  const canvas =
+    item.screenCanvasId === undefined
+      ? null
+      : gameScreenCanvasFor(item.screenCanvasId);
+
+  const screen = createCanvasScreenBoard({
+    canvas,
+    width: item.screenWidth ?? 2.6,
+    height: item.screenHeight ?? 1.7,
+  });
+
+  // The screen board is authored in the XY plane (face along +Z). In the
+  // perspective-walk world the `root` group is rotated -90° about X, so to make
+  // the screen STAND UP and face the avatar we rotate its local frame +90° about
+  // X (cancelling the root tilt) and lift it to eye height.
+  screen.object3D.rotation.x = Math.PI / 2;
+  screen.object3D.position.set(0, 0, 1.5);
+  group.add(screen.object3D);
+
+  // Two posts under the screen so it reads as a standing arcade cabinet, not a
+  // floating panel.
+  const postMaterial = new Three.MeshStandardMaterial({
+    color: 0x24272c,
+    emissive: 0x060708,
+    metalness: 0.08,
+    roughness: 0.72,
+  });
+  for (const x of [-1.0, 1.0]) {
+    const post = new Three.Mesh(
+      new Three.BoxGeometry(0.16, 0.16, 1.5),
+      postMaterial,
+    );
+    post.position.set(x, 0.04, 0.75);
+    post.castShadow = true;
+    group.add(post);
+  }
+
+  return { group, screen };
+};
+
 export const makeTrainingRunPylonLandmark = (
   color: number,
   options: Readonly<{
@@ -3968,10 +4052,15 @@ export const mountTrainingRunVisualization = (
         selection: TrainingRunWorldItemSelection;
         signature: string;
         worldPosition: Three.Vector3;
+        // For `game_screen` items: the live screen handle, dirtied each frame.
+        screen?: CanvasScreenBoardHandle;
       };
 
       const worldItemTargetPrefix = "world-item:";
       const worldItemTargets = new Map<string, WorldItemRuntime>();
+      // Live game-screen handles (CanvasTexture surfaces), kept in id order so the
+      // per-frame loop can push the latest game frame onto each screen.
+      const gameScreenHandles = new Map<string, CanvasScreenBoardHandle>();
 
       const worldItemSignature = (
         item: TrainingRunWorldItemDefinition,
@@ -3984,6 +4073,9 @@ export const mountTrainingRunVisualization = (
           label: item.label,
           lines: item.lines,
           position: item.position,
+          screenCanvasId: item.screenCanvasId,
+          screenHeight: item.screenHeight,
+          screenWidth: item.screenWidth,
           sourceRefs: item.sourceRefs,
           status: item.status,
           title: item.title,
@@ -4005,6 +4097,10 @@ export const mountTrainingRunVisualization = (
         if (selectedTargetId === runtime.nodeTarget.id) {
           setSelectedTarget(undefined);
         }
+        if (runtime.screen !== undefined) {
+          gameScreenHandles.delete(runtime.item.id);
+          runtime.screen.dispose();
+        }
         disposeObject(runtime.group);
       };
 
@@ -4012,6 +4108,43 @@ export const mountTrainingRunVisualization = (
         item: TrainingRunWorldItemDefinition,
         _scope: SceneResourceScope,
       ): WorldItemRuntime | undefined => {
+        if (item.kind === "game_screen") {
+          const built = makeTrainingRunGameScreen(item);
+          const selection = trainingRunWorldItemSelection(item);
+          const nodeTarget = trainingRunWorldItemNodeSelection(item);
+          const color = colorForStatus(item.status ?? "active");
+          const worldPosition = vector(item.position);
+          root.updateMatrixWorld(true);
+          root.localToWorld(worldPosition);
+          registerKeyboardTarget(item.position, nodeTarget, color);
+
+          const hitTarget = new Three.Mesh(
+            new Three.BoxGeometry(2.9, 0.4, 2.0),
+            translucentBasicMaterial(color, 0.001),
+          );
+          hitTarget.position.set(0, 0, 1.5);
+          built.group.add(hitTarget);
+          hitTargets.register({
+            id: `${worldItemTargetPrefix}${item.id}`,
+            kind: "mesh",
+            object: hitTarget,
+            recursive: false,
+            value: nodeTarget,
+          });
+          gameScreenHandles.set(item.id, built.screen);
+          const runtime: WorldItemRuntime = {
+            group: built.group,
+            hitTarget,
+            item,
+            nodeTarget,
+            selection,
+            signature: worldItemSignature(item),
+            worldPosition,
+            screen: built.screen,
+          };
+          worldItemTargets.set(item.id, runtime);
+          return runtime;
+        }
         if (item.kind !== "bulletin_board") return undefined;
         const group = makeTrainingRunBulletinBoard(item);
         const selection = trainingRunWorldItemSelection(item);
@@ -4073,8 +4206,33 @@ export const mountTrainingRunVisualization = (
               return current?.signature === worldItemSignature(item);
             },
           },
+          game_screen: {
+            create: (descriptor, scope) => {
+              const item =
+                descriptor.props as TrainingRunWorldItemDefinition;
+              const runtime = createWorldItem(item, scope);
+              if (runtime === undefined) {
+                throw new Error(`Unsupported world item kind: ${item.kind}`);
+              }
+              return {
+                object: runtime.group,
+                state: runtime,
+                dispose: () => disposeWorldItemRuntime(runtime),
+              };
+            },
+            update: (runtime, descriptor) => {
+              const item =
+                descriptor.props as TrainingRunWorldItemDefinition;
+              const current = runtime.state as WorldItemRuntime | undefined;
+              return current?.signature === worldItemSignature(item);
+            },
+          },
         },
       });
+
+      const supportedWorldItemKind = (
+        kind: TrainingRunWorldItemKind,
+      ): boolean => kind === "bulletin_board" || kind === "game_screen";
 
       const updateWorldItems = (
         items: readonly TrainingRunWorldItemDefinition[],
@@ -4082,7 +4240,7 @@ export const mountTrainingRunVisualization = (
         if (disposed) return;
         worldItemReconciler.update(
           items
-            .filter((item) => item.kind === "bulletin_board")
+            .filter((item) => supportedWorldItemKind(item.kind))
             .map(worldItemDescriptor),
         );
       };
@@ -5594,6 +5752,11 @@ export const mountTrainingRunVisualization = (
         }
         for (const spark of pylonSparkHandles) {
           spark.update(delta);
+        }
+        // Push the latest game frame onto every in-world game screen (dirties the
+        // CanvasTexture so the next render samples what the game just drew).
+        for (const screen of gameScreenHandles.values()) {
+          screen.update();
         }
         for (const runtime of entityRuntimes.values()) {
           runtime.label?.faceCamera(camera);
