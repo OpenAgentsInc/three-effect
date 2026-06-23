@@ -162,8 +162,18 @@ export const createCanvasScreenBoard = (
 
   const faceMaterial =
     texture === null
-      ? new Three.MeshBasicMaterial({ color: placeholderColor })
-      : new Three.MeshBasicMaterial({ map: texture, toneMapped: false });
+      ? new Three.MeshBasicMaterial({
+          color: placeholderColor,
+          side: Three.DoubleSide,
+        })
+      : new Three.MeshBasicMaterial({
+          map: texture,
+          toneMapped: false,
+          // DoubleSide so the screen is visible regardless of which way the host
+          // rotates the board to face the viewer — back-face culling must never
+          // turn the game face invisible.
+          side: Three.DoubleSide,
+        });
 
   const faceGeometry = new Three.PlaneGeometry(width, height);
   const face = new Three.Mesh(faceGeometry, faceMaterial);
