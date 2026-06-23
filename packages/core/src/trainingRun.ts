@@ -3258,6 +3258,16 @@ const disposeMaterial = (material: Three.Material | Three.Material[]): void => {
   material.dispose();
 };
 
+// A coarse, stable round of a position used only inside reconcile content
+// signatures, so sub-millimeter float churn never forces a needless rebuild.
+const roundedSignatureVector = (
+  vector: TrainingRunVector,
+): [number, number, number] => [
+  Math.round(vector[0] * 1000) / 1000,
+  Math.round(vector[1] * 1000) / 1000,
+  Math.round(vector[2] * 1000) / 1000,
+];
+
 const disposeObject = (object: Three.Object3D): void => {
   object.traverse((child: Three.Object3D) => {
     const maybeRenderable = child as Three.Object3D & {
@@ -4376,107 +4386,195 @@ export const mountTrainingRunVisualization = (
       }
 
       // ---------------------------------------------------------------------
-      // Entity layer (optional): Pylon contributors, verification beams, and
-      // settlement bursts. Absent/empty arrays render nothing extra.
+      // Entity / beam / burst layer (optional): Pylon contributors, gateway
+      // portals, verification beams, and settlement bursts. Absent/empty arrays
+      // render nothing extra.
+      //
+      // These are RECONCILED on every live `updateVisualization` (add new,
+      // remove gone, update moved/restyled) WITHOUT a full host remount. The
+      // mount path below is just the first reconcile against empty state, so a
+      // beam/portal/burst added AFTER mount (the hotbar-2 crackling spawn, the
+      // local Khala arc, the slot-3 gateway portal) renders immediately and the
+      // avatar + camera + third-person controller are never rebuilt.
       // ---------------------------------------------------------------------
-      const entityPositions = resolveTrainingRunEntityPositions(
-        resolved.entities,
-      );
-      const visualEntities = uniqueTrainingRunEntities(resolved.entities);
-      const entityLabels: TextLabelHandle[] = [];
-      const flowBeams: Array<{ update: (deltaSeconds: number) => void }> = [];
-      const beamDisposers: Array<() => void> = [];
-      const portalHandles: Array<{ update: (deltaSeconds: number) => void; dispose: () => void }> = [];
+      type EntityRuntime = Readonly<{
+        objects: Three.Object3D[];
+        label: TextLabelHandle | null;
+        hitId: string;
+        signature: string;
+      }>;
+      type BeamRuntime = Readonly<{
+        object3D: Three.Object3D;
+        update: (deltaSeconds: number) => void;
+        dispose: () => void;
+        signature: string;
+      }>;
+      type PortalHandle = ReturnType<typeof createGatewayPortal>;
       type BurstHandle = ReturnType<typeof createPayoutBurst>;
-      const burstSlots: Array<{
+      type BurstRuntime = {
         handle: BurstHandle;
         at: TrainingRunVector;
         seed: number;
-      }> = [];
+        signature: string;
+      };
+
+      const entityRuntimes = new Map<string, EntityRuntime>();
+      const beamRuntimes = new Map<string, BeamRuntime>();
+      const burstRuntimes = new Map<string, BurstRuntime>();
+      // Portal handles live keyed by entity id so a portal entity that is
+      // removed or rebuilt drops its animated rings too.
+      const portalRuntimes = new Map<string, PortalHandle>();
+      // Selection ids of the keyboard targets owned by the entity layer, so a
+      // reconcile can drop exactly those before re-registering the live set.
+      const entityKeyboardTargetIds = new Set<string>();
+      // Pooled presence rings are recreated whenever the visible entity set
+      // changes (the pool is fixed-capacity), so we track the current pool and
+      // the entity-id list it was built for.
       let entityPool: ReturnType<typeof createEntityPool> | undefined;
       let entityPresence: ReturnType<typeof bindEntityPresence> | undefined;
+      let entityPoolIds = "";
 
-      if (visualEntities.length > 0) {
-        const pool = createEntityPool({
-          capacity: visualEntities.length,
-          geometry: new Three.CircleGeometry(0.085, 24),
-          scale: 1,
+      // Iteration helpers the animation loop reads. Rebuilt from the runtime
+      // maps on every reconcile so update/dispose never touch stale handles.
+      let flowBeams: Array<{ update: (deltaSeconds: number) => void }> = [];
+      let portalHandles: Array<{
+        update: (deltaSeconds: number) => void;
+        dispose: () => void;
+      }> = [];
+      let burstSlots: Array<BurstRuntime> = [];
+
+      const makeBurst = (at: TrainingRunVector, seed: number): BurstHandle =>
+        createPayoutBurst({
+          at: [at[0], at[1], at[2] + 0.4],
+          color: 0xb7f7d4,
+          count: 36,
+          duration: 1.1,
+          spread: 0.7,
+          seed,
         });
-        pool.mesh.position.z = 0.36;
-        entityPool = pool;
 
-        const presence = bindEntityPresence(pool, {
-          interpolateMs: 0,
-          statusColor: (status) => colorForEntityStatus(status),
+      // Stable per-item keys + content signatures. The KEY decides identity
+      // (add vs keep); the SIGNATURE decides whether a kept item must be rebuilt
+      // because its placement/appearance changed.
+      const entityKey = (entity: TrainingRunEntityDefinition): string =>
+        entity.id;
+      const entitySignature = (
+        entity: TrainingRunEntityDefinition,
+        position: TrainingRunVector,
+      ): string =>
+        JSON.stringify({
+          p: roundedSignatureVector(position),
+          s: entity.status,
+          k: entity.visualKind ?? "default",
+          l: entity.label ?? null,
+          g: entity.gatewayLane ?? null,
         });
-        presence.apply(
-          visualEntities.map((entity) => ({
-            id: entity.id,
-            position: entityPositions.get(entity.id) ?? [0, 0, 0],
-            status: entity.status,
-          })),
-        );
-        entityPresence = presence;
+      const beamKey = (
+        beam: TrainingRunBeamDefinition,
+        index: number,
+      ): string =>
+        beam.motionId !== undefined
+          ? `motion:${beam.motionId}`
+          : `pair:${beam.fromId}->${beam.toId}:${beam.style ?? "flow"}:${index}`;
+      const beamSignature = (
+        beam: TrainingRunBeamDefinition,
+        from: TrainingRunVector,
+        to: TrainingRunVector,
+      ): string =>
+        JSON.stringify({
+          f: roundedSignatureVector(from),
+          t: roundedSignatureVector(to),
+          s: beam.style ?? "flow",
+          a: beam.appearance ?? null,
+        });
+      const burstKey = (
+        burst: TrainingRunBurstDefinition,
+        index: number,
+      ): string =>
+        burst.motionId !== undefined
+          ? `motion:${burst.motionId}`
+          : `at:${burst.atId}:${index}`;
+      const burstSignature = (at: TrainingRunVector, seed: number): string =>
+        JSON.stringify({ a: roundedSignatureVector(at), seed });
 
-        for (const entity of visualEntities) {
-          const position = entityPositions.get(entity.id) ?? [0, 0, 0];
-          const color = colorForEntityStatus(entity.status);
-          const selection = trainingRunEntitySelection(entity);
-          registerKeyboardTarget(position, selection, color);
-          const ring = makeRing(0.14, color, 0.42);
-          ring.position.set(position[0], position[1], position[2] - 0.02);
-          root.add(ring);
-          let labelAnchor: Three.Vector3 | undefined;
-          if (trainingRunSelectionIsPylon(selection)) {
-            const pylon = makeTrainingRunPylonLandmark(color, {
-              opacity: 0.84,
-              scale: 0.52,
-            });
-            pylon.position.set(position[0], position[1], position[2] + 0.08);
-            root.add(pylon);
-            labelAnchor = trainingRunHeadLabelPositionForObject(pylon, root, {
-              margin: 0.04,
-              worldHeight: 0.2,
-            });
-          } else if (entity.visualKind === "gateway_portal") {
-            const portal = createGatewayPortal({
-              position: [position[0], position[1], position[2] + 0.18],
-              status: entity.status,
-              radius: 0.32,
-              ...(entity.gatewayLane === undefined
-                ? {}
-                : { lane: entity.gatewayLane }),
-            });
-            root.add(portal.object3D);
-            portalHandles.push(portal);
-          } else {
-            const marker = makeTrainingRunArtifactMarker(
-              trainingRunArtifactKindForSelection(selection),
-              color,
-              {
-                opacity: entity.status === "planned" ? 0.42 : 0.72,
-                scale: 0.54,
-              },
-            );
-            marker.position.set(position[0], position[1], position[2] + 0.02);
-            root.add(marker);
-          }
+      const disposeEntityRuntime = (runtime: EntityRuntime): void => {
+        for (const object of runtime.objects) {
+          root.remove(object);
+          disposeObject(object);
+        }
+        runtime.label?.dispose();
+        hitTargets.remove(runtime.hitId);
+      };
 
-          const hitTarget = makeCircle(0.16, color, 0.001);
-          hitTarget.position.set(position[0], position[1], position[2] + 0.34);
-          root.add(hitTarget);
-          hitTargets.register({
-            id: `entity:${entity.id}`,
-            kind: "mesh",
-            object: hitTarget,
-            recursive: false,
-            value: selection,
+      const buildEntityRuntime = (
+        entity: TrainingRunEntityDefinition,
+        position: TrainingRunVector,
+        signature: string,
+      ): EntityRuntime => {
+        const objects: Three.Object3D[] = [];
+        const color = colorForEntityStatus(entity.status);
+        const selection = trainingRunEntitySelection(entity);
+        const ring = makeRing(0.14, color, 0.42);
+        ring.position.set(position[0], position[1], position[2] - 0.02);
+        root.add(ring);
+        objects.push(ring);
+        let labelAnchor: Three.Vector3 | undefined;
+        if (trainingRunSelectionIsPylon(selection)) {
+          const pylon = makeTrainingRunPylonLandmark(color, {
+            opacity: 0.84,
+            scale: 0.52,
           });
+          pylon.position.set(position[0], position[1], position[2] + 0.08);
+          root.add(pylon);
+          objects.push(pylon);
+          labelAnchor = trainingRunHeadLabelPositionForObject(pylon, root, {
+            margin: 0.04,
+            worldHeight: 0.2,
+          });
+        } else if (entity.visualKind === "gateway_portal") {
+          const portal = createGatewayPortal({
+            position: [position[0], position[1], position[2] + 0.18],
+            status: entity.status,
+            radius: 0.32,
+            ...(entity.gatewayLane === undefined
+              ? {}
+              : { lane: entity.gatewayLane }),
+          });
+          root.add(portal.object3D);
+          objects.push(portal.object3D);
+          portalRuntimes.set(entity.id, portal);
+        } else {
+          const marker = makeTrainingRunArtifactMarker(
+            trainingRunArtifactKindForSelection(selection),
+            color,
+            {
+              opacity: entity.status === "planned" ? 0.42 : 0.72,
+              scale: 0.54,
+            },
+          );
+          marker.position.set(position[0], position[1], position[2] + 0.02);
+          root.add(marker);
+          objects.push(marker);
+        }
 
-          if (entity.label !== undefined) {
-            const labelText = visibleWorldLabelText(selection, 18);
-            if (labelText === undefined) continue;
-            const label = createTextLabel({
+        const hitTarget = makeCircle(0.16, color, 0.001);
+        hitTarget.position.set(position[0], position[1], position[2] + 0.34);
+        root.add(hitTarget);
+        objects.push(hitTarget);
+        const hitId = `entity:${entity.id}`;
+        hitTargets.register({
+          id: hitId,
+          kind: "mesh",
+          object: hitTarget,
+          recursive: false,
+          value: selection,
+        });
+
+        let label: TextLabelHandle | null = null;
+        if (entity.label !== undefined) {
+          const labelText = visibleWorldLabelText(selection, 18);
+          if (labelText !== undefined) {
+            const built = createTextLabel({
               text: labelText,
               color: "#e5e7eb",
               fontSize: 36,
@@ -4487,23 +4585,23 @@ export const mountTrainingRunVisualization = (
                   : [labelAnchor.x, labelAnchor.y, labelAnchor.z],
               billboard: true,
             });
-            label.faceCamera(camera);
-            root.add(label.object3D);
-            entityLabels.push(label);
+            built.faceCamera(camera);
+            root.add(built.object3D);
+            label = built;
           }
         }
-      }
+        return { objects, label, hitId, signature };
+      };
 
-      for (const beam of resolved.beams) {
-        if (!motionAllowedByPolicy(beam, resolved.motionPolicy)) continue;
-        const from = entityPositions.get(beam.fromId);
-        const to = entityPositions.get(beam.toId);
-        if (from === undefined || to === undefined) continue;
+      const buildBeamRuntime = (
+        beam: TrainingRunBeamDefinition,
+        from: TrainingRunVector,
+        to: TrainingRunVector,
+        signature: string,
+      ): BeamRuntime => {
         if (beam.style === "crackling_arc") {
           // Per-beam appearance knobs let a scene dial the arc UP so it reads as
           // real crackling energy in a dark world instead of a faint hairline.
-          // Unset knobs fall back to the visible defaults below (already louder
-          // than the old 4-strand/0.11-jitter primitive default).
           const appearance = beam.appearance ?? {};
           const crackling = createCracklingArc({
             from,
@@ -4524,9 +4622,12 @@ export const mountTrainingRunVisualization = (
               : { seed: stableStringSeed(beam.motionId) }),
           });
           root.add(crackling.object3D);
-          flowBeams.push({ update: crackling.update });
-          beamDisposers.push(crackling.dispose);
-          continue;
+          return {
+            object3D: crackling.object3D,
+            update: crackling.update,
+            dispose: crackling.dispose,
+            signature,
+          };
         }
         const handle = createFlowBeam({
           from,
@@ -4538,29 +4639,162 @@ export const mountTrainingRunVisualization = (
           opacity: 0.32,
         });
         root.add(handle.object3D);
-        flowBeams.push({ update: handle.update });
-        beamDisposers.push(handle.dispose);
-      }
+        return {
+          object3D: handle.object3D,
+          update: handle.update,
+          dispose: handle.dispose,
+          signature,
+        };
+      };
 
-      const makeBurst = (at: TrainingRunVector, seed: number): BurstHandle =>
-        createPayoutBurst({
-          at: [at[0], at[1], at[2] + 0.4],
-          color: 0xb7f7d4,
-          count: 36,
-          duration: 1.1,
-          spread: 0.7,
-          seed,
+      // Reconcile the whole entity/beam/burst layer against the resolved
+      // visualization. Pure add/remove/replace by key; nothing else in the
+      // scene (camera, controller, avatars, world items) is touched.
+      const reconcileEntityLayer = (): void => {
+        const entities = uniqueTrainingRunEntities(resolved.entities);
+        const entityPositions = resolveTrainingRunEntityPositions(
+          resolved.entities,
+        );
+
+        // Presence pool: recreate only when the visible entity-id set changes.
+        const poolIds = entities.map((entity) => entity.id).join("|");
+        if (poolIds !== entityPoolIds) {
+          entityPresence?.dispose();
+          entityPool?.dispose();
+          entityPresence = undefined;
+          entityPool = undefined;
+          if (entities.length > 0) {
+            const pool = createEntityPool({
+              capacity: entities.length,
+              geometry: new Three.CircleGeometry(0.085, 24),
+              scale: 1,
+            });
+            pool.mesh.position.z = 0.36;
+            entityPool = pool;
+            entityPresence = bindEntityPresence(pool, {
+              interpolateMs: 0,
+              statusColor: (status) => colorForEntityStatus(status),
+            });
+          }
+          entityPoolIds = poolIds;
+        }
+        entityPresence?.apply(
+          entities.map((entity) => ({
+            id: entity.id,
+            position: entityPositions.get(entity.id) ?? [0, 0, 0],
+            status: entity.status,
+          })),
+        );
+
+        // Keyboard navigation targets for entities: re-derive from scratch each
+        // reconcile (cheap; entity counts are small) so added/removed/moved
+        // entities are reachable with the next-target keys without a remount.
+        removeKeyboardTargets((id) => entityKeyboardTargetIds.has(id));
+        entityKeyboardTargetIds.clear();
+        for (const entity of entities) {
+          const position = entityPositions.get(entity.id) ?? [0, 0, 0];
+          const selection = trainingRunEntitySelection(entity);
+          registerKeyboardTarget(
+            position,
+            selection,
+            colorForEntityStatus(entity.status),
+          );
+          entityKeyboardTargetIds.add(selection.id);
+        }
+
+        // Entities: add new, remove gone, rebuild changed (position/status/kind).
+        const seenEntities = new Set<string>();
+        for (const entity of entities) {
+          const key = entityKey(entity);
+          seenEntities.add(key);
+          const position = entityPositions.get(entity.id) ?? [0, 0, 0];
+          const signature = entitySignature(entity, position);
+          const existing = entityRuntimes.get(key);
+          if (existing !== undefined && existing.signature === signature) {
+            continue;
+          }
+          if (existing !== undefined) {
+            disposeEntityRuntime(existing);
+            portalRuntimes.delete(entity.id);
+          }
+          entityRuntimes.set(
+            key,
+            buildEntityRuntime(entity, position, signature),
+          );
+        }
+        for (const [key, runtime] of [...entityRuntimes.entries()]) {
+          if (seenEntities.has(key)) continue;
+          disposeEntityRuntime(runtime);
+          entityRuntimes.delete(key);
+          // entityKey === entity.id, so the portal map is keyed by the same id.
+          portalRuntimes.delete(key);
+        }
+
+        // Beams: add new, remove gone, rebuild changed.
+        const seenBeams = new Set<string>();
+        resolved.beams.forEach((beam, index) => {
+          if (!motionAllowedByPolicy(beam, resolved.motionPolicy)) return;
+          const from = entityPositions.get(beam.fromId);
+          const to = entityPositions.get(beam.toId);
+          if (from === undefined || to === undefined) return;
+          const key = beamKey(beam, index);
+          seenBeams.add(key);
+          const signature = beamSignature(beam, from, to);
+          const existing = beamRuntimes.get(key);
+          if (existing !== undefined && existing.signature === signature) {
+            return;
+          }
+          if (existing !== undefined) {
+            root.remove(existing.object3D);
+            existing.dispose();
+          }
+          beamRuntimes.set(key, buildBeamRuntime(beam, from, to, signature));
         });
+        for (const [key, runtime] of [...beamRuntimes.entries()]) {
+          if (seenBeams.has(key)) continue;
+          root.remove(runtime.object3D);
+          runtime.dispose();
+          beamRuntimes.delete(key);
+        }
 
-      for (const [index, burst] of resolved.bursts.entries()) {
-        if (!motionAllowedByPolicy(burst, resolved.motionPolicy)) continue;
-        const at = entityPositions.get(burst.atId);
-        if (at === undefined) continue;
-        const seed = index + 1;
-        const handle = makeBurst(at, seed);
-        root.add(handle.object3D);
-        burstSlots.push({ handle, at, seed });
-      }
+        // Bursts: add new, remove gone, rebuild moved.
+        const seenBursts = new Set<string>();
+        resolved.bursts.forEach((burst, index) => {
+          if (!motionAllowedByPolicy(burst, resolved.motionPolicy)) return;
+          const at = entityPositions.get(burst.atId);
+          if (at === undefined) return;
+          const key = burstKey(burst, index);
+          seenBursts.add(key);
+          const seed = index + 1;
+          const signature = burstSignature(at, seed);
+          const existing = burstRuntimes.get(key);
+          if (existing !== undefined && existing.signature === signature) {
+            return;
+          }
+          if (existing !== undefined) {
+            root.remove(existing.handle.object3D);
+            existing.handle.dispose();
+          }
+          const handle = makeBurst(at, seed);
+          root.add(handle.object3D);
+          burstRuntimes.set(key, { handle, at, seed, signature });
+        });
+        for (const [key, runtime] of [...burstRuntimes.entries()]) {
+          if (seenBursts.has(key)) continue;
+          root.remove(runtime.handle.object3D);
+          runtime.handle.dispose();
+          burstRuntimes.delete(key);
+        }
+
+        // Rebuild the loop iteration lists from the live runtime maps.
+        flowBeams = [...beamRuntimes.values()].map((runtime) => ({
+          update: runtime.update,
+        }));
+        portalHandles = [...portalRuntimes.values()];
+        burstSlots = [...burstRuntimes.values()];
+      };
+
+      reconcileEntityLayer();
 
       let walkController: WasdMouseLookControllerHandle | undefined;
       let threePlayerController: ThreePlayerControllerHandle | undefined;
@@ -4789,6 +5023,12 @@ export const mountTrainingRunVisualization = (
         }
         updateRemoteAvatars(resolved.remoteAvatars);
         updateWorldItems(resolved.worldItems);
+        // Reconcile the spawn/effect layer (beams, gateway portals, bursts, and
+        // their endpoint markers) in place. This is what lets the hotbar-2
+        // crackling arc, the slot-3 gateway portal, and the local Khala arc
+        // appear after mount WITHOUT a full host remount — so the avatar,
+        // camera, and third-person controller are never rebuilt on spawn.
+        reconcileEntityLayer();
         currentWorldItemProximityId = undefined;
         updatePresenceZone();
         updateWorldItemProximity();
@@ -5025,8 +5265,8 @@ export const mountTrainingRunVisualization = (
         for (const portal of portalHandles) {
           portal.update(delta);
         }
-        for (const label of entityLabels) {
-          label.faceCamera(camera);
+        for (const runtime of entityRuntimes.values()) {
+          runtime.label?.faceCamera(camera);
         }
         for (const slot of burstSlots) {
           slot.handle.update(delta);
@@ -5078,10 +5318,13 @@ export const mountTrainingRunVisualization = (
           disposeRemoteAvatar(avatarId);
         }
         worldItemReconciler.dispose();
-        for (const label of entityLabels) label.dispose();
-        for (const slot of burstSlots) slot.handle.dispose();
-        for (const disposeBeam of beamDisposers) disposeBeam();
-        for (const portal of portalHandles) portal.dispose();
+        for (const runtime of entityRuntimes.values()) {
+          for (const object of runtime.objects) disposeObject(object);
+          runtime.label?.dispose();
+        }
+        for (const runtime of burstRuntimes.values()) runtime.handle.dispose();
+        for (const runtime of beamRuntimes.values()) runtime.dispose();
+        for (const portal of portalRuntimes.values()) portal.dispose();
         entityPresence?.dispose();
         entityPool?.dispose();
         sceneScope.dispose();

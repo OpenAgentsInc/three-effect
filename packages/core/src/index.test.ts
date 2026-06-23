@@ -2907,14 +2907,19 @@ describe("training run entity layer", () => {
     const source = await Bun.file(
       new URL("./trainingRun.ts", import.meta.url),
     ).text();
-    const entityLabelBlock = source.slice(
-      source.indexOf("const entityLabels: TextLabelHandle[] = []"),
-      source.indexOf("for (const beam of resolved.beams)"),
+    // Entity labels are built inside `buildEntityRuntime` and kept facing the
+    // camera every frame from the live runtime map. The label must be
+    // billboarded and re-aimed at the camera (no billboard:false slips in).
+    const labelBlock = source.slice(
+      source.indexOf("if (entity.label !== undefined) {"),
+      source.indexOf("return { objects, label, hitId, signature };"),
     );
-    expect(source).toContain("const entityLabels: TextLabelHandle[] = []");
-    expect(entityLabelBlock).not.toContain("billboard: false");
-    expect(source).toContain("label.faceCamera(camera);");
-    expect(source).toContain("for (const label of entityLabels)");
+    expect(labelBlock.length).toBeGreaterThan(0);
+    expect(labelBlock).not.toContain("billboard: false");
+    expect(labelBlock).toContain("billboard: true");
+    expect(labelBlock).toContain("built.faceCamera(camera);");
+    // The frame loop re-aims every live entity label at the camera.
+    expect(source).toContain("runtime.label?.faceCamera(camera);");
   });
 
   test("defaults the entity layer to honest-empty arrays", () => {
