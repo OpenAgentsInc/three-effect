@@ -46,6 +46,14 @@ export const gameScreenCanvasFor = (
 export type CanvasScreenBoardOptions = Readonly<{
   /** Live source canvas (already being drawn into). When null, a placeholder. */
   canvas: HTMLCanvasElement | null;
+  /**
+   * Optional registry id to LATE-BIND the source canvas: when `canvas` is null
+   * at build time, `update()` polls `gameScreenCanvasFor(canvasId)` and swaps the
+   * face texture's source the moment the canvas registers. This is essential when
+   * the board mesh is created before the (async) game iframe canvas exists — the
+   * common case for the in-Verse game screen.
+   */
+  canvasId?: string;
   /** Screen width in world units (the face plane width). */
   width?: number;
   /** Screen height in world units (the face plane height). */
@@ -126,21 +134,31 @@ export const createCanvasScreenBoard = (
   );
   group.add(bezel);
 
-  // The live face. Prefer the registered game canvas; fall back to a neutral
-  // placeholder so the screen is never an undefined void.
-  const sourceCanvas = options.canvas ?? makePlaceholderCanvas(placeholderColor);
-  const hasLive = options.canvas !== null && options.canvas !== undefined;
-
-  const texture =
-    sourceCanvas === null ? null : new Three.CanvasTexture(sourceCanvas);
-  if (texture !== null) {
+  const tuneTexture = (texture: Three.CanvasTexture): Three.CanvasTexture => {
     // The game canvas is drawn with the conventional top-left origin; three's
     // default texture flipY already matches that for a front-facing plane.
     texture.colorSpace = Three.SRGBColorSpace;
     texture.minFilter = Three.LinearFilter;
     texture.magFilter = Three.LinearFilter;
     texture.generateMipmaps = false;
-  }
+    return texture;
+  };
+
+  // The live face. Prefer the directly-provided canvas; otherwise the registered
+  // canvas (by id); otherwise a neutral placeholder so the screen is never a void.
+  // When neither is available yet but a `canvasId` was given, we late-bind in
+  // `update()` (the common in-Verse case: the board is built before the async
+  // game canvas exists).
+  const initialCanvas =
+    options.canvas ??
+    (options.canvasId === undefined ? null : gameScreenCanvasFor(options.canvasId)) ??
+    makePlaceholderCanvas(placeholderColor);
+  let liveSourceCanvas: HTMLCanvasElement | null =
+    options.canvas ??
+    (options.canvasId === undefined ? null : gameScreenCanvasFor(options.canvasId));
+
+  let texture =
+    initialCanvas === null ? null : tuneTexture(new Three.CanvasTexture(initialCanvas));
 
   const faceMaterial =
     texture === null
@@ -155,14 +173,33 @@ export const createCanvasScreenBoard = (
 
   let disposed = false;
 
+  // Swap the face texture to a freshly-registered game canvas (late-bind).
+  const attachCanvas = (canvas: HTMLCanvasElement): void => {
+    const previous = texture;
+    liveSourceCanvas = canvas;
+    texture = tuneTexture(new Three.CanvasTexture(canvas));
+    faceMaterial.map = texture;
+    faceMaterial.toneMapped = false;
+    faceMaterial.color.set(0xffffff);
+    faceMaterial.needsUpdate = true;
+    previous?.dispose();
+  };
+
   return {
     object3D: group,
     update: () => {
-      if (disposed || texture === null || !hasLive) return;
+      if (disposed) return;
+      // Late-bind: if we don't yet have the live game canvas but were given an id,
+      // try to pick it up now (it registers asynchronously after the iframe boots).
+      if (liveSourceCanvas === null && options.canvasId !== undefined) {
+        const found = gameScreenCanvasFor(options.canvasId);
+        if (found !== null) attachCanvas(found);
+      }
+      if (texture === null || liveSourceCanvas === null) return;
       // Push the latest game frame to the GPU on the next render.
       texture.needsUpdate = true;
     },
-    hasLiveSource: () => hasLive && texture !== null,
+    hasLiveSource: () => liveSourceCanvas !== null && texture !== null,
     dispose: () => {
       if (disposed) return;
       disposed = true;

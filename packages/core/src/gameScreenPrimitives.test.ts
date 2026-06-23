@@ -79,4 +79,25 @@ describe("createCanvasScreenBoard", () => {
     expect(map!.version).toBeGreaterThan(versionBefore)
     board.dispose()
   })
+
+  test("canvasId late-binds: a board built before the canvas registers picks it up on update()", () => {
+    // Build with NO canvas yet, only an id — the common in-Verse case.
+    expect(gameScreenCanvasFor("test:screen")).toBeNull()
+    const board = createCanvasScreenBoard({ canvas: null, canvasId: "test:screen" })
+    expect(board.hasLiveSource()).toBe(false)
+
+    // Now the game canvas registers (async, after the iframe booted).
+    registerGameScreenCanvas("test:screen", fakeCanvas())
+    // The next update() swaps the placeholder face to the live canvas texture.
+    board.update()
+    expect(board.hasLiveSource()).toBe(true)
+
+    const textured = board.object3D.children.find(
+      (child): child is Three.Mesh =>
+        child instanceof Three.Mesh &&
+        (child.material as Three.MeshBasicMaterial).map instanceof Three.CanvasTexture,
+    )
+    expect(textured).toBeDefined()
+    board.dispose()
+  })
 })

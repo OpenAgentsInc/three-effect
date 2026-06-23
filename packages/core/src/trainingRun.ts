@@ -2286,6 +2286,9 @@ export const makeTrainingRunGameScreen = (
 
   const screen = createCanvasScreenBoard({
     canvas,
+    // Late-bind the source canvas: the board is often built before the (async)
+    // game canvas registers, so the board picks it up on a later frame.
+    ...(item.screenCanvasId === undefined ? {} : { canvasId: item.screenCanvasId }),
     width: item.screenWidth ?? 2.6,
     height: item.screenHeight ?? 1.7,
   });
