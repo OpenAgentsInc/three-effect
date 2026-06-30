@@ -23,6 +23,11 @@ scope for now.
       performance sampling, advanced material factories, render targets,
       postprocessing composer resources, scene graph cloning/LOD/edges/lines,
       and deterministic particle/media helpers.
+    - command-composer HUD primitives for OpenAgents/Khala chat input shells:
+      existing-border edge energy, scanner wash, dropcursor beam, attachment
+      hologram nodes, command-card brackets, resize/hardware marks, typed
+      projection updates, and reduced-motion behavior. The text editor,
+      labels, buttons, file names, and accessibility tree stay in DOM/Foldkit.
     - a React-free port of the pmndrs Bezier curves and nodes example, including
       draggable nodes, labels, endpoint markers, and animated dashed quadratic
       Bezier connections.
@@ -72,6 +77,15 @@ The Foldkit helpers register `oa-spinning-cube`, `oa-bezier-nodes`,
 `oa-moksha`, and `oa-training-run` custom elements when a browser
 custom-elements registry is available. Each element owns a scoped Three
 renderer and releases it on disconnect.
+
+Command composer HUD smoke:
+
+```sh
+bun run scene:composer-hud:capture
+```
+
+That builds `examples/command-composer-hud`, opens it with headless Playwright,
+captures the WebGL canvas, and asserts the HUD is nonblank and framed.
 
 ## Common Primitive Pass
 
