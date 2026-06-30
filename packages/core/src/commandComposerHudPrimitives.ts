@@ -8,7 +8,6 @@ import {
   createHudFrameCorners,
   hudClamp01,
   type HudFrameHandle,
-  type HudStatus,
 } from "./hudPrimitives"
 
 /**
